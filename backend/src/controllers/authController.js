@@ -134,12 +134,13 @@ const verifyEmail = asyncHandler(async (req, res) => {
 // @access  Public
 const resendVerification = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  
+
   if (!email) {
     res.status(400);
-    throw new Error('Please provide an email address');
+    throw new Error('Email is required');
   }
-  
+
+  // Find user by email
   const user = await User.findOne({ email });
 
   if (!user) {
