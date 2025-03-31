@@ -15,7 +15,8 @@ const userSchema = mongoose.Schema(
     },
     email: {
       type: String,
-      required: [true, 'Please add an email'],
+      // Email is not required for OAuth users, but we'll generate a placeholder
+      // required: [true, 'Please add an email'],
       unique: true,
       match: [
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,

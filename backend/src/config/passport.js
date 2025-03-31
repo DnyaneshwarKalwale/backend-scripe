@@ -88,43 +88,46 @@ module.exports = (passport) => {
           
           // Twitter may not always provide email
           const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+          const username = profile.username || profile.displayName.replace(/\s+/g, '').toLowerCase();
           
-          // If email is available, check if user exists
-          if (email) {
-            let user = await User.findOne({ email });
-            
-            if (user) {
-              // User exists - update Twitter profile data if needed
-              if (!user.twitterId) {
-                user.twitterId = profile.id;
-                await user.save();
-              }
-              return done(null, user);
-            }
-          }
+          // If no email is provided, generate a placeholder email using the Twitter username
+          const generatedEmail = email || `${username}.twitter@placeholder.scripe.com`;
           
           // Check if user exists by Twitter ID
           let user = await User.findOne({ twitterId: profile.id });
           
-          if (user) {
-            return done(null, user);
+          // If not found by Twitter ID but email is provided, check by email
+          if (!user && email) {
+            user = await User.findOne({ email });
+            
+            // If user exists by email, update Twitter ID
+            if (user) {
+              user.twitterId = profile.id;
+              if (!user.profilePicture && profile.photos && profile.photos[0]) {
+                user.profilePicture = profile.photos[0].value;
+              }
+              await user.save();
+            }
           }
-
-          // Create new user
-          const nameParts = profile.displayName.split(' ');
-          const firstName = nameParts[0] || '';
-          const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
           
-          user = await User.create({
-            twitterId: profile.id,
-            firstName,
-            lastName,
-            email, // May be null
-            isEmailVerified: email ? true : false, // Twitter emails are verified when provided
-            profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
-            authMethod: 'twitter',
-            onboardingCompleted: false,
-          });
+          // If user doesn't exist, create a new one
+          if (!user) {
+            // Split name into first and last name
+            const nameParts = profile.displayName.split(' ');
+            const firstName = nameParts[0] || username;
+            const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+            
+            user = await User.create({
+              twitterId: profile.id,
+              firstName,
+              lastName,
+              email: generatedEmail, // Use the actual email or generated one
+              isEmailVerified: email ? true : false, // Only mark as verified if Twitter provided an email
+              profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
+              authMethod: 'twitter',
+              onboardingCompleted: false,
+            });
+          }
 
           return done(null, user);
         } catch (error) {

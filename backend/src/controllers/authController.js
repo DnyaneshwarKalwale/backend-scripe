@@ -347,6 +347,12 @@ const twitterAuth = asyncHandler(async (req, res) => {
   const nameParts = name.split(' ');
   const firstName = nameParts[0] || '';
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  
+  // Generate a username from the name
+  const username = name.replace(/\s+/g, '').toLowerCase();
+  
+  // If no email is provided, generate a placeholder email
+  const generatedEmail = email || `${username}.twitter@placeholder.scripe.com`;
 
   try {
     // Check if user exists by Twitter ID
@@ -372,7 +378,7 @@ const twitterAuth = asyncHandler(async (req, res) => {
         twitterId,
         firstName,
         lastName,
-        email: email || null, // Email is optional
+        email: generatedEmail, // Use the actual email or generated one
         isEmailVerified: email ? true : false,
         profilePicture: profileImage || null,
         authMethod: 'twitter',
