@@ -6,6 +6,8 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emai
 // @desc    Register user with email
 // @route   POST /api/auth/register
 // @access  Public
+
+// @desc    Register user with email
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, password } = req.body;
 
