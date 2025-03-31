@@ -131,9 +131,16 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
 // @desc    Resend verification email
 // @route   POST /api/auth/resend-verification
-// @access  Private
+// @access  Public
 const resendVerification = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const { email } = req.body;
+  
+  if (!email) {
+    res.status(400);
+    throw new Error('Please provide an email address');
+  }
+  
+  const user = await User.findOne({ email });
 
   if (!user) {
     res.status(404);
