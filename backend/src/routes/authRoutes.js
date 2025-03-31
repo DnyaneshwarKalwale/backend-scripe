@@ -57,10 +57,15 @@ router.get(
   '/twitter',
   (req, res, next) => {
     console.log('Starting Twitter OAuth flow...');
+    // Clear any existing request tokens to avoid conflicts
+    if (req.session) {
+      delete req.session.oauth;
+    }
     next();
   },
   passport.authenticate('twitter', { 
-    includeEmail: true 
+    includeEmail: true,
+    session: true // Use session for storing Twitter OAuth tokens
   })
 );
 
@@ -68,8 +73,10 @@ router.get(
   '/twitter/callback',
   (req, res, next) => {
     console.log('Twitter callback received');
+    console.log('Session data:', req.session);
+    
     passport.authenticate('twitter', { 
-      session: false, 
+      session: false,
       failureRedirect: `${process.env.FRONTEND_URL}/login?error=twitter_oauth_failed` 
     })(req, res, next);
   },

@@ -34,17 +34,19 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['Set-Cookie']
 }));
 
 // Configure session middleware (required for Twitter OAuth)
 app.use(session({
   secret: process.env.JWT_SECRET,
-  resave: false,
-  saveUninitialized: false,
+  resave: true,
+  saveUninitialized: true,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    secure: false, // Set to false for both HTTP and HTTPS
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    httpOnly: true
   }
 }));
 
