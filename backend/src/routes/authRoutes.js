@@ -55,12 +55,41 @@ router.get(
 // Twitter OAuth routes
 router.get(
   '/twitter',
-  passport.authenticate('twitter', { includeEmail: true })
+  (req, res, next) => {
+    console.log('Starting Twitter OAuth flow...');
+    next();
+  },
+  passport.authenticate('twitter', { 
+    includeEmail: true 
+  })
 );
+
 router.get(
   '/twitter/callback',
-  passport.authenticate('twitter', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?error=oauth_failed` }),
-  twitterCallback
+  (req, res, next) => {
+    console.log('Twitter callback received');
+    passport.authenticate('twitter', { 
+      session: false, 
+      failureRedirect: `${process.env.FRONTEND_URL}/login?error=twitter_oauth_failed` 
+    })(req, res, next);
+  },
+  (req, res) => {
+    // Generate token
+    const token = req.user.getSignedJwtToken();
+    
+    // Check if onboarding is completed
+    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+    
+    // Log successful authentication
+    console.log('Twitter authentication successful:', {
+      userId: req.user.id,
+      email: req.user.email,
+      onboardingStatus
+    });
+    
+    // Redirect to frontend with token
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+  }
 );
 
 // Mock Twitter auth for development
