@@ -47,6 +47,25 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    lastOnboardingStep: {
+      type: String,
+      enum: [
+        'welcome', 
+        'team-selection', 
+        'team-workspace', 
+        'team-invite',
+        'theme-selection', 
+        'language-selection', 
+        'post-format', 
+        'post-frequency',
+        'extension',
+        'content-generation', 
+        'registration', 
+        'dashboard',
+        'initial'
+      ],
+      default: 'welcome'
+    },
     role: {
       type: String,
       enum: ['user', 'admin'],
