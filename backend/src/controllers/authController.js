@@ -460,8 +460,17 @@ const googleCallback = asyncHandler(async (req, res) => {
   // Generate token
   const token = req.user.getSignedJwtToken();
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  // Add user data in querystring to help the frontend display names
+  const userData = encodeURIComponent(JSON.stringify({
+    firstName: req.user.firstName,
+    lastName: req.user.lastName,
+    email: req.user.email,
+    profilePicture: req.user.profilePicture,
+    authMethod: 'google',
+  }));
+
+  // Redirect to frontend with token and user data
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}&userData=${userData}`);
 });
 
 // @desc    Twitter OAuth callback
@@ -471,8 +480,17 @@ const twitterCallback = asyncHandler(async (req, res) => {
   // Generate token
   const token = req.user.getSignedJwtToken();
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  // Add user data in querystring to help the frontend display names
+  const userData = encodeURIComponent(JSON.stringify({
+    firstName: req.user.firstName,
+    lastName: req.user.lastName,
+    email: req.user.email,
+    profilePicture: req.user.profilePicture,
+    authMethod: 'twitter',
+  }));
+
+  // Redirect to frontend with token and user data
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}&userData=${userData}`);
 });
 
 // @desc    Direct Twitter auth (for development)
