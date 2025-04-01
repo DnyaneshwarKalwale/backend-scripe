@@ -14,14 +14,22 @@ module.exports = (passport) => {
   passport.use(
     new JwtStrategy(opts, async (jwt_payload, done) => {
       try {
+        // Check if the JWT payload has an ID
+        if (!jwt_payload || !jwt_payload.id) {
+          console.error('JWT payload missing ID:', jwt_payload);
+          return done(null, false, { message: 'Invalid token payload' });
+        }
+        
         const user = await User.findById(jwt_payload.id);
         
         if (user) {
           return done(null, user);
+        } else {
+          console.error('User not found for ID:', jwt_payload.id);
+          return done(null, false, { message: 'User not found' });
         }
-        
-        return done(null, false);
       } catch (error) {
+        console.error('JWT authentication error:', error);
         return done(error, false);
       }
     })

@@ -55,12 +55,22 @@ const registerUser = asyncHandler(async (req, res) => {
     });
 
     if (user) {
+      console.log(`New user registered: ${email} (ID: ${user._id})`);
+      
       // Generate verification token
       const verificationToken = user.getEmailVerificationToken();
       await user.save();
 
-      // Create verification url
-      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+      // Create verification URL - using a default if FRONTEND_URL not properly set
+      let frontendUrl = process.env.FRONTEND_URL;
+      if (!frontendUrl || frontendUrl === '/') {
+        // Use a default URL or extract it from the request
+        frontendUrl = 'http://localhost:8080';
+        console.log('Using default frontend URL for verification email:', frontendUrl);
+      }
+      
+      const verificationUrl = `${frontendUrl}/verify-email/${verificationToken}`;
+      console.log('Verification URL:', verificationUrl);
 
       // Set default response
       const responseData = {
@@ -80,27 +90,39 @@ const registerUser = asyncHandler(async (req, res) => {
       let emailSent = false;
       try {
         // Check if email config is properly set
-        if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
-            process.env.EMAIL_PASSWORD === 'your_app_password' ||
-            !process.env.EMAIL_USERNAME ||
-            !process.env.EMAIL_PASSWORD) {
-          console.log('WARNING: Email service not properly configured. Skipping email sending.');
+        if (!process.env.EMAIL_USERNAME || 
+            !process.env.EMAIL_PASSWORD ||
+            process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
+            process.env.EMAIL_PASSWORD === 'your_app_password') {
+          console.log('WARNING: Email service not properly configured:');
+          console.log('- EMAIL_USERNAME:', process.env.EMAIL_USERNAME ? 'Set' : 'Not set');
+          console.log('- EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? 'Set' : 'Not set');
           responseData.warning = 'Email verification is disabled. Email service not configured.';
         } else {
           // Try to send the email
+          console.log(`Attempting to send verification email to ${email}`);
           await sendVerificationEmail(user, verificationUrl);
           emailSent = true;
           responseData.message = 'User registered. Please check your email to verify your account';
           console.log('Verification email sent successfully to:', email);
         }
       } catch (emailError) {
-        console.error('Failed to send verification email:', emailError);
+        console.error('Failed to send verification email:', emailError.message);
+        console.error('Error details:', emailError.stack);
         responseData.warning = 'Account created, but verification email could not be sent. Please contact support.';
       }
 
       // If email failed to send but we want to allow registration anyway
       if (!emailSent) {
         console.log('Proceeding with registration despite email issues');
+        // For development: auto-verify users if email sending fails
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Development mode: Auto-verifying user email');
+          user.isEmailVerified = true;
+          await user.save();
+          responseData.user.isEmailVerified = true;
+          responseData.warning = 'Development mode: Email auto-verified';
+        }
       }
 
       return res.status(201).json(responseData);
@@ -457,22 +479,64 @@ const resetPassword = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/google/callback
 // @access  Public
 const googleCallback = asyncHandler(async (req, res) => {
-  // Generate token
-  const token = req.user.getSignedJwtToken();
+  try {
+    // Check if user is available in the request
+    if (!req.user) {
+      console.error('Google callback: req.user is undefined');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication failed - user data not found'
+      });
+    }
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+    // Generate token
+    const token = req.user.getSignedJwtToken();
+
+    // Get the origin from request headers or use a default
+    const origin = req.headers.origin || req.headers.referer || 'http://localhost:8080';
+    
+    // Redirect to frontend with token
+    res.redirect(`${origin}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  } catch (error) {
+    console.error('Google callback error:', error);
+    res.status(500).json({
+      success: false, 
+      message: 'Server error during Google authentication',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 });
 
 // @desc    Twitter OAuth callback
 // @route   GET /api/auth/twitter/callback
 // @access  Public
 const twitterCallback = asyncHandler(async (req, res) => {
-  // Generate token
-  const token = req.user.getSignedJwtToken();
+  try {
+    // Check if user is available in the request
+    if (!req.user) {
+      console.error('Twitter callback: req.user is undefined');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication failed - user data not found'
+      });
+    }
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+    // Generate token
+    const token = req.user.getSignedJwtToken();
+
+    // Get the origin from request headers or use a default
+    const origin = req.headers.origin || req.headers.referer || 'http://localhost:8080';
+    
+    // Redirect to frontend with token
+    res.redirect(`${origin}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  } catch (error) {
+    console.error('Twitter callback error:', error);
+    res.status(500).json({
+      success: false, 
+      message: 'Server error during Twitter authentication',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 });
 
 // @desc    Direct Twitter auth (for development)
