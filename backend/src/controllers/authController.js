@@ -236,17 +236,45 @@ const resendVerification = asyncHandler(async (req, res) => {
     const verificationToken = user.getEmailVerificationToken();
     await user.save();
 
-    // Create verification url
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+    // Create verification URL - using a default if FRONTEND_URL not properly set
+    let frontendUrl = process.env.FRONTEND_URL;
+    if (!frontendUrl || frontendUrl === '/') {
+      // Use a default URL or extract it from the request
+      frontendUrl = 'http://localhost:8080';
+      console.log('Using default frontend URL for verification email:', frontendUrl);
+    }
+    
+    const verificationUrl = `${frontendUrl}/verify-email/${verificationToken}`;
+    console.log('Resending verification to:', email);
+    console.log('Verification URL:', verificationUrl);
 
     // Send verification email with better error handling
     try {
       // Check if email config is valid
-      if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
-          process.env.EMAIL_PASSWORD === 'your_app_password' ||
-          !process.env.EMAIL_USERNAME ||
-          !process.env.EMAIL_PASSWORD) {
-        console.log('WARNING: Email service not properly configured.');
+      if (!process.env.EMAIL_USERNAME || 
+          !process.env.EMAIL_PASSWORD ||
+          process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
+          process.env.EMAIL_PASSWORD === 'your_app_password') {
+        console.log('WARNING: Email service not properly configured:');
+        console.log('- EMAIL_USERNAME:', process.env.EMAIL_USERNAME ? 'Set' : 'Not set');
+        console.log('- EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? 'Set' : 'Not set');
+        
+        // For development: auto-verify users if email configuration is not set
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Development mode: Auto-verifying user email');
+          user.isEmailVerified = true;
+          await user.save();
+          
+          return res.status(200).json({
+            success: true,
+            message: 'Development mode: Email auto-verified',
+            user: {
+              id: user._id,
+              isEmailVerified: true
+            }
+          });
+        }
+        
         return res.status(200).json({
           success: true, 
           message: 'Email verification is currently disabled. Please contact support.',
@@ -254,13 +282,33 @@ const resendVerification = asyncHandler(async (req, res) => {
         });
       }
       
+      console.log(`Attempting to send verification email to ${email}`);
       await sendVerificationEmail(user, verificationUrl);
+      console.log('Verification email resent successfully to:', email);
+      
       return res.status(200).json({
         success: true,
-        message: 'Verification email resent',
+        message: 'Verification email resent. Please check your inbox.',
       });
     } catch (emailError) {
-      console.error('Failed to resend verification email:', emailError);
+      console.error('Failed to resend verification email:', emailError.message);
+      console.error('Error details:', emailError.stack);
+      
+      // For development: auto-verify users if email sending fails
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Development mode: Auto-verifying user email due to email sending failure');
+        user.isEmailVerified = true;
+        await user.save();
+        
+        return res.status(200).json({
+          success: true,
+          message: 'Development mode: Email auto-verified',
+          user: {
+            id: user._id,
+            isEmailVerified: true
+          }
+        });
+      }
       
       // Don't fail completely, but let the user know there was an issue
       return res.status(200).json({
