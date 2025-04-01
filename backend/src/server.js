@@ -4,12 +4,14 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const passport = require('passport');
 const session = require('express-session');
+const path = require('path');
 const { errorHandler } = require('./middleware/errorMiddleware');
 const { checkMongoConnection } = require('./utils/dbCheck');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const onboardingRoutes = require('./routes/onboardingRoutes');
 const teamRoutes = require('./routes/teamRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -72,11 +74,15 @@ passport.deserializeUser(async (id, done) => {
 
 require('./config/passport')(passport);
 
+// Serve static files from the uploads directory
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
