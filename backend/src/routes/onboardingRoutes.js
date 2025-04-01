@@ -6,7 +6,8 @@ const {
   updateTheme,
   updateLanguage,
   updatePostFormat,
-  updatePostFrequency
+  updatePostFrequency,
+  completeOnboarding
 } = require('../controllers/onboardingController');
 const { protect, checkEmailVerified } = require('../middleware/authMiddleware');
 
@@ -20,6 +21,9 @@ router.use(checkEmailVerified);
 router.route('/')
   .post(saveOnboarding)
   .get(getOnboarding);
+
+// Route to complete onboarding and go to dashboard
+router.post('/complete', completeOnboarding);
 
 router.put('/team-members', updateTeamMembers);
 router.put('/theme', updateTheme);
