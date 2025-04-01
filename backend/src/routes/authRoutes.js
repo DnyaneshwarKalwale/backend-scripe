@@ -21,7 +21,7 @@ router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.get('/me', protect, getMe);
 router.get('/verify-email/:token', verifyEmail);
-router.post('/resend-verification', resendVerification);
+router.post('/resend-verification', protect, resendVerification);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);
 
