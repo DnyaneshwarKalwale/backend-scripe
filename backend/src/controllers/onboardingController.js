@@ -14,18 +14,12 @@ const saveOnboarding = asyncHandler(async (req, res) => {
     language,
     postFormat,
     postFrequency,
-    lastOnboardingStep
   } = req.body;
 
-  // Validation for required fields based on what's provided
-  if (workspaceType === undefined && 
-      theme === undefined && 
-      language === undefined && 
-      postFormat === undefined && 
-      postFrequency === undefined &&
-      lastOnboardingStep === undefined) {
+  // Validation
+  if (!workspaceType) {
     res.status(400);
-    throw new Error('At least one onboarding field must be provided');
+    throw new Error('Workspace type is required');
   }
 
   // If team workspace, name is required
@@ -37,15 +31,9 @@ const saveOnboarding = asyncHandler(async (req, res) => {
   // Check if onboarding already exists for user
   let onboarding = await Onboarding.findOne({ user: req.user._id });
 
-  // Determine if this is the final step of onboarding
-  const isCompleted = lastOnboardingStep === 'dashboard' || 
-                      (postFrequency !== undefined && workspaceType !== undefined);
-
   if (onboarding) {
     // Update existing onboarding
-    if (workspaceType !== undefined) {
-      onboarding.workspaceType = workspaceType;
-    }
+    onboarding.workspaceType = workspaceType;
     
     if (workspaceName) {
       onboarding.workspaceName = workspaceName;
@@ -71,37 +59,23 @@ const saveOnboarding = asyncHandler(async (req, res) => {
       onboarding.postFrequency = postFrequency;
     }
 
-    // Always save the last step if provided
-    if (lastOnboardingStep) {
-      onboarding.lastOnboardingStep = lastOnboardingStep;
-    }
-
     await onboarding.save();
   } else {
     // Create new onboarding
     onboarding = await Onboarding.create({
       user: req.user._id,
-      workspaceType: workspaceType || null,
+      workspaceType,
       workspaceName: workspaceName || '',
       teamMembers: teamMembers || [],
       theme: theme || 'light',
       language: language || 'english',
-      postFormat: postFormat || null,
-      postFrequency: postFrequency || null,
-      lastOnboardingStep: lastOnboardingStep || 'welcome'
+      postFormat: postFormat || 'standard',
+      postFrequency: postFrequency || 2,
     });
   }
 
-  // Only update user's onboarding status if it's completed
-  if (isCompleted) {
-    await User.findByIdAndUpdate(req.user._id, { onboardingCompleted: true });
-  } else if (lastOnboardingStep) {
-    // Otherwise, update the lastOnboardingStep but don't mark as completed
-    await User.findByIdAndUpdate(req.user._id, { 
-      lastOnboardingStep: lastOnboardingStep,
-      onboardingCompleted: false
-    });
-  }
+  // Update user's onboarding status
+  await User.findByIdAndUpdate(req.user._id, { onboardingCompleted: true });
 
   res.status(200).json({
     success: true,

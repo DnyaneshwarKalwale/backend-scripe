@@ -165,8 +165,6 @@ const verifyEmail = asyncHandler(async (req, res) => {
         email: user.email,
         isEmailVerified: user.isEmailVerified,
         onboardingCompleted: user.onboardingCompleted,
-        lastOnboardingStep: user.lastOnboardingStep || 'welcome',
-        authMethod: user.authMethod,
       },
     });
   } catch (error) {
@@ -257,38 +255,6 @@ const resendVerification = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Check if email exists
-// @route   POST /api/auth/check-email
-// @access  Public
-const checkEmailExists = asyncHandler(async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
-    // Find user by email
-    const user = await User.findOne({ email });
-
-    // Return true if user exists, false otherwise
-    return res.status(200).json({
-      success: true,
-      exists: !!user
-    });
-  } catch (error) {
-    console.error('Error checking email existence:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error when checking email',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
@@ -337,8 +303,6 @@ const loginUser = asyncHandler(async (req, res) => {
         email: user.email,
         isEmailVerified: user.isEmailVerified,
         onboardingCompleted: user.onboardingCompleted,
-        lastOnboardingStep: user.lastOnboardingStep || 'welcome',
-        authMethod: user.authMethod,
       },
     });
   } catch (error) {
@@ -367,7 +331,6 @@ const getMe = asyncHandler(async (req, res) => {
       profilePicture: user.profilePicture,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
-      lastOnboardingStep: user.lastOnboardingStep || 'welcome',
       role: user.role,
       authMethod: user.authMethod,
     },
@@ -557,7 +520,6 @@ module.exports = {
   registerUser,
   verifyEmail,
   resendVerification,
-  checkEmailExists,
   loginUser,
   getMe,
   forgotPassword,

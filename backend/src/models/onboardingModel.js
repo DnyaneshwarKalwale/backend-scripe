@@ -52,22 +52,6 @@ const onboardingSchema = mongoose.Schema(
       max: 7,
       default: 2,
     },
-    lastOnboardingStep: {
-      type: String,
-      enum: [
-        'welcome', 
-        'team-selection', 
-        'team-workspace', 
-        'team-invite',
-        'theme-selection', 
-        'language-selection', 
-        'post-format', 
-        'post-frequency', 
-        'registration', 
-        'dashboard'
-      ],
-      default: 'welcome'
-    },
   },
   {
     timestamps: true,
