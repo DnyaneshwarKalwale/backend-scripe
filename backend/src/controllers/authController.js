@@ -9,112 +9,91 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emai
 
 // @desc    Register user with email
 const registerUser = asyncHandler(async (req, res) => {
-  const { firstName, lastName, email, password } = req.body;
+  try {
+    const { firstName, lastName, email, password } = req.body;
 
-  // Validation
-  if (!firstName || !lastName || !email || !password) {
-    res.status(400);
-    throw new Error('Please provide all required fields: first name, last name, email, and password');
-  }
+    // Validation
+    if (!firstName || !lastName || !email || !password) {
+      res.status(400);
+      throw new Error('Please provide all required fields: first name, last name, email, and password');
+    }
 
-  // Email validation
-  const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
-  if (!emailRegex.test(email)) {
-    res.status(400);
-    throw new Error('Please provide a valid email address');
-  }
+    // Email validation
+    const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400);
+      throw new Error('Please provide a valid email address');
+    }
 
-  // Password validation (at least 8 characters)
-  if (password.length < 8) {
-    res.status(400);
-    throw new Error('Password must be at least 8 characters long');
-  }
+    // Password validation (at least 8 characters)
+    if (password.length < 8) {
+      res.status(400);
+      throw new Error('Password must be at least 8 characters long');
+    }
 
-  // Check if user exists
-  const userExists = await User.findOne({ email });
+    // Check if user exists
+    const userExists = await User.findOne({ email });
 
-  if (userExists) {
-    res.status(400);
-    throw new Error('User already exists');
-  }
+    if (userExists) {
+      res.status(400);
+      throw new Error('User already exists');
+    }
 
-  // Create user
-  const user = await User.create({
-    firstName,
-    lastName,
-    email,
-    password,
-    authMethod: 'email',
-  });
+    // Create user
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      authMethod: 'email',
+    });
 
-  if (user) {
-    // Generate verification token
-    const verificationToken = user.getEmailVerificationToken();
-    await user.save();
+    if (user) {
+      // Generate verification token
+      const verificationToken = user.getEmailVerificationToken();
+      await user.save();
 
-    // Create verification url
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+      // Create verification url
+      const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-    // Send verification email
-    try {
-      // Check if email config is properly set
+      // Set default response
+      const responseData = {
+        success: true,
+        message: 'User registered successfully',
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          isEmailVerified: user.isEmailVerified,
+          onboardingCompleted: user.onboardingCompleted,
+        }
+      };
+
+      // Try to send verification email if properly configured
       if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
           process.env.EMAIL_PASSWORD === 'your_app_password') {
         console.log('WARNING: Email service not properly configured. Skipping email sending.');
-        // Still return success but with a warning
-        return res.status(201).json({
-          success: true,
-          message: 'User registered. Email verification is disabled in development mode.',
-          warning: 'Email service not properly configured',
-          user: {
-            id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            isEmailVerified: user.isEmailVerified,
-            onboardingCompleted: user.onboardingCompleted,
-          },
-        });
+        responseData.warning = 'Email verification is disabled in development mode. Email service not configured.';
+      } else {
+        try {
+          await sendVerificationEmail(user, verificationUrl);
+          responseData.message = 'User registered. Please check your email to verify your account';
+        } catch (error) {
+          console.error('Email sending error:', error);
+          responseData.warning = 'Verification email could not be sent. Please contact support.';
+        }
       }
-    
-      await sendVerificationEmail(user, verificationUrl);
 
-      res.status(201).json({
-        success: true,
-        message: 'User registered. Please check your email to verify your account',
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          isEmailVerified: user.isEmailVerified,
-          onboardingCompleted: user.onboardingCompleted,
-        },
-      });
-    } catch (error) {
-      console.error('Email sending error:', error);
-      user.emailVerificationToken = undefined;
-      user.emailVerificationExpire = undefined;
-      await user.save();
-
-      // Return success even if email fails, but with a warning
-      res.status(201).json({
-        success: true,
-        message: 'User registered successfully, but verification email could not be sent',
-        warning: 'Verification email could not be sent. Please contact support.',
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          isEmailVerified: user.isEmailVerified,
-          onboardingCompleted: user.onboardingCompleted,
-        },
-      });
+      return res.status(201).json(responseData);
+    } else {
+      res.status(400);
+      throw new Error('Invalid user data');
     }
-  } else {
-    res.status(400);
-    throw new Error('Invalid user data');
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(error.statusCode || 500);
+    throw error;
   }
 });
 
