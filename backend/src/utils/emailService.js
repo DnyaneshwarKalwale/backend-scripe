@@ -4,7 +4,6 @@ const sendEmail = async (options) => {
   try {
     // Create a more detailed log of the attempt
     console.log('Attempting to send email to:', options.to);
-    console.log('Email subject:', options.subject);
     
     // First check if we're using placeholder/default credentials
     if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
@@ -21,16 +20,9 @@ const sendEmail = async (options) => {
     const username = process.env.EMAIL_USERNAME?.trim();
     
     if (!username || !password) {
-      console.error('Email credentials missing or invalid');
-      console.error('Username is set:', !!username);
-      console.error('Password is set:', !!password);
+      console.log('Email credentials missing or invalid');
       return Promise.resolve(); // Continue without failing
     }
-
-    console.log('Email configuration:');
-    console.log('- Service:', process.env.EMAIL_SERVICE || 'gmail');
-    console.log('- Username:', username);
-    console.log('- Password length:', password ? password.length : 0);
 
     // Create transporter with more robust config
     const transporter = nodemailer.createTransport({
@@ -41,19 +33,8 @@ const sendEmail = async (options) => {
       },
       tls: {
         rejectUnauthorized: false // Helps with some certificate issues
-      },
-      debug: process.env.NODE_ENV === 'development' // Enable debug in development
+      }
     });
-
-    // Verify transporter configuration
-    console.log('Verifying email transporter configuration...');
-    try {
-      await transporter.verify();
-      console.log('Email transporter verified successfully!');
-    } catch (verifyError) {
-      console.error('Email transporter verification failed:', verifyError.message);
-      console.error('This may indicate issues with your email service configuration');
-    }
 
     // Mail options
     const mailOptions = {
@@ -67,20 +48,11 @@ const sendEmail = async (options) => {
     console.log('Sending email with nodemailer...');
     const info = await transporter.sendMail(mailOptions);
     console.log('Email sent successfully:', info.messageId);
-    console.log('Response:', info.response);
     return info;
   } catch (error) {
     // Log error details without failing
     console.error('Email sending failed with error:', error.message);
-    console.error('Error details:', JSON.stringify(error, null, 2));
-    
-    if (error.code === 'EAUTH') {
-      console.error('Authentication error - check your email credentials');
-    } else if (error.code === 'ESOCKET') {
-      console.error('Socket error - check your network connection');
-    } else if (error.code === 'ECONNECTION') {
-      console.error('Connection error - check your email service settings');
-    }
+    console.error('Error details:', JSON.stringify(error));
     
     // Don't throw the error, just log it and continue
     return Promise.resolve();

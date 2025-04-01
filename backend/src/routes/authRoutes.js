@@ -33,12 +33,12 @@ router.put('/reset-password/:token', resetPassword);
 
 // OAuth routes
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-router.get('/google/callback', passport.authenticate('google', { session: false, failureRedirect: '/' }), googleCallback);
+router.get('/google/callback', googleCallback);
 
-router.get('/twitter', passport.authenticate('twitter', { session: false }));
-router.get('/twitter/callback', passport.authenticate('twitter', { session: false, failureRedirect: '/' }), twitterCallback);
+router.get('/twitter', passport.authenticate('twitter'));
+router.get('/twitter/callback', twitterCallback);
 
-// Direct API-based Twitter auth
+// Direct Twitter auth for development
 router.post('/twitter-auth', twitterAuth);
 
 // Mock Twitter auth callback for development
