@@ -11,8 +11,7 @@ const {
   googleCallback,
   twitterCallback,
   twitterAuth,
-  checkEmailExists,
-  updateUser
+  checkEmailExists
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -25,7 +24,6 @@ router.get('/me', protect, getMe);
 router.get('/verify-email/:token', verifyEmail);
 router.post('/resend-verification', resendVerification);
 router.post('/check-email', checkEmailExists);
-router.put('/update-user', protect, updateUser);
 
 // Password reset
 router.post('/forgot-password', forgotPassword);

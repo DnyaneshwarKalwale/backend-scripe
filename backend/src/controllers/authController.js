@@ -553,62 +553,6 @@ const twitterAuth = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Update user data
-// @route   PUT /api/auth/update-user
-// @access  Private
-const updateUser = asyncHandler(async (req, res) => {
-  try {
-    const { 
-      firstName, 
-      lastName, 
-      profilePicture, 
-      onboardingCompleted, 
-      lastOnboardingStep 
-    } = req.body;
-
-    const user = await User.findById(req.user._id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Update fields if provided
-    if (firstName !== undefined) user.firstName = firstName;
-    if (lastName !== undefined) user.lastName = lastName;
-    if (profilePicture !== undefined) user.profilePicture = profilePicture;
-    if (onboardingCompleted !== undefined) user.onboardingCompleted = onboardingCompleted;
-    if (lastOnboardingStep !== undefined) user.lastOnboardingStep = lastOnboardingStep;
-
-    // Save updated user
-    const updatedUser = await user.save();
-
-    return res.status(200).json({
-      success: true,
-      user: {
-        id: updatedUser._id,
-        firstName: updatedUser.firstName,
-        lastName: updatedUser.lastName,
-        email: updatedUser.email,
-        profilePicture: updatedUser.profilePicture,
-        isEmailVerified: updatedUser.isEmailVerified,
-        onboardingCompleted: updatedUser.onboardingCompleted,
-        lastOnboardingStep: updatedUser.lastOnboardingStep,
-        authMethod: updatedUser.authMethod,
-      }
-    });
-  } catch (error) {
-    console.error('Error updating user:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error during user update',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 module.exports = {
   registerUser,
   verifyEmail,
@@ -621,5 +565,4 @@ module.exports = {
   googleCallback,
   twitterCallback,
   twitterAuth,
-  updateUser,
 }; 

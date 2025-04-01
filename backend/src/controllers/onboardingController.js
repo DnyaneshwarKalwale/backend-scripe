@@ -38,10 +38,8 @@ const saveOnboarding = asyncHandler(async (req, res) => {
   let onboarding = await Onboarding.findOne({ user: req.user._id });
 
   // Determine if this is the final step of onboarding
-  // If lastOnboardingStep is 'dashboard', it means user has completed the onboarding process
-  // or if user has explicitly clicked "Go to dashboard" from the content-generation page
   const isCompleted = lastOnboardingStep === 'dashboard' || 
-                      (lastOnboardingStep === 'content-generation' && req.body.onboardingCompleted === true);
+                      (postFrequency !== undefined && workspaceType !== undefined);
 
   if (onboarding) {
     // Update existing onboarding
@@ -96,11 +94,7 @@ const saveOnboarding = asyncHandler(async (req, res) => {
 
   // Only update user's onboarding status if it's completed
   if (isCompleted) {
-    // When onboarding is completed, update user model
-    await User.findByIdAndUpdate(req.user._id, { 
-      onboardingCompleted: true,
-      lastOnboardingStep: 'dashboard'  // Ensure lastOnboardingStep is set to dashboard
-    });
+    await User.findByIdAndUpdate(req.user._id, { onboardingCompleted: true });
   } else if (lastOnboardingStep) {
     // Otherwise, update the lastOnboardingStep but don't mark as completed
     await User.findByIdAndUpdate(req.user._id, { 
@@ -273,39 +267,6 @@ const updatePostFrequency = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Complete onboarding and skip to dashboard
-// @route   POST /api/onboarding/complete
-// @access  Private
-const completeOnboarding = asyncHandler(async (req, res) => {
-  try {
-    // Mark onboarding as completed in the User model
-    await User.findByIdAndUpdate(req.user._id, { 
-      onboardingCompleted: true,
-      lastOnboardingStep: 'dashboard'
-    });
-
-    // Also update the onboarding record if it exists
-    const onboarding = await Onboarding.findOne({ user: req.user._id });
-    if (onboarding) {
-      onboarding.lastOnboardingStep = 'dashboard';
-      await onboarding.save();
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Onboarding completed successfully',
-      redirectTo: '/dashboard'
-    });
-  } catch (error) {
-    console.error('Error completing onboarding:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while completing onboarding',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 module.exports = {
   saveOnboarding,
   getOnboarding,
@@ -314,5 +275,4 @@ module.exports = {
   updateLanguage,
   updatePostFormat,
   updatePostFrequency,
-  completeOnboarding
 }; 

@@ -58,10 +58,6 @@ const userSchema = mongoose.Schema(
         'language-selection', 
         'post-format', 
         'post-frequency', 
-        'extension-download',
-        'profile-input',
-        'completed',
-        'content-generation',
         'registration', 
         'dashboard',
         'initial'

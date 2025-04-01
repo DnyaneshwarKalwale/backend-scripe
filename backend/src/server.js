@@ -19,34 +19,40 @@ connectDB();
 // Initialize express app
 const app = express();
 
-// Body parser middleware
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// CORS configuration
+// Configure CORS with more options
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
+  origin: [
+    'http://localhost:8080', 
+    'http://localhost:8081', 
+    'https://ea50-43-224-158-115.ngrok-free.app',
+    'https://18cd-43-224-158-115.ngrok-free.app',
+    'https://deluxe-cassata-51d628.netlify.app'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['Set-Cookie']
 }));
 
-// Session configuration
+// Configure session middleware (required for Twitter OAuth)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  secret: process.env.JWT_SECRET,
+  resave: true,
+  saveUninitialized: true,
+  cookie: { 
+    secure: false, // Set to false for both HTTP and HTTPS
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    httpOnly: true
   }
 }));
 
 // Initialize passport
 app.use(passport.initialize());
 app.use(passport.session());
-
-// Passport configuration
-require('./config/passport')(passport);
 
 // Passport session setup
 passport.serializeUser((user, done) => {
@@ -63,6 +69,8 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+require('./config/passport')(passport);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -70,27 +78,19 @@ app.use('/api/onboarding', onboardingRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
-  try {
-    const dbStatus = await checkMongoConnection();
-    res.json({
-      status: 'ok',
-      database: dbStatus,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+  const dbConnected = await checkMongoConnection();
+  
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'Scripe API is running',
+    database: dbConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Error handling middleware
+// Error handler middleware
 app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-}); 
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
