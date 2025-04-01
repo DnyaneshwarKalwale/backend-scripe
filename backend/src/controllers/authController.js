@@ -57,6 +57,26 @@ const registerUser = asyncHandler(async (req, res) => {
 
     // Send verification email
     try {
+      // Check if email config is properly set
+      if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
+          process.env.EMAIL_PASSWORD === 'your_app_password') {
+        console.log('WARNING: Email service not properly configured. Skipping email sending.');
+        // Still return success but with a warning
+        return res.status(201).json({
+          success: true,
+          message: 'User registered. Email verification is disabled in development mode.',
+          warning: 'Email service not properly configured',
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            isEmailVerified: user.isEmailVerified,
+            onboardingCompleted: user.onboardingCompleted,
+          },
+        });
+      }
+    
       await sendVerificationEmail(user, verificationUrl);
 
       res.status(201).json({
@@ -77,8 +97,20 @@ const registerUser = asyncHandler(async (req, res) => {
       user.emailVerificationExpire = undefined;
       await user.save();
 
-      res.status(500);
-      throw new Error('Email could not be sent. Please try again later.');
+      // Return success even if email fails, but with a warning
+      res.status(201).json({
+        success: true,
+        message: 'User registered successfully, but verification email could not be sent',
+        warning: 'Verification email could not be sent. Please contact support.',
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          isEmailVerified: user.isEmailVerified,
+          onboardingCompleted: user.onboardingCompleted,
+        },
+      });
     }
   } else {
     res.status(400);
