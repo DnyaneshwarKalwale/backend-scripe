@@ -9,7 +9,6 @@ const { checkMongoConnection } = require('./utils/dbCheck');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const onboardingRoutes = require('./routes/onboardingRoutes');
-const workspaceRoutes = require('./routes/workspaceRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -76,7 +75,6 @@ require('./config/passport')(passport);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/onboarding', onboardingRoutes);
-app.use('/api/workspace', workspaceRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
