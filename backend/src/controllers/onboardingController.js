@@ -241,6 +241,20 @@ const updatePostFrequency = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Complete onboarding and redirect to dashboard
+// @route   POST /api/onboarding/complete
+// @access  Private
+const completeOnboarding = asyncHandler(async (req, res) => {
+  // Update user's onboarding status
+  await User.findByIdAndUpdate(req.user._id, { onboardingCompleted: true });
+
+  res.status(200).json({
+    success: true,
+    message: 'Onboarding completed successfully',
+    redirectTo: '/dashboard'
+  });
+});
+
 module.exports = {
   saveOnboarding,
   getOnboarding,
@@ -249,4 +263,5 @@ module.exports = {
   updateLanguage,
   updatePostFormat,
   updatePostFrequency,
+  completeOnboarding
 }; 
