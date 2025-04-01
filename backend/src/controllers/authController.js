@@ -6,37 +6,43 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emai
 // @desc    Register user with email
 // @route   POST /api/auth/register
 // @access  Public
-
-// @desc    Register user with email
 const registerUser = asyncHandler(async (req, res) => {
   try {
     const { firstName, lastName, email, password } = req.body;
 
     // Validation
     if (!firstName || !lastName || !email || !password) {
-      res.status(400);
-      throw new Error('Please provide all required fields: first name, last name, email, and password');
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields: first name, last name, email, and password'
+      });
     }
 
     // Email validation
     const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
     if (!emailRegex.test(email)) {
-      res.status(400);
-      throw new Error('Please provide a valid email address');
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
     }
 
     // Password validation (at least 8 characters)
     if (password.length < 8) {
-      res.status(400);
-      throw new Error('Password must be at least 8 characters long');
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters long'
+      });
     }
 
     // Check if user exists
     const userExists = await User.findOne({ email });
 
     if (userExists) {
-      res.status(400);
-      throw new Error('User already exists');
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists'
+      });
     }
 
     // Create user
@@ -70,30 +76,48 @@ const registerUser = asyncHandler(async (req, res) => {
         }
       };
 
-      // Try to send verification email if properly configured
-      if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
-          process.env.EMAIL_PASSWORD === 'your_app_password') {
-        console.log('WARNING: Email service not properly configured. Skipping email sending.');
-        responseData.warning = 'Email verification is disabled in development mode. Email service not configured.';
-      } else {
-        try {
+      // Try to send verification email
+      let emailSent = false;
+      try {
+        // Check if email config is properly set
+        if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
+            process.env.EMAIL_PASSWORD === 'your_app_password' ||
+            !process.env.EMAIL_USERNAME ||
+            !process.env.EMAIL_PASSWORD) {
+          console.log('WARNING: Email service not properly configured. Skipping email sending.');
+          responseData.warning = 'Email verification is disabled. Email service not configured.';
+        } else {
+          // Try to send the email
           await sendVerificationEmail(user, verificationUrl);
+          emailSent = true;
           responseData.message = 'User registered. Please check your email to verify your account';
-        } catch (error) {
-          console.error('Email sending error:', error);
-          responseData.warning = 'Verification email could not be sent. Please contact support.';
+          console.log('Verification email sent successfully to:', email);
         }
+      } catch (emailError) {
+        console.error('Failed to send verification email:', emailError);
+        responseData.warning = 'Account created, but verification email could not be sent. Please contact support.';
+      }
+
+      // If email failed to send but we want to allow registration anyway
+      if (!emailSent) {
+        console.log('Proceeding with registration despite email issues');
       }
 
       return res.status(201).json(responseData);
     } else {
-      res.status(400);
-      throw new Error('Invalid user data');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user data'
+      });
     }
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(error.statusCode || 500);
-    throw error;
+    // Ensure we always return a proper response, never throw
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during registration. Please try again later.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -101,93 +125,133 @@ const registerUser = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/verify-email/:token
 // @access  Public
 const verifyEmail = asyncHandler(async (req, res) => {
-  // Get hashed token
-  const emailVerificationToken = crypto
-    .createHash('sha256')
-    .update(req.params.token)
-    .digest('hex');
+  try {
+    // Get hashed token
+    const emailVerificationToken = crypto
+      .createHash('sha256')
+      .update(req.params.token)
+      .digest('hex');
 
-  // Find user
-  const user = await User.findOne({
-    emailVerificationToken,
-    emailVerificationExpire: { $gt: Date.now() },
-  });
+    // Find user
+    const user = await User.findOne({
+      emailVerificationToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
 
-  if (!user) {
-    res.status(400);
-    throw new Error('Invalid or expired token');
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+
+    // Verify email
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    await user.save();
+
+    // Generate token
+    const token = user.getSignedJwtToken();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email verified successfully',
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: user.isEmailVerified,
+        onboardingCompleted: user.onboardingCompleted,
+      },
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during email verification',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-
-  // Verify email
-  user.isEmailVerified = true;
-  user.emailVerificationToken = undefined;
-  user.emailVerificationExpire = undefined;
-  await user.save();
-
-  // Generate token
-  const token = user.getSignedJwtToken();
-
-  res.status(200).json({
-    success: true,
-    message: 'Email verified successfully',
-    token,
-    user: {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      isEmailVerified: user.isEmailVerified,
-      onboardingCompleted: user.onboardingCompleted,
-    },
-  });
 });
 
 // @desc    Resend verification email
 // @route   POST /api/auth/resend-verification
 // @access  Public
 const resendVerification = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    res.status(400);
-    throw new Error('Email is required');
-  }
-
-  // Find user by email
-  const user = await User.findOne({ email });
-
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  if (user.isEmailVerified) {
-    res.status(400);
-    throw new Error('Email already verified');
-  }
-
-  // Generate verification token
-  const verificationToken = user.getEmailVerificationToken();
-  await user.save();
-
-  // Create verification url
-  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-
-  // Send verification email
   try {
-    await sendVerificationEmail(user, verificationUrl);
+    const { email } = req.body;
 
-    res.status(200).json({
-      success: true,
-      message: 'Verification email resent',
-    });
-  } catch (error) {
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpire = undefined;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already verified'
+      });
+    }
+
+    // Generate verification token
+    const verificationToken = user.getEmailVerificationToken();
     await user.save();
 
-    res.status(500);
-    throw new Error('Email could not be sent');
+    // Create verification url
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+
+    // Send verification email with better error handling
+    try {
+      // Check if email config is valid
+      if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
+          process.env.EMAIL_PASSWORD === 'your_app_password' ||
+          !process.env.EMAIL_USERNAME ||
+          !process.env.EMAIL_PASSWORD) {
+        console.log('WARNING: Email service not properly configured.');
+        return res.status(200).json({
+          success: true, 
+          message: 'Email verification is currently disabled. Please contact support.',
+          warning: 'Email service not configured'
+        });
+      }
+      
+      await sendVerificationEmail(user, verificationUrl);
+      return res.status(200).json({
+        success: true,
+        message: 'Verification email resent',
+      });
+    } catch (emailError) {
+      console.error('Failed to resend verification email:', emailError);
+      
+      // Don't fail completely, but let the user know there was an issue
+      return res.status(200).json({
+        success: true,
+        message: 'Requested verification email, but could not send due to technical issues',
+        warning: 'Verification email could not be sent'
+      });
+    }
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while trying to resend verification',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

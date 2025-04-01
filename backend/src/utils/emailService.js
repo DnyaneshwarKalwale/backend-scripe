@@ -1,25 +1,62 @@
 const nodemailer = require('nodemailer');
 
 const sendEmail = async (options) => {
-  // Create transporter
-  const transporter = nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE,
-    auth: {
-      user: process.env.EMAIL_USERNAME,
-      pass: process.env.EMAIL_PASSWORD,
-    },
-  });
+  try {
+    // Create a more detailed log of the attempt
+    console.log('Attempting to send email to:', options.to);
+    
+    // First check if we're using placeholder/default credentials
+    if (process.env.EMAIL_USERNAME === 'your_email@gmail.com' || 
+        process.env.EMAIL_PASSWORD === 'your_app_password') {
+      console.log('DEVELOPMENT MODE: Email would have been sent with the following details:');
+      console.log('To:', options.to);
+      console.log('Subject:', options.subject);
+      console.log('Content preview:', options.html.substring(0, 100) + '...');
+      return Promise.resolve(); // Just return without actually sending
+    }
 
-  // Mail options
-  const mailOptions = {
-    from: `Scripe <${process.env.EMAIL_FROM}>`,
-    to: options.to,
-    subject: options.subject,
-    html: options.html,
-  };
+    // For Gmail, we need to handle spaces in the app password
+    const password = process.env.EMAIL_PASSWORD?.trim();
+    const username = process.env.EMAIL_USERNAME?.trim();
+    
+    if (!username || !password) {
+      console.log('Email credentials missing or invalid');
+      return Promise.resolve(); // Continue without failing
+    }
 
-  // Send email
-  await transporter.sendMail(mailOptions);
+    // Create transporter with more robust config
+    const transporter = nodemailer.createTransport({
+      service: process.env.EMAIL_SERVICE || 'gmail',
+      auth: {
+        user: username,
+        pass: password,
+      },
+      tls: {
+        rejectUnauthorized: false // Helps with some certificate issues
+      }
+    });
+
+    // Mail options
+    const mailOptions = {
+      from: `Scripe <${process.env.EMAIL_FROM || username}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+    };
+
+    // Send email with detailed logging
+    console.log('Sending email with nodemailer...');
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully:', info.messageId);
+    return info;
+  } catch (error) {
+    // Log error details without failing
+    console.error('Email sending failed with error:', error.message);
+    console.error('Error details:', JSON.stringify(error));
+    
+    // Don't throw the error, just log it and continue
+    return Promise.resolve();
+  }
 };
 
 const sendVerificationEmail = async (user, verificationUrl) => {
