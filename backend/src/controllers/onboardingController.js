@@ -255,6 +255,47 @@ const completeOnboarding = asyncHandler(async (req, res) => {
   });
 });
 
+const updateExtensionStatus = asyncHandler(async (req, res) => {
+  const { hasExtension } = req.body;
+  const userId = req.user._id;
+
+  const onboarding = await Onboarding.findOne({ user: userId });
+  if (!onboarding) {
+    res.status(404);
+    throw new Error('Onboarding not found');
+  }
+
+  onboarding.hasExtension = hasExtension;
+  await onboarding.save();
+
+  res.status(200).json({ success: true, data: onboarding });
+});
+
+const generateInitialContent = asyncHandler(async (req, res) => {
+  const { youtubeLink, file } = req.body;
+  const userId = req.user._id;
+
+  // Handle content generation based on input type
+  let generatedContent;
+  if (youtubeLink) {
+    // Process YouTube link
+    generatedContent = await processYoutubeLink(youtubeLink);
+  } else if (file) {
+    // Process uploaded file
+    generatedContent = await processUploadedFile(file);
+  } else {
+    res.status(400);
+    throw new Error('Please provide either a YouTube link or a file');
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      content: generatedContent
+    }
+  });
+});
+
 module.exports = {
   saveOnboarding,
   getOnboarding,
@@ -263,5 +304,7 @@ module.exports = {
   updateLanguage,
   updatePostFormat,
   updatePostFrequency,
-  completeOnboarding
+  completeOnboarding,
+  updateExtensionStatus,
+  generateInitialContent
 }; 

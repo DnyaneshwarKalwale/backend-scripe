@@ -7,7 +7,9 @@ const {
   updateLanguage,
   updatePostFormat,
   updatePostFrequency,
-  completeOnboarding
+  completeOnboarding,
+  updateExtensionStatus,
+  generateInitialContent
 } = require('../controllers/onboardingController');
 const { protect, checkEmailVerified } = require('../middleware/authMiddleware');
 
@@ -30,5 +32,9 @@ router.put('/theme', updateTheme);
 router.put('/language', updateLanguage);
 router.put('/post-format', updatePostFormat);
 router.put('/post-frequency', updatePostFrequency);
+
+// New routes for extension and content generation
+router.put('/extension-status', updateExtensionStatus);
+router.post('/generate-content', generateInitialContent);
 
 module.exports = router; 
