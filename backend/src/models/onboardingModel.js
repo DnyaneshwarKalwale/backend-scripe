@@ -7,6 +7,24 @@ const onboardingSchema = mongoose.Schema(
       required: true,
       ref: 'User',
     },
+    currentStep: {
+      type: String,
+      enum: [
+        'welcome',
+        'team-selection',
+        'team-workspace',
+        'team-invite',
+        'theme-selection',
+        'language-selection',
+        'post-format',
+        'post-frequency',
+        'registration',
+        'extension-install',
+        'completion',
+        'dashboard'
+      ],
+      default: 'welcome'
+    },
     workspaceType: {
       type: String,
       enum: ['team', 'personal'],
@@ -52,6 +70,18 @@ const onboardingSchema = mongoose.Schema(
       max: 7,
       default: 2,
     },
+    firstName: {
+      type: String,
+      default: ''
+    },
+    lastName: {
+      type: String,
+      default: ''
+    },
+    email: {
+      type: String,
+      default: ''
+    }
   },
   {
     timestamps: true,

@@ -6,80 +6,28 @@ const Onboarding = require('../models/onboardingModel');
 // @route   POST /api/onboarding
 // @access  Private
 const saveOnboarding = asyncHandler(async (req, res) => {
-  const {
-    workspaceType,
-    workspaceName,
-    teamMembers,
-    theme,
-    language,
-    postFormat,
-    postFrequency,
-  } = req.body;
+  const userId = req.user._id;
 
-  // Validation
-  if (!workspaceType) {
-    res.status(400);
-    throw new Error('Workspace type is required');
-  }
-
-  // If team workspace, name is required
-  if (workspaceType === 'team' && !workspaceName) {
-    res.status(400);
-    throw new Error('Workspace name is required for team workspaces');
-  }
-
-  // Check if onboarding already exists for user
-  let onboarding = await Onboarding.findOne({ user: req.user._id });
-
-  if (onboarding) {
-    // Update existing onboarding
-    onboarding.workspaceType = workspaceType;
-    
-    if (workspaceName) {
-      onboarding.workspaceName = workspaceName;
-    }
-    
-    if (teamMembers && teamMembers.length > 0) {
-      onboarding.teamMembers = teamMembers;
-    }
-    
-    if (theme) {
-      onboarding.theme = theme;
-    }
-    
-    if (language) {
-      onboarding.language = language;
-    }
-    
-    if (postFormat) {
-      onboarding.postFormat = postFormat;
-    }
-    
-    if (postFrequency) {
-      onboarding.postFrequency = postFrequency;
-    }
-
-    await onboarding.save();
+  // Find the existing onboarding record or create a new one
+  let onboarding = await Onboarding.findOne({ user: userId });
+  
+  if (!onboarding) {
+    onboarding = new Onboarding({
+      user: userId,
+      ...req.body
+    });
   } else {
-    // Create new onboarding
-    onboarding = await Onboarding.create({
-      user: req.user._id,
-      workspaceType,
-      workspaceName: workspaceName || '',
-      teamMembers: teamMembers || [],
-      theme: theme || 'light',
-      language: language || 'english',
-      postFormat: postFormat || 'standard',
-      postFrequency: postFrequency || 2,
+    // Update all fields sent in the request
+    Object.keys(req.body).forEach(key => {
+      onboarding[key] = req.body[key];
     });
   }
-
-  // Update user's onboarding status
-  await User.findByIdAndUpdate(req.user._id, { onboardingCompleted: true });
-
+  
+  await onboarding.save();
+  
   res.status(200).json({
     success: true,
-    data: onboarding,
+    data: onboarding
   });
 });
 
@@ -87,16 +35,20 @@ const saveOnboarding = asyncHandler(async (req, res) => {
 // @route   GET /api/onboarding
 // @access  Private
 const getOnboarding = asyncHandler(async (req, res) => {
-  const onboarding = await Onboarding.findOne({ user: req.user._id });
-
+  const userId = req.user._id;
+  
+  const onboarding = await Onboarding.findOne({ user: userId });
+  
   if (!onboarding) {
-    res.status(404);
-    throw new Error('Onboarding not found');
+    return res.status(200).json({
+      success: true,
+      data: null
+    });
   }
-
+  
   res.status(200).json({
     success: true,
-    data: onboarding,
+    data: onboarding
   });
 });
 
