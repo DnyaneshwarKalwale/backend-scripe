@@ -76,8 +76,36 @@ const sendPasswordResetEmail = async (user, resetUrl) => {
   });
 };
 
+const sendTeamInvitationEmail = async (invitation, teamName, inviter, inviteUrl) => {
+  const subject = `You've been invited to join ${teamName} on Scripe`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #6200ea;">Team Invitation</h1>
+      </div>
+      <p>Hi there,</p>
+      <p>${inviter.firstName} ${inviter.lastName} has invited you to join their team "${teamName}" on Scripe.</p>
+      <p>You've been invited as a <strong>${invitation.role}</strong>.</p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${inviteUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Accept Invitation</a>
+      </div>
+      <p>If the button above doesn't work, please copy and paste the following link into your browser:</p>
+      <p>${inviteUrl}</p>
+      <p>This invitation will expire in 7 days.</p>
+      <p>Best regards,<br>The Scripe Team</p>
+    </div>
+  `;
+
+  await sendEmail({
+    to: invitation.email,
+    subject,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
+  sendTeamInvitationEmail,
 }; 
