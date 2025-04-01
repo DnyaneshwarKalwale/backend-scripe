@@ -259,39 +259,60 @@ const resendVerification = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
+    
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide both email and password'
+      });
+    }
 
-  // Check for user
-  const user = await User.findOne({ email });
+    // Check for user
+    const user = await User.findOne({ email });
 
-  if (!user) {
-    res.status(401);
-    throw new Error('Invalid credentials');
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if password matches
+    const isMatch = await user.matchPassword(password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Generate token
+    const token = user.getSignedJwtToken();
+
+    return res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: user.isEmailVerified,
+        onboardingCompleted: user.onboardingCompleted,
+      },
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during login',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-
-  // Check if password matches
-  const isMatch = await user.matchPassword(password);
-
-  if (!isMatch) {
-    res.status(401);
-    throw new Error('Invalid credentials');
-  }
-
-  // Generate token
-  const token = user.getSignedJwtToken();
-
-  res.status(200).json({
-    success: true,
-    token,
-    user: {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      isEmailVerified: user.isEmailVerified,
-      onboardingCompleted: user.onboardingCompleted,
-    },
-  });
 });
 
 // @desc    Get current user
