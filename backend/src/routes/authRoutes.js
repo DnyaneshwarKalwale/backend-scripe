@@ -34,21 +34,27 @@ router.get(
   '/google/callback',
   passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?error=oauth_failed` }),
   (req, res) => {
-    // Generate token
-    const token = req.user.getSignedJwtToken();
-    
-    // Check if onboarding is completed
-    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
-    
-    // Log successful authentication
-    console.log('Google authentication successful:', {
-      userId: req.user.id,
-      email: req.user.email,
-      onboardingStatus
-    });
-    
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    try {
+      // Generate token
+      const token = req.user.getSignedJwtToken();
+      
+      // Check if onboarding is completed
+      const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+      
+      // Log successful authentication
+      console.log('Google authentication successful:', {
+        userId: req.user.id,
+        email: req.user.email || '(email not provided)',
+        onboardingStatus,
+        emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
+      });
+      
+      // Redirect to frontend with token
+      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    } catch (error) {
+      console.error('Error in Google callback:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+    }
   }
 );
 
@@ -81,21 +87,27 @@ router.get(
     })(req, res, next);
   },
   (req, res) => {
-    // Generate token
-    const token = req.user.getSignedJwtToken();
-    
-    // Check if onboarding is completed
-    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
-    
-    // Log successful authentication
-    console.log('Twitter authentication successful:', {
-      userId: req.user.id,
-      email: req.user.email,
-      onboardingStatus
-    });
-    
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    try {
+      // Generate token
+      const token = req.user.getSignedJwtToken();
+      
+      // Check if onboarding is completed
+      const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+      
+      // Log successful authentication
+      console.log('Twitter authentication successful:', {
+        userId: req.user.id,
+        email: req.user.email || '(email not provided)',
+        onboardingStatus,
+        emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
+      });
+      
+      // Redirect to frontend with token
+      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    } catch (error) {
+      console.error('Error in Twitter callback:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+    }
   }
 );
 

@@ -338,32 +338,31 @@ const twitterCallback = asyncHandler(async (req, res) => {
 const twitterAuth = asyncHandler(async (req, res) => {
   const { twitterId, name, email, profileImage } = req.body;
 
-  if (!twitterId || !name) {
-    res.status(400);
-    throw new Error('Twitter ID and name are required');
-  }
-
-  // Split name into first and last name
-  const nameParts = name.split(' ');
-  const firstName = nameParts[0] || '';
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-  
-  // Generate a username from the name
-  const username = name.replace(/\s+/g, '').toLowerCase();
-  
-  // If no email is provided, generate a placeholder email
-  const generatedEmail = email || `${username}.twitter@placeholder.scripe.com`;
-
   try {
-    // Check if user exists by Twitter ID
+    if (!twitterId || !name) {
+      res.status(400);
+      throw new Error('Twitter ID and name are required');
+    }
+
+    // Split name into first and last name
+    const nameParts = name.split(' ');
+    const firstName = nameParts[0] || 'User';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+    // Generate a Twitter username-based email if one is not provided
+    const username = name.replace(/\s+/g, '').toLowerCase();
+    const generatedEmail = email || `${username}.twitter@placeholder.scripe.com`;
+
+    console.log(`Twitter Auth: Using ${email ? 'provided email: ' + email : 'generated email: ' + generatedEmail}`);
+
+    // Find user by Twitter ID first
     let user = await User.findOne({ twitterId });
-    
-    // If not found by Twitter ID but email is provided, check by email
+
+    // If not found by Twitter ID but email is provided, try to find by email
     if (!user && email) {
       user = await User.findOne({ email });
-      
-      // If user exists by email, update Twitter ID
       if (user) {
+        // Update user with Twitter ID if found by email
         user.twitterId = twitterId;
         if (!user.profilePicture && profileImage) {
           user.profilePicture = profileImage;
@@ -371,22 +370,22 @@ const twitterAuth = asyncHandler(async (req, res) => {
         await user.save();
       }
     }
-    
-    // If user doesn't exist, create a new one
+
+    // If user still not found, create a new one
     if (!user) {
       user = await User.create({
         twitterId,
         firstName,
         lastName,
-        email: generatedEmail, // Use the actual email or generated one
-        isEmailVerified: email ? true : false,
+        email: generatedEmail,
+        isEmailVerified: email ? true : false, // Only mark as verified if real email provided
         profilePicture: profileImage || null,
         authMethod: 'twitter',
         onboardingCompleted: false,
       });
     }
 
-    // Generate token
+    // Generate JWT token
     const token = user.getSignedJwtToken();
 
     res.status(200).json({

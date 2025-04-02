@@ -38,29 +38,46 @@ module.exports = (passport) => {
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
-          // Check if user already exists
-          let user = await User.findOne({ email: profile.emails[0].value });
-
-          if (user) {
-            // User exists - update Google profile data if needed
-            if (!user.googleId) {
+          console.log('Google profile:', JSON.stringify(profile));
+          
+          // Check if email is available from Google
+          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+          const username = profile.displayName.replace(/\s+/g, '').toLowerCase();
+          
+          // If no email is provided or user email preferences are set to private, generate a placeholder
+          const generatedEmail = email || `${username}.google@placeholder.scripe.com`;
+          
+          // Check if user already exists by Google ID first
+          let user = await User.findOne({ googleId: profile.id });
+          
+          // If not found by Google ID but we have an email, try finding by email
+          if (!user && email) {
+            user = await User.findOne({ email });
+            
+            // If user exists by email, update Google ID
+            if (user) {
               user.googleId = profile.id;
+              if (!user.profilePicture && profile.photos && profile.photos[0]) {
+                user.profilePicture = profile.photos[0].value;
+              }
               await user.save();
+              return done(null, user);
             }
-            return done(null, user);
           }
 
-          // Create new user
-          user = await User.create({
-            googleId: profile.id,
-            firstName: profile.name.givenName,
-            lastName: profile.name.familyName,
-            email: profile.emails[0].value,
-            isEmailVerified: true, // Google accounts are verified
-            profilePicture: profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null,
-            authMethod: 'google',
-            onboardingCompleted: false,
-          });
+          // If user doesn't exist, create new user
+          if (!user) {
+            user = await User.create({
+              googleId: profile.id,
+              firstName: profile.name.givenName || profile.displayName.split(' ')[0],
+              lastName: profile.name.familyName || '',
+              email: generatedEmail, // Use generated email if actual email isn't available
+              isEmailVerified: email ? true : false, // Only verify if actual email was provided
+              profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
+              authMethod: 'google',
+              onboardingCompleted: false,
+            });
+          }
 
           return done(null, user);
         } catch (error) {
