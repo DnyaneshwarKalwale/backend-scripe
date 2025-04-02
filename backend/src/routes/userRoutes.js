@@ -1,6 +1,7 @@
 const express = require('express');
 const { 
   updateProfile,
+  updateOnboarding,
   changePassword,
   deleteAccount
 } = require('../controllers/userController');
@@ -13,7 +14,8 @@ router.use(protect);
 
 // User routes
 router.put('/profile', checkEmailVerified, updateProfile);
+router.post('/update-onboarding', updateOnboarding);
 router.put('/change-password', checkEmailVerified, changePassword);
-router.delete('/', checkEmailVerified, deleteAccount);
+router.delete('/delete-account', checkEmailVerified, deleteAccount);
 
 module.exports = router; 
