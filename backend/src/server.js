@@ -5,6 +5,7 @@ const connectDB = require('./config/db');
 const passport = require('passport');
 const session = require('express-session');
 const { errorHandler } = require('./middleware/errorMiddleware');
+const { languageMiddleware } = require('./middleware/languageMiddleware');
 const { checkMongoConnection } = require('./utils/dbCheck');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -35,7 +36,7 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
   exposedHeaders: ['Set-Cookie']
 }));
 
@@ -72,6 +73,9 @@ passport.deserializeUser(async (id, done) => {
 
 require('./config/passport')(passport);
 
+// Apply language middleware to all routes
+app.use(languageMiddleware);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -81,10 +85,12 @@ app.use('/api/teams', teamRoutes);
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
+  const { getTranslation } = require('./utils/translations');
   
   res.status(200).json({ 
     status: 'OK', 
-    message: 'Scripe API is running',
+    message: 'Sekcion API is running',
+    language: req.language,
     database: dbConnected ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });

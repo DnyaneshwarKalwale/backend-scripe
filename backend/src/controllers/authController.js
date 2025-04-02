@@ -2,6 +2,9 @@ const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
 const User = require('../models/userModel');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emailService');
+const { getTranslation } = require('../utils/translations');
+const bcrypt = require('bcrypt');
+const { generateToken } = require('../utils/jwt');
 
 // @desc    Register user with email
 // @route   POST /api/auth/register
@@ -12,20 +15,20 @@ const registerUser = asyncHandler(async (req, res) => {
   // Validation
   if (!firstName || !lastName || !email || !password) {
     res.status(400);
-    throw new Error('Please provide all required fields: first name, last name, email, and password');
+    throw new Error(getTranslation('missingFields', req.language));
   }
 
   // Email validation
   const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
   if (!emailRegex.test(email)) {
     res.status(400);
-    throw new Error('Please provide a valid email address');
+    throw new Error(getTranslation('invalidEmail', req.language));
   }
 
   // Password validation (at least 8 characters)
   if (password.length < 8) {
     res.status(400);
-    throw new Error('Password must be at least 8 characters long');
+    throw new Error(getTranslation('passwordLength', req.language));
   }
 
   // Check if user exists
@@ -33,15 +36,23 @@ const registerUser = asyncHandler(async (req, res) => {
 
   if (userExists) {
     res.status(400);
-    throw new Error('User already exists');
+    throw new Error(getTranslation('emailAlreadyExists', req.language));
   }
+
+  // Hash password
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+
+  // Get language preference from request or default to English
+  const language = req.language || 'english';
 
   // Create user
   const user = await User.create({
     firstName,
     lastName,
     email,
-    password,
+    password: hashedPassword,
+    language, // Store user's language preference
     authMethod: 'email',
   });
 
@@ -59,12 +70,13 @@ const registerUser = asyncHandler(async (req, res) => {
 
       res.status(201).json({
         success: true,
-        message: 'User registered. Please check your email to verify your account',
+        message: getTranslation('userRegistered', req.language),
         user: {
           id: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
+          language: user.language,
           isEmailVerified: user.isEmailVerified,
           onboardingCompleted: user.onboardingCompleted,
         },
@@ -76,11 +88,11 @@ const registerUser = asyncHandler(async (req, res) => {
       await user.save();
 
       res.status(500);
-      throw new Error('Email could not be sent. Please try again later.');
+      throw new Error(getTranslation('emailSendingError', req.language));
     }
   } else {
     res.status(400);
-    throw new Error('Invalid user data');
+    throw new Error(getTranslation('serverError', req.language));
   }
 });
 
@@ -102,7 +114,7 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
   if (!user) {
     res.status(400);
-    throw new Error('Invalid or expired token');
+    throw new Error(getTranslation('invalidOrExpiredToken', req.language));
   }
 
   // Verify email
@@ -116,13 +128,14 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Email verified successfully',
+    message: getTranslation('emailVerified', req.language),
     token,
     user: {
       id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      language: user.language,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
     },
@@ -137,12 +150,12 @@ const resendVerification = asyncHandler(async (req, res) => {
 
   if (!user) {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error(getTranslation('userNotFound', req.language));
   }
 
   if (user.isEmailVerified) {
     res.status(400);
-    throw new Error('Email already verified');
+    throw new Error(getTranslation('emailAlreadyVerified', req.language));
   }
 
   // Generate verification token
@@ -158,7 +171,7 @@ const resendVerification = asyncHandler(async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Verification email resent',
+      message: getTranslation('verificationEmailResent', req.language),
     });
   } catch (error) {
     user.emailVerificationToken = undefined;
@@ -166,7 +179,7 @@ const resendVerification = asyncHandler(async (req, res) => {
     await user.save();
 
     res.status(500);
-    throw new Error('Email could not be sent');
+    throw new Error(getTranslation('emailSendingError', req.language));
   }
 });
 
@@ -181,7 +194,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   if (!user) {
     res.status(401);
-    throw new Error('Invalid credentials');
+    throw new Error(getTranslation('userNotFound', req.language));
   }
 
   // Check if password matches
@@ -189,7 +202,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   if (!isMatch) {
     res.status(401);
-    throw new Error('Invalid credentials');
+    throw new Error(getTranslation('invalidCredentials', req.language));
   }
 
   // Generate token
@@ -203,6 +216,7 @@ const loginUser = asyncHandler(async (req, res) => {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      language: user.language,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
     },
@@ -222,6 +236,7 @@ const getMe = asyncHandler(async (req, res) => {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      language: user.language,
       profilePicture: user.profilePicture,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
@@ -239,7 +254,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   if (!user) {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error(getTranslation('userNotFound', req.language));
   }
 
   // Generate reset token
@@ -254,7 +269,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Password reset email sent',
+      message: getTranslation('passwordResetEmailSent', req.language),
     });
   } catch (error) {
     user.resetPasswordToken = undefined;
@@ -262,7 +277,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     await user.save();
 
     res.status(500);
-    throw new Error('Email could not be sent');
+    throw new Error(getTranslation('emailSendingError', req.language));
   }
 });
 
@@ -283,7 +298,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
   if (!user) {
     res.status(400);
-    throw new Error('Invalid or expired token');
+    throw new Error(getTranslation('invalidOrExpiredToken', req.language));
   }
 
   // Set new password
@@ -297,13 +312,14 @@ const resetPassword = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Password reset successful',
+    message: getTranslation('passwordResetSuccessful', req.language),
     token,
     user: {
       id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      language: user.language,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
     },
@@ -341,7 +357,7 @@ const twitterAuth = asyncHandler(async (req, res) => {
   try {
     if (!twitterId || !name) {
       res.status(400);
-      throw new Error('Twitter ID and name are required');
+      throw new Error(getTranslation('twitterIDAndNameRequired', req.language));
     }
 
     // Split name into first and last name
@@ -396,6 +412,7 @@ const twitterAuth = asyncHandler(async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        language: user.language,
         isEmailVerified: user.isEmailVerified,
         onboardingCompleted: user.onboardingCompleted,
         profilePicture: user.profilePicture,
@@ -405,8 +422,26 @@ const twitterAuth = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('Twitter Auth Error:', error);
     res.status(500);
-    throw new Error('Error authenticating with Twitter');
+    throw new Error(getTranslation('twitterAuthError', req.language));
   }
+});
+
+// @desc    Logout user
+// @route   GET /api/auth/logout
+// @access  Public
+const logout = asyncHandler(async (req, res) => {
+  req.logout(function(err) {
+    if (err) { 
+      res.status(500);
+      throw new Error(getTranslation('serverError', req.language));
+    }
+    // Destroy session
+    req.session.destroy();
+    
+    res.status(200).json({ 
+      message: getTranslation('logoutSuccess', req.language) 
+    });
+  });
 });
 
 module.exports = {
@@ -420,4 +455,5 @@ module.exports = {
   googleCallback,
   twitterCallback,
   twitterAuth,
+  logout,
 }; 
