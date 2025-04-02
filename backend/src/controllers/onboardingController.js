@@ -145,7 +145,7 @@ const updateLanguage = asyncHandler(async (req, res) => {
 const updatePostFormat = asyncHandler(async (req, res) => {
   const { postFormat } = req.body;
 
-  if (!postFormat || !['standard', 'formatted', 'chunky', 'short', 'emojis'].includes(postFormat)) {
+  if (!postFormat || !['thread', 'concise', 'hashtag', 'visual', 'viral'].includes(postFormat)) {
     res.status(400);
     throw new Error('Valid post format is required');
   }

@@ -61,8 +61,8 @@ const onboardingSchema = mongoose.Schema(
     },
     postFormat: {
       type: String,
-      enum: ['standard', 'formatted', 'chunky', 'short', 'emojis'],
-      default: 'standard',
+      enum: ['thread', 'concise', 'hashtag', 'visual', 'viral'],
+      default: 'thread',
     },
     postFrequency: {
       type: Number,
