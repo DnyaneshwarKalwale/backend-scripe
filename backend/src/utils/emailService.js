@@ -107,7 +107,7 @@ const sendPasswordResetEmail = async (user, resetUrl) => {
 const sendTeamInvitationEmail = async (invitation, teamName, inviter, inviteUrl) => {
   try {
     // Generate the invite URL with the token
-    const frontendUrl = process.env.FRONTEND_URL || 'https://multi-lang-welcome.vercel.app';
+    const frontendUrl = process.env.FRONTEND_URL || 'https://deluxe-cassata-51d628.netlify.app';
     const tokenUrl = `${frontendUrl}/invitations?token=${invitation.token}`;
     
     const subject = `You've been invited to join ${teamName} on Scripe`;

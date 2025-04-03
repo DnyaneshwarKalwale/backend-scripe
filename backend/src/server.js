@@ -25,14 +25,14 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Configure CORS with more options new
+// Configure CORS with more options
 app.use(cors({
   origin: [
     'http://localhost:8080', 
     'http://localhost:8081', 
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://multi-lang-welcome.vercel.app'
+    'https://deluxe-cassata-51d628.netlify.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

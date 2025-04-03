@@ -10,10 +10,8 @@ const {
   resetPassword,
   googleCallback,
   twitterCallback,
-  twitterAuth,
-  logout
+  twitterAuth
 } = require('../controllers/authController');
-const { verifyOTP, resendOTP } = require('../controllers/otpController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -26,9 +24,6 @@ router.get('/verify-email/:token', verifyEmail);
 router.post('/resend-verification', protect, resendVerification);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);
-router.post('/verify-otp', verifyOTP);
-router.post('/resend-otp', resendOTP);
-router.get('/logout', logout);
 
 // Google OAuth routes
 router.get(

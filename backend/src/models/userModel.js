@@ -33,8 +33,6 @@ const userSchema = mongoose.Schema(
     },
     emailVerificationToken: String,
     emailVerificationExpire: Date,
-    otpCode: String,
-    otpExpire: Date,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     googleId: String,

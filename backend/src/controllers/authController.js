@@ -1,16 +1,10 @@
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
 const User = require('../models/userModel');
-const { sendVerificationEmail, sendPasswordResetEmail, sendEmail } = require('../utils/emailService');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emailService');
 const { getTranslation } = require('../utils/translations');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../utils/jwt');
-
-// Generate OTP
-const generateOTP = () => {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  return otp;
-};
 
 // @desc    Register user with email
 // @route   POST /api/auth/register
@@ -21,20 +15,20 @@ const registerUser = asyncHandler(async (req, res) => {
   // Validation
   if (!firstName || !lastName || !email || !password) {
     res.status(400);
-    throw new Error('Please add all fields');
+    throw new Error(getTranslation('missingFields', req.language));
   }
 
-  // Validate email format
+  // Email validation
   const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
   if (!emailRegex.test(email)) {
     res.status(400);
-    throw new Error('Please add a valid email');
+    throw new Error(getTranslation('invalidEmail', req.language));
   }
 
-  // Check password length
+  // Password validation (at least 8 characters)
   if (password.length < 8) {
     res.status(400);
-    throw new Error('Password must be at least 8 characters');
+    throw new Error(getTranslation('passwordLength', req.language));
   }
 
   // Check if user exists
@@ -42,16 +36,15 @@ const registerUser = asyncHandler(async (req, res) => {
 
   if (userExists) {
     res.status(400);
-    throw new Error('User already exists');
+    throw new Error(getTranslation('emailAlreadyExists', req.language));
   }
 
   // Hash password
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash(password, salt);
 
-  // Generate OTP
-  const otp = generateOTP();
-  const otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  // Get language preference from request or default to English
+  const language = req.language || 'english';
 
   // Create user
   const user = await User.create({
@@ -59,47 +52,47 @@ const registerUser = asyncHandler(async (req, res) => {
     lastName,
     email,
     password: hashedPassword,
+    language, // Store user's language preference
     authMethod: 'email',
-    otpCode: otp,
-    otpExpire
   });
 
   if (user) {
-    // Send OTP verification email
-    const message = `
-      <h1>Email Verification</h1>
-      <p>Thank you for registering with our platform. Please use the following code to verify your email:</p>
-      <h2>${otp}</h2>
-      <p>This code will expire in 10 minutes.</p>
-    `;
+    // Generate verification token
+    const verificationToken = user.getEmailVerificationToken();
+    await user.save();
 
+    // Create verification url
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+
+    // Send verification email
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Email Verification Code',
-        html: message,
-      });
+      await sendVerificationEmail(user, verificationUrl);
 
       res.status(201).json({
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        isEmailVerified: user.isEmailVerified,
-        onboardingCompleted: user.onboardingCompleted,
-        token: generateToken(user._id),
+        success: true,
+        message: getTranslation('userRegistered', req.language),
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          language: user.language,
+          isEmailVerified: user.isEmailVerified,
+          onboardingCompleted: user.onboardingCompleted,
+        },
       });
     } catch (error) {
-      user.otpCode = undefined;
-      user.otpExpire = undefined;
+      console.error('Email sending error:', error);
+      user.emailVerificationToken = undefined;
+      user.emailVerificationExpire = undefined;
       await user.save();
 
       res.status(500);
-      throw new Error('Email could not be sent');
+      throw new Error(getTranslation('emailSendingError', req.language));
     }
   } else {
     res.status(400);
-    throw new Error('Invalid user data');
+    throw new Error(getTranslation('serverError', req.language));
   }
 });
 
@@ -196,83 +189,38 @@ const resendVerification = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Validate input
-  if (!email || !password) {
-    res.status(400);
-    throw new Error('Please add all fields');
-  }
-
-  // Check for user email
+  // Check for user
   const user = await User.findOne({ email });
 
   if (!user) {
-    res.status(400);
-    throw new Error('Invalid credentials');
+    res.status(401);
+    throw new Error(getTranslation('userNotFound', req.language));
   }
 
-  if (user.authMethod !== 'email') {
-    res.status(400);
-    throw new Error(`This email is registered with ${user.authMethod}. Please sign in with ${user.authMethod}.`);
+  // Check if password matches
+  const isMatch = await user.matchPassword(password);
+
+  if (!isMatch) {
+    res.status(401);
+    throw new Error(getTranslation('invalidCredentials', req.language));
   }
 
-  if (await user.matchPassword(password)) {
-    // If email is not verified, generate new OTP and ask user to verify
-    if (!user.isEmailVerified) {
-      // Generate new OTP
-      const otp = generateOTP();
-      user.otpCode = otp;
-      user.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-      await user.save();
+  // Generate token
+  const token = user.getSignedJwtToken();
 
-      // Send OTP verification email
-      const message = `
-        <h1>Email Verification</h1>
-        <p>Please use the following code to verify your email:</p>
-        <h2>${otp}</h2>
-        <p>This code will expire in 10 minutes.</p>
-      `;
-
-      try {
-        await sendEmail({
-          to: user.email,
-          subject: 'Email Verification Code',
-          html: message,
-        });
-      } catch (error) {
-        user.otpCode = undefined;
-        user.otpExpire = undefined;
-        await user.save();
-
-        res.status(500);
-        throw new Error('Email could not be sent');
-      }
-
-      res.status(200).json({
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        isEmailVerified: false,
-        onboardingCompleted: user.onboardingCompleted,
-        token: generateToken(user._id),
-        requiresVerification: true
-      });
-      return;
-    }
-
-    res.json({
-      _id: user._id,
+  res.status(200).json({
+    success: true,
+    token,
+    user: {
+      id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      language: user.language,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
-      token: generateToken(user._id),
-    });
-  } else {
-    res.status(400);
-    throw new Error('Invalid credentials');
-  }
+    },
+  });
 });
 
 // @desc    Get current user
@@ -382,54 +330,22 @@ const resetPassword = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/google/callback
 // @access  Public
 const googleCallback = asyncHandler(async (req, res) => {
-  try {
-    // Generate token
-    const token = req.user.getSignedJwtToken();
-    
-    // Check if onboarding is completed
-    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
-    
-    // Log successful authentication
-    console.log('Google authentication successful:', {
-      userId: req.user.id,
-      email: req.user.email || '(email not provided)',
-      onboardingStatus,
-      emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
-    });
-    
-    // Redirect to frontend with token - updating to use root social-callback for Vercel compatibility
-    res.redirect(`${process.env.FRONTEND_URL}/social-callback?token=${token}&onboarding=${onboardingStatus}`);
-  } catch (error) {
-    console.error('Error in Google callback:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
-  }
+  // Generate token
+  const token = req.user.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
 });
 
 // @desc    Twitter OAuth callback
 // @route   GET /api/auth/twitter/callback
 // @access  Public
 const twitterCallback = asyncHandler(async (req, res) => {
-  try {
-    // Generate token
-    const token = req.user.getSignedJwtToken();
-    
-    // Check if onboarding is completed
-    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
-    
-    // Log successful authentication
-    console.log('Twitter authentication successful:', {
-      userId: req.user.id,
-      email: req.user.email || '(email not provided)',
-      onboardingStatus,
-      emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
-    });
-    
-    // Redirect to frontend with token - updating to use root social-callback for Vercel compatibility
-    res.redirect(`${process.env.FRONTEND_URL}/social-callback?token=${token}&onboarding=${onboardingStatus}`);
-  } catch (error) {
-    console.error('Error in Twitter callback:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
-  }
+  // Generate token
+  const token = req.user.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
 });
 
 // @desc    Direct Twitter auth (for development)
@@ -527,8 +443,6 @@ const logout = asyncHandler(async (req, res) => {
     });
   });
 });
-
-// OTP functions moved to a separate controller (otpController.js)
 
 module.exports = {
   registerUser,
