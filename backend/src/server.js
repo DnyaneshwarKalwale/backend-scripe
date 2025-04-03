@@ -32,7 +32,8 @@ app.use(cors({
     'http://localhost:8081', 
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app'
+    'https://deluxe-cassata-51d628.netlify.app',
+    'https://multi-lang-welcome.vercel.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

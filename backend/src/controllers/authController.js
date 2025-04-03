@@ -61,12 +61,13 @@ const registerUser = asyncHandler(async (req, res) => {
     const verificationToken = user.getEmailVerificationToken();
     await user.save();
 
-    // Create verification url
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+    // Create verification urls for both platforms
+    const netlifyVerificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+    const vercelVerificationUrl = `${process.env.FRONTEND_URL_VERCEL}/verify-email/${verificationToken}`;
 
-    // Send verification email
+    // Send verification email with both URLs
     try {
-      await sendVerificationEmail(user, verificationUrl);
+      await sendVerificationEmail(user, netlifyVerificationUrl, vercelVerificationUrl);
 
       res.status(201).json({
         success: true,
@@ -162,12 +163,13 @@ const resendVerification = asyncHandler(async (req, res) => {
   const verificationToken = user.getEmailVerificationToken();
   await user.save();
 
-  // Create verification url
-  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+  // Create verification urls for both platforms
+  const netlifyVerificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+  const vercelVerificationUrl = `${process.env.FRONTEND_URL_VERCEL}/verify-email/${verificationToken}`;
 
-  // Send verification email
+  // Send verification email with both URLs
   try {
-    await sendVerificationEmail(user, verificationUrl);
+    await sendVerificationEmail(user, netlifyVerificationUrl, vercelVerificationUrl);
 
     res.status(200).json({
       success: true,
@@ -250,7 +252,14 @@ const getMe = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = asyncHandler(async (req, res) => {
-  const user = await User.findOne({ email: req.body.email });
+  const { email } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error(getTranslation('emailRequired', req.language));
+  }
+
+  const user = await User.findOne({ email });
 
   if (!user) {
     res.status(404);
@@ -258,14 +267,16 @@ const forgotPassword = asyncHandler(async (req, res) => {
   }
 
   // Generate reset token
-  const resetToken = user.getResetPasswordToken();
+  const resetToken = user.getPasswordResetToken();
   await user.save();
 
-  // Create reset url
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+  // Create reset urls for both platforms
+  const netlifyResetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+  const vercelResetUrl = `${process.env.FRONTEND_URL_VERCEL}/reset-password/${resetToken}`;
 
+  // Send reset email with both URLs
   try {
-    await sendPasswordResetEmail(user, resetUrl);
+    await sendPasswordResetEmail(user, netlifyResetUrl, vercelResetUrl);
 
     res.status(200).json({
       success: true,
