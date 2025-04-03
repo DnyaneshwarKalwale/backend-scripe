@@ -103,7 +103,7 @@ const sendInvitations = asyncHandler(async (req, res) => {
     throw new Error('Only team admins can send invitations');
   }
   
-  // Process each invitation
+  // Process each invitation mmmmmmmmmmmm
   const invitationResults = [];
   
   for (const invite of invitations) {
@@ -348,6 +348,155 @@ const declineInvitation = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Verify an invitation token
+// @route   POST /api/teams/invitations/verify-token
+// @access  Public
+const verifyInvitationToken = asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  
+  if (!token) {
+    res.status(400);
+    throw new Error('Token is required');
+  }
+  
+  // Find the team with this invitation token
+  const team = await Team.findOne({
+    'invitations.token': token,
+    'invitations.status': 'pending'
+  });
+  
+  if (!team) {
+    res.status(404);
+    throw new Error('Invalid or expired invitation token');
+  }
+  
+  // Get the invitation
+  const invitation = team.invitations.find(inv => inv.token === token);
+  
+  res.status(200).json({
+    success: true,
+    data: {
+      teamId: team._id,
+      teamName: team.name,
+      email: invitation.email,
+      role: invitation.role
+    }
+  });
+});
+
+// @desc    Accept an invitation by token (no authentication required)
+// @route   POST /api/teams/invitations/accept-by-token
+// @access  Public
+const acceptInvitationByToken = asyncHandler(async (req, res) => {
+  const { token, email } = req.body;
+  
+  if (!token || !email) {
+    res.status(400);
+    throw new Error('Token and email are required');
+  }
+  
+  // Find the team with this invitation token
+  const team = await Team.findOne({
+    'invitations.token': token,
+    'invitations.status': 'pending'
+  });
+  
+  if (!team) {
+    res.status(404);
+    throw new Error('Invalid or expired invitation token');
+  }
+  
+  // Get the invitation
+  const invitation = team.invitations.find(inv => inv.token === token);
+  
+  if (!invitation) {
+    res.status(404);
+    throw new Error('Invitation not found');
+  }
+  
+  // Check if this invitation is for the provided email
+  if (invitation.email.toLowerCase() !== email.toLowerCase()) {
+    res.status(403);
+    throw new Error('This invitation is not for this email');
+  }
+  
+  // Find or create user
+  let user = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
+  
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found. Please register first.');
+  }
+  
+  // Update invitation status
+  invitation.status = 'accepted';
+  
+  // Add user to team members
+  team.members.push({
+    user: user._id,
+    role: invitation.role,
+    joinedAt: Date.now()
+  });
+  
+  await team.save();
+  
+  res.status(200).json({
+    success: true,
+    data: {
+      teamId: team._id,
+      teamName: team.name,
+      role: invitation.role
+    }
+  });
+});
+
+// @desc    Decline an invitation by token (no authentication required)
+// @route   POST /api/teams/invitations/decline-by-token
+// @access  Public
+const declineInvitationByToken = asyncHandler(async (req, res) => {
+  const { token, email } = req.body;
+  
+  if (!token || !email) {
+    res.status(400);
+    throw new Error('Token and email are required');
+  }
+  
+  // Find the team with this invitation token
+  const team = await Team.findOne({
+    'invitations.token': token,
+    'invitations.status': 'pending'
+  });
+  
+  if (!team) {
+    res.status(404);
+    throw new Error('Invalid or expired invitation token');
+  }
+  
+  // Get the invitation
+  const invitation = team.invitations.find(inv => inv.token === token);
+  
+  if (!invitation) {
+    res.status(404);
+    throw new Error('Invitation not found');
+  }
+  
+  // Check if this invitation is for the provided email
+  if (invitation.email.toLowerCase() !== email.toLowerCase()) {
+    res.status(403);
+    throw new Error('This invitation is not for this email');
+  }
+  
+  // Update invitation status
+  invitation.status = 'declined';
+  
+  await team.save();
+  
+  res.status(200).json({
+    success: true,
+    message: 'Invitation declined successfully'
+  });
+});
+
 module.exports = {
   createTeam,
   getTeams,
@@ -355,5 +504,8 @@ module.exports = {
   sendInvitations,
   getUserInvitations,
   acceptInvitation,
-  declineInvitation
+  declineInvitation,
+  verifyInvitationToken,
+  acceptInvitationByToken,
+  declineInvitationByToken
 }; 

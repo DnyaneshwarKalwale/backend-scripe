@@ -14,7 +14,12 @@ const {
 } = require('../controllers/teamController');
 const { protect, checkEmailVerified } = require('../middleware/authMiddleware');
 
-// Protect all routes
+// Token-based invitation routes (public, no auth required)
+router.post('/invitations/verify-token', verifyInvitationToken);
+router.post('/invitations/accept-by-token', acceptInvitationByToken);
+router.post('/invitations/decline-by-token', declineInvitationByToken);
+
+// Protect all remaining routes
 router.use(protect);
 router.use(checkEmailVerified);
 
@@ -31,10 +36,5 @@ router.post('/:id/invitations', sendInvitations);
 router.get('/invitations', getUserInvitations);
 router.post('/invitations/:id/accept', acceptInvitation);
 router.post('/invitations/:id/decline', declineInvitation);
-
-// Token-based invitation routes
-router.post('/invitations/verify-token', verifyInvitationToken);
-router.post('/invitations/accept-by-token', acceptInvitationByToken);
-router.post('/invitations/decline-by-token', declineInvitationByToken);
 
 module.exports = router; 
