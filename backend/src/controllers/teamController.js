@@ -170,17 +170,12 @@ const sendInvitations = asyncHandler(async (req, res) => {
     const pendingInvitations = team.invitations.filter(inv => inv.status === 'pending');
     
     for (const invitation of pendingInvitations) {
-      // Get frontend URL (Vercel only)
-      const frontendUrl = process.env.FRONTEND_URL || 'https://multi-lang-welcome.vercel.app';
-      
-      // Create invitation URL for Vercel
-      const inviteUrl = `${frontendUrl}/invitations?token=${invitation.token}`;
+      const inviteUrl = `${process.env.FRONTEND_URL}/invitations?token=${invitation.token}`;
       
       await sendTeamInvitationEmail(
         invitation,
         team.name,
         req.user,
-        null,
         inviteUrl
       );
     }

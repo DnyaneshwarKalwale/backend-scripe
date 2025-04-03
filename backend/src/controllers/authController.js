@@ -61,12 +61,12 @@ const registerUser = asyncHandler(async (req, res) => {
     const verificationToken = user.getEmailVerificationToken();
     await user.save();
 
-    // Create verification url with Vercel link only
+    // Create verification url
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-    // Send verification email with Vercel URL only
+    // Send verification email
     try {
-      await sendVerificationEmail(user, null, verificationUrl);
+      await sendVerificationEmail(user, verificationUrl);
 
       res.status(201).json({
         success: true,
@@ -162,12 +162,12 @@ const resendVerification = asyncHandler(async (req, res) => {
   const verificationToken = user.getEmailVerificationToken();
   await user.save();
 
-  // Create verification url with Vercel link only
+  // Create verification url
   const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-  // Send verification email with Vercel URL only
+  // Send verification email
   try {
-    await sendVerificationEmail(user, null, verificationUrl);
+    await sendVerificationEmail(user, verificationUrl);
 
     res.status(200).json({
       success: true,
@@ -250,14 +250,7 @@ const getMe = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    res.status(400);
-    throw new Error(getTranslation('emailRequired', req.language));
-  }
-
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email: req.body.email });
 
   if (!user) {
     res.status(404);
@@ -265,15 +258,14 @@ const forgotPassword = asyncHandler(async (req, res) => {
   }
 
   // Generate reset token
-  const resetToken = user.getPasswordResetToken();
+  const resetToken = user.getResetPasswordToken();
   await user.save();
 
-  // Create reset url with Vercel link only
+  // Create reset url
   const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-  // Send reset email with Vercel URL only
   try {
-    await sendPasswordResetEmail(user, null, resetUrl);
+    await sendPasswordResetEmail(user, resetUrl);
 
     res.status(200).json({
       success: true,
