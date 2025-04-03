@@ -25,7 +25,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Configure CORS with more options
+// Configure CORS with more options new
 app.use(cors({
   origin: [
     'http://localhost:8080', 
