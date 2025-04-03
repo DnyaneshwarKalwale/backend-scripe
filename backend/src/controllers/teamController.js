@@ -170,20 +170,18 @@ const sendInvitations = asyncHandler(async (req, res) => {
     const pendingInvitations = team.invitations.filter(inv => inv.status === 'pending');
     
     for (const invitation of pendingInvitations) {
-      // Get frontend URL based on user preference or use both
-      const frontendUrl = process.env.FRONTEND_URL || 'https://deluxe-cassata-51d628.netlify.app';
-      const vercelUrl = process.env.FRONTEND_URL_VERCEL || 'https://multi-lang-welcome.vercel.app';
+      // Get frontend URL (Vercel only)
+      const frontendUrl = process.env.FRONTEND_URL || 'https://multi-lang-welcome.vercel.app';
       
-      // Create invitation URLs for both platforms
-      const netlifyInviteUrl = `${frontendUrl}/invitations?token=${invitation.token}`;
-      const vercelInviteUrl = `${vercelUrl}/invitations?token=${invitation.token}`;
+      // Create invitation URL for Vercel
+      const inviteUrl = `${frontendUrl}/invitations?token=${invitation.token}`;
       
       await sendTeamInvitationEmail(
         invitation,
         team.name,
         req.user,
-        netlifyInviteUrl,
-        vercelInviteUrl // Pass the Vercel URL as an additional parameter
+        null,
+        inviteUrl
       );
     }
   } catch (error) {

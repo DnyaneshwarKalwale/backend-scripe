@@ -61,13 +61,12 @@ const registerUser = asyncHandler(async (req, res) => {
     const verificationToken = user.getEmailVerificationToken();
     await user.save();
 
-    // Create verification urls for both platforms
-    const netlifyVerificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-    const vercelVerificationUrl = `${process.env.FRONTEND_URL_VERCEL}/verify-email/${verificationToken}`;
+    // Create verification url with Vercel link only
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-    // Send verification email with both URLs
+    // Send verification email with Vercel URL only
     try {
-      await sendVerificationEmail(user, netlifyVerificationUrl, vercelVerificationUrl);
+      await sendVerificationEmail(user, null, verificationUrl);
 
       res.status(201).json({
         success: true,
@@ -163,13 +162,12 @@ const resendVerification = asyncHandler(async (req, res) => {
   const verificationToken = user.getEmailVerificationToken();
   await user.save();
 
-  // Create verification urls for both platforms
-  const netlifyVerificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-  const vercelVerificationUrl = `${process.env.FRONTEND_URL_VERCEL}/verify-email/${verificationToken}`;
+  // Create verification url with Vercel link only
+  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-  // Send verification email with both URLs
+  // Send verification email with Vercel URL only
   try {
-    await sendVerificationEmail(user, netlifyVerificationUrl, vercelVerificationUrl);
+    await sendVerificationEmail(user, null, verificationUrl);
 
     res.status(200).json({
       success: true,
@@ -270,13 +268,12 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = user.getPasswordResetToken();
   await user.save();
 
-  // Create reset urls for both platforms
-  const netlifyResetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-  const vercelResetUrl = `${process.env.FRONTEND_URL_VERCEL}/reset-password/${resetToken}`;
+  // Create reset url with Vercel link only
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-  // Send reset email with both URLs
+  // Send reset email with Vercel URL only
   try {
-    await sendPasswordResetEmail(user, netlifyResetUrl, vercelResetUrl);
+    await sendPasswordResetEmail(user, null, resetUrl);
 
     res.status(200).json({
       success: true,

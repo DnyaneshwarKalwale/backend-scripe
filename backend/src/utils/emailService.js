@@ -60,11 +60,10 @@ const sendVerificationEmail = async (user, netlifyVerificationUrl, vercelVerific
       <p>Hi ${user.firstName},</p>
       <p>Thank you for registering with Scripe! Before we get started, we need to verify your email address.</p>
       <div style="text-align: center; margin: 30px 0;">
-        <a href="${netlifyVerificationUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Verify your email</a>
+        <a href="${vercelVerificationUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Verify your email</a>
       </div>
-      <p>You can verify your email using either of these links:</p>
-      <p><strong>Option 1:</strong> <a href="${netlifyVerificationUrl}">${netlifyVerificationUrl}</a></p>
-      <p><strong>Option 2:</strong> <a href="${vercelVerificationUrl}">${vercelVerificationUrl}</a></p>
+      <p>If the button above doesn't work, please copy and paste the following link into your browser:</p>
+      <p><a href="${vercelVerificationUrl}">${vercelVerificationUrl}</a></p>
       <p>This link will expire in 24 hours.</p>
       <p>If you did not create an account, please ignore this email.</p>
       <p>Best regards,<br>The Scripe Team</p>
@@ -88,11 +87,10 @@ const sendPasswordResetEmail = async (user, netlifyResetUrl, vercelResetUrl) => 
       <p>Hi ${user.firstName},</p>
       <p>You've requested to reset your password. Click the button below to set a new password:</p>
       <div style="text-align: center; margin: 30px 0;">
-        <a href="${netlifyResetUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Reset Password</a>
+        <a href="${vercelResetUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Reset Password</a>
       </div>
-      <p>You can reset your password using either of these links:</p>
-      <p><strong>Option 1:</strong> <a href="${netlifyResetUrl}">${netlifyResetUrl}</a></p>
-      <p><strong>Option 2:</strong> <a href="${vercelResetUrl}">${vercelResetUrl}</a></p>
+      <p>If the button above doesn't work, please copy and paste the following link into your browser:</p>
+      <p><a href="${vercelResetUrl}">${vercelResetUrl}</a></p>
       <p>This link will expire in 10 minutes.</p>
       <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
       <p>Best regards,<br>The Scripe Team</p>
@@ -118,11 +116,10 @@ const sendTeamInvitationEmail = async (invitation, teamName, inviter, netlifyInv
         <p>${inviter.firstName} ${inviter.lastName} has invited you to join their team "${teamName}" on Scripe.</p>
         <p>You've been invited as a <strong>${invitation.role}</strong>.</p>
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${netlifyInviteUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Accept Invitation</a>
+          <a href="${vercelInviteUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Accept Invitation</a>
         </div>
-        <p>You can access your invitation at either of these links:</p>
-        <p><strong>Option 1:</strong> <a href="${netlifyInviteUrl}">${netlifyInviteUrl}</a></p>
-        <p><strong>Option 2:</strong> <a href="${vercelInviteUrl}">${vercelInviteUrl}</a></p>
+        <p>If the button above doesn't work, please copy and paste the following link into your browser:</p>
+        <p><a href="${vercelInviteUrl}">${vercelInviteUrl}</a></p>
         <p>This invitation will expire in 7 days.</p>
         <p>Best regards,<br>The Scripe Team</p>
       </div>
