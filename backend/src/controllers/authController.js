@@ -6,6 +6,12 @@ const { getTranslation } = require('../utils/translations');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../utils/jwt');
 
+// Generate OTP
+const generateOTP = () => {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  return otp;
+};
+
 // @desc    Register user with email
 // @route   POST /api/auth/register
 // @access  Public
@@ -15,20 +21,20 @@ const registerUser = asyncHandler(async (req, res) => {
   // Validation
   if (!firstName || !lastName || !email || !password) {
     res.status(400);
-    throw new Error(getTranslation('missingFields', req.language));
+    throw new Error('Please add all fields');
   }
 
-  // Email validation
+  // Validate email format
   const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
   if (!emailRegex.test(email)) {
     res.status(400);
-    throw new Error(getTranslation('invalidEmail', req.language));
+    throw new Error('Please add a valid email');
   }
 
-  // Password validation (at least 8 characters)
+  // Check password length
   if (password.length < 8) {
     res.status(400);
-    throw new Error(getTranslation('passwordLength', req.language));
+    throw new Error('Password must be at least 8 characters');
   }
 
   // Check if user exists
@@ -36,15 +42,16 @@ const registerUser = asyncHandler(async (req, res) => {
 
   if (userExists) {
     res.status(400);
-    throw new Error(getTranslation('emailAlreadyExists', req.language));
+    throw new Error('User already exists');
   }
 
   // Hash password
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash(password, salt);
 
-  // Get language preference from request or default to English
-  const language = req.language || 'english';
+  // Generate OTP
+  const otp = generateOTP();
+  const otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   // Create user
   const user = await User.create({
@@ -52,47 +59,47 @@ const registerUser = asyncHandler(async (req, res) => {
     lastName,
     email,
     password: hashedPassword,
-    language, // Store user's language preference
     authMethod: 'email',
+    otpCode: otp,
+    otpExpire
   });
 
   if (user) {
-    // Generate verification token
-    const verificationToken = user.getEmailVerificationToken();
-    await user.save();
+    // Send OTP verification email
+    const message = `
+      <h1>Email Verification</h1>
+      <p>Thank you for registering with our platform. Please use the following code to verify your email:</p>
+      <h2>${otp}</h2>
+      <p>This code will expire in 10 minutes.</p>
+    `;
 
-    // Create verification url
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-
-    // Send verification email
     try {
-      await sendVerificationEmail(user, verificationUrl);
+      await sendEmail({
+        email: user.email,
+        subject: 'Email Verification Code',
+        message,
+      });
 
       res.status(201).json({
-        success: true,
-        message: getTranslation('userRegistered', req.language),
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          language: user.language,
-          isEmailVerified: user.isEmailVerified,
-          onboardingCompleted: user.onboardingCompleted,
-        },
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: user.isEmailVerified,
+        onboardingCompleted: user.onboardingCompleted,
+        token: generateToken(user._id),
       });
     } catch (error) {
-      console.error('Email sending error:', error);
-      user.emailVerificationToken = undefined;
-      user.emailVerificationExpire = undefined;
+      user.otpCode = undefined;
+      user.otpExpire = undefined;
       await user.save();
 
       res.status(500);
-      throw new Error(getTranslation('emailSendingError', req.language));
+      throw new Error('Email could not be sent');
     }
   } else {
     res.status(400);
-    throw new Error(getTranslation('serverError', req.language));
+    throw new Error('Invalid user data');
   }
 });
 
@@ -189,38 +196,83 @@ const resendVerification = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Check for user
+  // Validate input
+  if (!email || !password) {
+    res.status(400);
+    throw new Error('Please add all fields');
+  }
+
+  // Check for user email
   const user = await User.findOne({ email });
 
   if (!user) {
-    res.status(401);
-    throw new Error(getTranslation('userNotFound', req.language));
+    res.status(400);
+    throw new Error('Invalid credentials');
   }
 
-  // Check if password matches
-  const isMatch = await user.matchPassword(password);
-
-  if (!isMatch) {
-    res.status(401);
-    throw new Error(getTranslation('invalidCredentials', req.language));
+  if (user.authMethod !== 'email') {
+    res.status(400);
+    throw new Error(`This email is registered with ${user.authMethod}. Please sign in with ${user.authMethod}.`);
   }
 
-  // Generate token
-  const token = user.getSignedJwtToken();
+  if (await user.matchPassword(password)) {
+    // If email is not verified, generate new OTP and ask user to verify
+    if (!user.isEmailVerified) {
+      // Generate new OTP
+      const otp = generateOTP();
+      user.otpCode = otp;
+      user.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+      await user.save();
 
-  res.status(200).json({
-    success: true,
-    token,
-    user: {
-      id: user._id,
+      // Send OTP verification email
+      const message = `
+        <h1>Email Verification</h1>
+        <p>Please use the following code to verify your email:</p>
+        <h2>${otp}</h2>
+        <p>This code will expire in 10 minutes.</p>
+      `;
+
+      try {
+        await sendEmail({
+          email: user.email,
+          subject: 'Email Verification Code',
+          message,
+        });
+      } catch (error) {
+        user.otpCode = undefined;
+        user.otpExpire = undefined;
+        await user.save();
+
+        res.status(500);
+        throw new Error('Email could not be sent');
+      }
+
+      res.status(200).json({
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: false,
+        onboardingCompleted: user.onboardingCompleted,
+        token: generateToken(user._id),
+        requiresVerification: true
+      });
+      return;
+    }
+
+    res.json({
+      _id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      language: user.language,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
-    },
-  });
+      token: generateToken(user._id),
+    });
+  } else {
+    res.status(400);
+    throw new Error('Invalid credentials');
+  }
 });
 
 // @desc    Get current user
@@ -333,8 +385,8 @@ const googleCallback = asyncHandler(async (req, res) => {
   // Generate token
   const token = req.user.getSignedJwtToken();
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  // Use the callback.html file to handle token processing
+  res.redirect(`${process.env.FRONTEND_URL}/callback.html?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
 });
 
 // @desc    Twitter OAuth callback
@@ -344,8 +396,8 @@ const twitterCallback = asyncHandler(async (req, res) => {
   // Generate token
   const token = req.user.getSignedJwtToken();
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  // Use the callback.html file to handle token processing
+  res.redirect(`${process.env.FRONTEND_URL}/callback.html?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
 });
 
 // @desc    Direct Twitter auth (for development)
