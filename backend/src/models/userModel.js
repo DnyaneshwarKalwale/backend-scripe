@@ -33,6 +33,8 @@ const userSchema = mongoose.Schema(
     },
     emailVerificationToken: String,
     emailVerificationExpire: Date,
+    emailVerificationOTP: String,
+    emailVerificationOTPExpire: Date,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     googleId: String,
@@ -123,6 +125,20 @@ userSchema.methods.getResetPasswordToken = function () {
   this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   return resetToken;
+};
+
+// Generate email verification OTP
+userSchema.methods.generateEmailVerificationOTP = function () {
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Store OTP in user object
+  this.emailVerificationOTP = otp;
+
+  // Set expire time - 30 minutes
+  this.emailVerificationOTPExpire = Date.now() + 30 * 60 * 1000;
+
+  return otp;
 };
 
 module.exports = mongoose.model('User', userSchema); 

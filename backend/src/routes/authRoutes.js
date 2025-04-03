@@ -5,6 +5,8 @@ const {
   loginUser, 
   getMe, 
   verifyEmail,
+  verifyOTP,
+  resendOTP,
   resendVerification,
   forgotPassword,
   resetPassword,
@@ -21,6 +23,8 @@ router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.get('/me', protect, getMe);
 router.get('/verify-email/:token', verifyEmail);
+router.post('/verify-otp', verifyOTP);
+router.post('/resend-otp', resendOTP);
 router.post('/resend-verification', protect, resendVerification);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);

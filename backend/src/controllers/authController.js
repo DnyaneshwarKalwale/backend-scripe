@@ -57,16 +57,13 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   if (user) {
-    // Generate verification token
-    const verificationToken = user.getEmailVerificationToken();
+    // Generate OTP code
+    const otp = user.generateEmailVerificationOTP();
     await user.save();
 
-    // Create verification url
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-
-    // Send verification email
+    // Send verification email with OTP
     try {
-      await sendVerificationEmail(user, verificationUrl);
+      await sendVerificationEmail(user, null);
 
       res.status(201).json({
         success: true,
@@ -83,8 +80,8 @@ const registerUser = asyncHandler(async (req, res) => {
       });
     } catch (error) {
       console.error('Email sending error:', error);
-      user.emailVerificationToken = undefined;
-      user.emailVerificationExpire = undefined;
+      user.emailVerificationOTP = undefined;
+      user.emailVerificationOTPExpire = undefined;
       await user.save();
 
       res.status(500);
@@ -183,6 +180,99 @@ const resendVerification = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Verify OTP code
+// @route   POST /api/auth/verify-otp
+// @access  Public
+const verifyOTP = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    res.status(400);
+    throw new Error(getTranslation('missingFields', req.language));
+  }
+
+  // Find user
+  const user = await User.findOne({
+    email,
+    emailVerificationOTP: otp,
+    emailVerificationOTPExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    res.status(400);
+    throw new Error(getTranslation('invalidOrExpiredOTP', req.language));
+  }
+
+  // Verify email
+  user.isEmailVerified = true;
+  user.emailVerificationOTP = undefined;
+  user.emailVerificationOTPExpire = undefined;
+  await user.save();
+
+  // Generate token
+  const token = user.getSignedJwtToken();
+
+  res.status(200).json({
+    success: true,
+    message: getTranslation('emailVerified', req.language),
+    token,
+    user: {
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      language: user.language,
+      isEmailVerified: user.isEmailVerified,
+      onboardingCompleted: user.onboardingCompleted,
+    },
+  });
+});
+
+// @desc    Resend verification OTP
+// @route   POST /api/auth/resend-otp
+// @access  Public
+const resendOTP = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error(getTranslation('missingFields', req.language));
+  }
+
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error(getTranslation('userNotFound', req.language));
+  }
+
+  if (user.isEmailVerified) {
+    res.status(400);
+    throw new Error(getTranslation('emailAlreadyVerified', req.language));
+  }
+
+  // Generate new OTP
+  const otp = user.generateEmailVerificationOTP();
+  await user.save();
+
+  // Send verification email with OTP
+  try {
+    await sendVerificationEmail(user, null);
+
+    res.status(200).json({
+      success: true,
+      message: getTranslation('verificationEmailResent', req.language),
+    });
+  } catch (error) {
+    user.emailVerificationOTP = undefined;
+    user.emailVerificationOTPExpire = undefined;
+    await user.save();
+
+    res.status(500);
+    throw new Error(getTranslation('emailSendingError', req.language));
+  }
+});
+
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
@@ -203,6 +293,24 @@ const loginUser = asyncHandler(async (req, res) => {
   if (!isMatch) {
     res.status(401);
     throw new Error(getTranslation('invalidCredentials', req.language));
+  }
+
+  // Check if email is verified for email auth method
+  if (user.authMethod === 'email' && !user.isEmailVerified) {
+    // Generate new OTP if needed
+    if (!user.emailVerificationOTP || !user.emailVerificationOTPExpire || user.emailVerificationOTPExpire < Date.now()) {
+      const otp = user.generateEmailVerificationOTP();
+      await user.save();
+      await sendVerificationEmail(user, null);
+    }
+
+    res.status(403).json({
+      success: false,
+      message: getTranslation('emailNotVerified', req.language),
+      requireVerification: true,
+      email: user.email
+    });
+    return;
   }
 
   // Generate token
@@ -456,4 +564,6 @@ module.exports = {
   twitterCallback,
   twitterAuth,
   logout,
+  verifyOTP,
+  resendOTP,
 }; 

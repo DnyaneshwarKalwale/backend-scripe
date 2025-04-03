@@ -51,20 +51,23 @@ const sendEmail = async (options) => {
 };
 
 const sendVerificationEmail = async (user, verificationUrl) => {
-  const subject = 'Scripe - Email Verification';
+  // Extract OTP from user object or generate a new one
+  const otp = user.emailVerificationOTP || Math.floor(100000 + Math.random() * 900000).toString();
+  
+  const subject = 'Scripe - Email Verification Code';
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
       <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="color: #6200ea;">Welcome to Scripe</h1>
       </div>
       <p>Hi ${user.firstName},</p>
-      <p>Thank you for registering with Scripe! Before we get started, we need to verify your email address.</p>
+      <p>Thank you for registering with Scripe! To verify your email address, please use the following verification code:</p>
       <div style="text-align: center; margin: 30px 0;">
-        <a href="${verificationUrl}" style="background-color: #6200ea; color: white; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold;">Verify your email</a>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 4px; font-size: 24px; letter-spacing: 5px; font-weight: bold;">
+          ${otp}
+        </div>
       </div>
-      <p>If the button above doesn't work, please copy and paste the following link into your browser:</p>
-      <p>${verificationUrl}</p>
-      <p>This link will expire in 24 hours.</p>
+      <p>This code will expire in 30 minutes. Please do not share this code with anyone.</p>
       <p>If you did not create an account, please ignore this email.</p>
       <p>Best regards,<br>The Scripe Team</p>
     </div>
@@ -75,6 +78,9 @@ const sendVerificationEmail = async (user, verificationUrl) => {
     subject,
     html,
   });
+  
+  // Return the OTP so it can be saved to the user record
+  return otp;
 };
 
 const sendPasswordResetEmail = async (user, resetUrl) => {
