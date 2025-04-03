@@ -108,17 +108,23 @@ const sendInvitations = asyncHandler(async (req, res) => {
   
   for (const invite of invitations) {
     const { email, role = 'editor' } = invite;
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.toLowerCase();
+    
+    console.log(`Processing invitation for email: ${normalizedEmail}`);
     
     // Skip if already a member with this email
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
     if (existingUser) {
+      console.log(`Found existing user with email ${existingUser.email}`);
       const alreadyMember = team.members.some(
         member => member.user.toString() === existingUser._id.toString()
       );
       
       if (alreadyMember) {
+        console.log(`User ${existingUser.email} is already a team member`);
         invitationResults.push({
-          email,
+          email: normalizedEmail,
           success: false,
           message: 'User is already a member of this team'
         });
@@ -128,12 +134,13 @@ const sendInvitations = asyncHandler(async (req, res) => {
     
     // Check if there's already a pending invitation for this email
     const existingInvitation = team.invitations.find(
-      inv => inv.email === email && inv.status === 'pending'
+      inv => inv.email.toLowerCase() === normalizedEmail && inv.status === 'pending'
     );
     
     if (existingInvitation) {
+      console.log(`Invitation already exists for ${normalizedEmail}`);
       invitationResults.push({
-        email,
+        email: normalizedEmail,
         success: false,
         message: 'Invitation already sent to this email'
       });
@@ -142,14 +149,15 @@ const sendInvitations = asyncHandler(async (req, res) => {
     
     // Add invitation
     team.invitations.push({
-      email,
+      email: normalizedEmail, // Store email as lowercase
       role,
       invitedBy: req.user._id,
       status: 'pending'
     });
     
+    console.log(`Created new invitation for ${normalizedEmail}`);
     invitationResults.push({
-      email,
+      email: normalizedEmail,
       success: true,
       message: 'Invitation sent successfully'
     });
@@ -189,30 +197,53 @@ const sendInvitations = asyncHandler(async (req, res) => {
 // @route   GET /api/teams/invitations
 // @access  Private
 const getUserInvitations = asyncHandler(async (req, res) => {
+  // Log the user email for debugging
+  console.log('Checking invitations for user:', {
+    id: req.user._id,
+    email: req.user.email,
+    authMethod: req.user.authMethod
+  });
+  
+  // Create a case-insensitive regex for email matching
+  const emailRegex = new RegExp(`^${req.user.email}$`, 'i');
+  
+  // Find teams with pending invitations using case-insensitive match
   const teams = await Team.find({
-    'invitations.email': req.user.email,
     'invitations.status': 'pending'
   }).select('name description owner invitations');
   
-  // Filter out only the invitations for this user
-  const invitations = teams.map(team => {
-    const userInvitation = team.invitations.find(
-      inv => inv.email === req.user.email && inv.status === 'pending'
-    );
+  // Log number of teams found with pending invitations
+  console.log(`Found ${teams.length} teams with pending invitations`);
+  
+  // Filter invitations for the current user manually to handle case-insensitivity
+  let allInvitations = [];
+  teams.forEach(team => {
+    // Log all pending invitations for debugging
+    console.log(`Team ${team.name} has ${team.invitations.length} pending invitations`);
     
-    return {
-      id: userInvitation._id,
-      teamId: team._id,
-      teamName: team.name,
-      role: userInvitation.role,
-      createdAt: userInvitation.createdAt
-    };
+    team.invitations.forEach(invite => {
+      console.log(`Invitation: ${invite.email} (status: ${invite.status})`);
+      
+      // Check if this invitation matches the user's email (case-insensitive)
+      if (invite.status === 'pending' && invite.email.toLowerCase() === req.user.email.toLowerCase()) {
+        console.log(`Found matching invitation for ${req.user.email}`);
+        allInvitations.push({
+          id: invite._id,
+          teamId: team._id,
+          teamName: team.name,
+          role: invite.role,
+          createdAt: invite.createdAt
+        });
+      }
+    });
   });
+  
+  console.log(`Returning ${allInvitations.length} invitations for ${req.user.email}`);
   
   res.status(200).json({
     success: true,
-    count: invitations.length,
-    data: invitations
+    count: allInvitations.length,
+    data: allInvitations
   });
 });
 
