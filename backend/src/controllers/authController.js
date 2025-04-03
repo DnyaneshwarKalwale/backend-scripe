@@ -393,11 +393,12 @@ const googleCallback = asyncHandler(async (req, res) => {
     console.log('Google authentication successful:', {
       userId: req.user.id,
       email: req.user.email || '(email not provided)',
-      onboardingStatus
+      onboardingStatus,
+      emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
     });
     
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    // Redirect to frontend with token - updating to use root social-callback for Vercel compatibility
+    res.redirect(`${process.env.FRONTEND_URL}/social-callback?token=${token}&onboarding=${onboardingStatus}`);
   } catch (error) {
     console.error('Error in Google callback:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
@@ -423,8 +424,8 @@ const twitterCallback = asyncHandler(async (req, res) => {
       emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
     });
     
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    // Redirect to frontend with token - updating to use root social-callback for Vercel compatibility
+    res.redirect(`${process.env.FRONTEND_URL}/social-callback?token=${token}&onboarding=${onboardingStatus}`);
   } catch (error) {
     console.error('Error in Twitter callback:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
