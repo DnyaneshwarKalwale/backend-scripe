@@ -1,7 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
 const User = require('../models/userModel');
-const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emailService');
+const { sendVerificationEmail, sendPasswordResetEmail, sendEmail } = require('../utils/emailService');
 const { getTranslation } = require('../utils/translations');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../utils/jwt');
@@ -75,9 +75,9 @@ const registerUser = asyncHandler(async (req, res) => {
 
     try {
       await sendEmail({
-        email: user.email,
+        to: user.email,
         subject: 'Email Verification Code',
-        message,
+        html: message,
       });
 
       res.status(201).json({
@@ -234,9 +234,9 @@ const loginUser = asyncHandler(async (req, res) => {
 
       try {
         await sendEmail({
-          email: user.email,
+          to: user.email,
           subject: 'Email Verification Code',
-          message,
+          html: message,
         });
       } catch (error) {
         user.otpCode = undefined;
@@ -496,6 +496,113 @@ const logout = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Verify OTP
+// @route   POST /api/auth/verify-otp
+// @access  Public
+const verifyOTP = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    res.status(400);
+    throw new Error('Please provide email and verification code');
+  }
+
+  // Get user by email
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  // Check if OTP matches and is not expired
+  if (user.otpCode !== otp || user.otpExpire < Date.now()) {
+    res.status(400);
+    throw new Error('Invalid or expired verification code');
+  }
+
+  // Set user as verified
+  user.isEmailVerified = true;
+  user.otpCode = undefined;
+  user.otpExpire = undefined;
+  await user.save();
+
+  // Generate token
+  const token = user.getSignedJwtToken();
+
+  res.status(200).json({
+    success: true,
+    token,
+    user: {
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      isEmailVerified: true,
+      onboardingCompleted: user.onboardingCompleted,
+    }
+  });
+});
+
+// @desc    Resend OTP
+// @route   POST /api/auth/resend-otp
+// @access  Public
+const resendOTP = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Please provide an email');
+  }
+
+  // Get user by email
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  if (user.isEmailVerified) {
+    res.status(400);
+    throw new Error('Email is already verified');
+  }
+
+  // Generate new OTP
+  const otp = generateOTP();
+  user.otpCode = otp;
+  user.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  await user.save();
+
+  // Send OTP verification email
+  const message = `
+    <h1>Email Verification</h1>
+    <p>Please use the following code to verify your email:</p>
+    <h2>${otp}</h2>
+    <p>This code will expire in 10 minutes.</p>
+  `;
+
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: 'Email Verification Code',
+      html: message,
+    });
+
+    res.status(200).json({ 
+      success: true,
+      message: 'Verification code sent' 
+    });
+  } catch (error) {
+    user.otpCode = undefined;
+    user.otpExpire = undefined;
+    await user.save();
+
+    res.status(500);
+    throw new Error('Email could not be sent');
+  }
+});
+
 module.exports = {
   registerUser,
   verifyEmail,
@@ -507,5 +614,7 @@ module.exports = {
   googleCallback,
   twitterCallback,
   twitterAuth,
+  verifyOTP,
+  resendOTP,
   logout,
 }; 
