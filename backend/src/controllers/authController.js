@@ -382,22 +382,53 @@ const resetPassword = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/google/callback
 // @access  Public
 const googleCallback = asyncHandler(async (req, res) => {
-  // Generate token
-  const token = req.user.getSignedJwtToken();
-
-  // Use the callback.html file to handle token processing
-  res.redirect(`${process.env.FRONTEND_URL}/callback.html?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  try {
+    // Generate token
+    const token = req.user.getSignedJwtToken();
+    
+    // Check if onboarding is completed
+    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+    
+    // Log successful authentication
+    console.log('Google authentication successful:', {
+      userId: req.user.id,
+      email: req.user.email || '(email not provided)',
+      onboardingStatus
+    });
+    
+    // Redirect to frontend with token
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+  } catch (error) {
+    console.error('Error in Google callback:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+  }
 });
 
 // @desc    Twitter OAuth callback
 // @route   GET /api/auth/twitter/callback
 // @access  Public
 const twitterCallback = asyncHandler(async (req, res) => {
-  // Generate token
-  const token = req.user.getSignedJwtToken();
-
-  // Use the callback.html file to handle token processing
-  res.redirect(`${process.env.FRONTEND_URL}/callback.html?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  try {
+    // Generate token
+    const token = req.user.getSignedJwtToken();
+    
+    // Check if onboarding is completed
+    const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+    
+    // Log successful authentication
+    console.log('Twitter authentication successful:', {
+      userId: req.user.id,
+      email: req.user.email || '(email not provided)',
+      onboardingStatus,
+      emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
+    });
+    
+    // Redirect to frontend with token
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+  } catch (error) {
+    console.error('Error in Twitter callback:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+  }
 });
 
 // @desc    Direct Twitter auth (for development)
@@ -496,112 +527,7 @@ const logout = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Verify OTP
-// @route   POST /api/auth/verify-otp
-// @access  Public
-const verifyOTP = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body;
-
-  if (!email || !otp) {
-    res.status(400);
-    throw new Error('Please provide email and verification code');
-  }
-
-  // Get user by email
-  const user = await User.findOne({ email });
-
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  // Check if OTP matches and is not expired
-  if (user.otpCode !== otp || user.otpExpire < Date.now()) {
-    res.status(400);
-    throw new Error('Invalid or expired verification code');
-  }
-
-  // Set user as verified
-  user.isEmailVerified = true;
-  user.otpCode = undefined;
-  user.otpExpire = undefined;
-  await user.save();
-
-  // Generate token
-  const token = user.getSignedJwtToken();
-
-  res.status(200).json({
-    success: true,
-    token,
-    user: {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      isEmailVerified: true,
-      onboardingCompleted: user.onboardingCompleted,
-    }
-  });
-});
-
-// @desc    Resend OTP
-// @route   POST /api/auth/resend-otp
-// @access  Public
-const resendOTP = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    res.status(400);
-    throw new Error('Please provide an email');
-  }
-
-  // Get user by email
-  const user = await User.findOne({ email });
-
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  if (user.isEmailVerified) {
-    res.status(400);
-    throw new Error('Email is already verified');
-  }
-
-  // Generate new OTP
-  const otp = generateOTP();
-  user.otpCode = otp;
-  user.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-  await user.save();
-
-  // Send OTP verification email
-  const message = `
-    <h1>Email Verification</h1>
-    <p>Please use the following code to verify your email:</p>
-    <h2>${otp}</h2>
-    <p>This code will expire in 10 minutes.</p>
-  `;
-
-  try {
-    await sendEmail({
-      to: user.email,
-      subject: 'Email Verification Code',
-      html: message,
-    });
-
-    res.status(200).json({ 
-      success: true,
-      message: 'Verification code sent' 
-    });
-  } catch (error) {
-    user.otpCode = undefined;
-    user.otpExpire = undefined;
-    await user.save();
-
-    res.status(500);
-    throw new Error('Email could not be sent');
-  }
-});
+// OTP functions moved to a separate controller (otpController.js)
 
 module.exports = {
   registerUser,
@@ -614,7 +540,5 @@ module.exports = {
   googleCallback,
   twitterCallback,
   twitterAuth,
-  verifyOTP,
-  resendOTP,
   logout,
 }; 
