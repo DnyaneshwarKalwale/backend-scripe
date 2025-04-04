@@ -279,38 +279,26 @@ const resendOTP = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Check for user
+  // Validation
+  if (!email || !password) {
+    res.status(400);
+    throw new Error(getTranslation('missingFields', req.language));
+  }
+
+  // Find user
   const user = await User.findOne({ email });
 
   if (!user) {
     res.status(401);
-    throw new Error(getTranslation('userNotFound', req.language));
+    throw new Error(getTranslation('invalidCredentials', req.language));
   }
 
-  // Check if password matches
-  const isMatch = await user.matchPassword(password);
+  // Check password
+  const isMatch = await bcrypt.compare(password, user.password);
 
   if (!isMatch) {
     res.status(401);
     throw new Error(getTranslation('invalidCredentials', req.language));
-  }
-
-  // Check if email is verified for email auth method
-  if (user.authMethod === 'email' && !user.isEmailVerified) {
-    // Generate new OTP if needed
-    if (!user.emailVerificationOTP || !user.emailVerificationOTPExpire || user.emailVerificationOTPExpire < Date.now()) {
-      const otp = user.generateEmailVerificationOTP();
-      await user.save();
-      await sendVerificationEmail(user, null);
-    }
-
-    res.status(403).json({
-      success: false,
-      message: getTranslation('emailNotVerified', req.language),
-      requireVerification: true,
-      email: user.email
-    });
-    return;
   }
 
   // Generate token
@@ -327,6 +315,8 @@ const loginUser = asyncHandler(async (req, res) => {
       language: user.language,
       isEmailVerified: user.isEmailVerified,
       onboardingCompleted: user.onboardingCompleted,
+      profilePicture: user.profilePicture,
+      authMethod: user.authMethod,
     },
   });
 });
