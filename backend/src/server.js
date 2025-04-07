@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const onboardingRoutes = require('./routes/onboardingRoutes');
 const teamRoutes = require('./routes/teamRoutes');
+const twitterRoutes = require('./routes/twitterRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -81,6 +82,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/twitter', twitterRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
