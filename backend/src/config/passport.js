@@ -129,17 +129,17 @@ module.exports = (passport) => {
           
           // If user doesn't exist, create a new one
           if (!user) {
-            // Split name into first and last name
-            const nameParts = profile.displayName.split(' ');
-            const firstName = nameParts[0] || username;
-            const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+            // Handle name - use the full name as firstName if no space is found
+            const nameParts = profile.displayName.trim().split(/\s+/);
+            const firstName = nameParts[0] || profile.username || 'User';
+            const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : firstName; // Use firstName as lastName if no last name
             
             user = await User.create({
               twitterId: profile.id,
               firstName,
               lastName,
-              email: generatedEmail, // Use the actual email or generated one
-              isEmailVerified: email ? true : false, // Only mark as verified if Twitter provided an email
+              email: generatedEmail,
+              isEmailVerified: email ? true : false,
               profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
               authMethod: 'twitter',
               onboardingCompleted: false,
