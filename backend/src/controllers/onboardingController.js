@@ -25,42 +25,54 @@ const saveOnboarding = asyncHandler(async (req, res) => {
       inspirationProfiles,
       hasExtension
     } = req.body;
+
+    console.log("Saving onboarding data:", {
+      userId,
+      currentStep, 
+      workspaceType, 
+      firstName,
+      lastName
+    });
     
     // Find or create onboarding record for user
     let onboarding = await Onboarding.findOne({ user: userId });
     
     if (!onboarding) {
-      // Create new onboarding record
-      onboarding = new Onboarding({
+      // Create new onboarding record with required fields
+      const onboardingData = {
         user: userId,
-        currentStep,
-        workspaceType,
-        workspaceName,
-        teamMembers,
-        postFormat,
-        postFrequency,
-        firstName,
-        lastName,
-        email,
-        website,
-        mobileNumber,
-        inspirationProfiles,
-        hasExtension
-      });
+      };
+      
+      // Only add fields that exist in the request
+      if (currentStep !== undefined) onboardingData.currentStep = currentStep;
+      if (workspaceType !== undefined) onboardingData.workspaceType = workspaceType;
+      if (workspaceName !== undefined) onboardingData.workspaceName = workspaceName;
+      if (teamMembers !== undefined) onboardingData.teamMembers = teamMembers;
+      if (postFormat !== undefined) onboardingData.postFormat = postFormat;
+      if (postFrequency !== undefined) onboardingData.postFrequency = postFrequency;
+      if (firstName !== undefined) onboardingData.firstName = firstName;
+      if (lastName !== undefined) onboardingData.lastName = lastName;
+      if (email !== undefined) onboardingData.email = email;
+      if (website !== undefined) onboardingData.website = website;
+      if (mobileNumber !== undefined) onboardingData.mobileNumber = mobileNumber;
+      if (inspirationProfiles !== undefined) onboardingData.inspirationProfiles = inspirationProfiles;
+      if (hasExtension !== undefined) onboardingData.hasExtension = hasExtension;
+      
+      onboarding = new Onboarding(onboardingData);
     } else {
       // Update existing onboarding record
-      if (currentStep) onboarding.currentStep = currentStep;
-      if (workspaceType) onboarding.workspaceType = workspaceType;
+      if (currentStep !== undefined) onboarding.currentStep = currentStep;
+      if (workspaceType !== undefined) onboarding.workspaceType = workspaceType;
       if (workspaceName !== undefined) onboarding.workspaceName = workspaceName;
-      if (teamMembers) onboarding.teamMembers = teamMembers;
-      if (postFormat) onboarding.postFormat = postFormat;
-      if (postFrequency) onboarding.postFrequency = postFrequency;
+      if (teamMembers && Array.isArray(teamMembers)) onboarding.teamMembers = teamMembers;
+      if (postFormat !== undefined) onboarding.postFormat = postFormat;
+      if (postFrequency !== undefined) onboarding.postFrequency = postFrequency;
       if (firstName !== undefined) onboarding.firstName = firstName;
       if (lastName !== undefined) onboarding.lastName = lastName;
       if (email !== undefined) onboarding.email = email;
       if (website !== undefined) onboarding.website = website;
       if (mobileNumber !== undefined) onboarding.mobileNumber = mobileNumber;
-      if (inspirationProfiles) onboarding.inspirationProfiles = inspirationProfiles;
+      if (inspirationProfiles && Array.isArray(inspirationProfiles)) onboarding.inspirationProfiles = inspirationProfiles;
       if (hasExtension !== undefined) onboarding.hasExtension = hasExtension;
     }
     
@@ -74,7 +86,7 @@ const saveOnboarding = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('Error saving onboarding progress:', error);
     res.status(500);
-    throw new Error('Error saving onboarding progress');
+    throw new Error('Error saving onboarding progress: ' + error.message);
   }
 });
 

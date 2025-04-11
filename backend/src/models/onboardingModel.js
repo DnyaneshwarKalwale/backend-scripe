@@ -27,7 +27,7 @@ const onboardingSchema = mongoose.Schema(
     workspaceType: {
       type: String,
       enum: ['team', 'personal'],
-      required: true,
+      required: false,
     },
     workspaceName: {
       type: String,
