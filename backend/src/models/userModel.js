@@ -27,6 +27,14 @@ const userSchema = mongoose.Schema(
       type: String,
       // Not required for OAuth users
     },
+    website: {
+      type: String,
+      // Optional field for user's website
+    },
+    mobileNumber: {
+      type: String,
+      // Optional field for user's mobile number
+    },
     isEmailVerified: {
       type: Boolean,
       default: false,

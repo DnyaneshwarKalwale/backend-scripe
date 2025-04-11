@@ -11,6 +11,7 @@ const onboardingSchema = mongoose.Schema(
       type: String,
       enum: [
         'welcome',
+        'personal-info',
         'team-selection',
         'team-workspace',
         'team-invite',
@@ -67,6 +68,14 @@ const onboardingSchema = mongoose.Schema(
       default: ''
     },
     email: {
+      type: String,
+      default: ''
+    },
+    website: {
+      type: String,
+      default: ''
+    },
+    mobileNumber: {
       type: String,
       default: ''
     }

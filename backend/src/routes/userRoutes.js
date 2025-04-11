@@ -1,6 +1,6 @@
 const express = require('express');
 const { 
-  updateProfile,
+  updateUserProfile,
   updateOnboarding,
   changePassword,
   deleteAccount
@@ -13,7 +13,7 @@ const router = express.Router();
 router.use(protect);
 
 // User routes
-router.put('/profile', checkEmailVerified, updateProfile);
+router.put('/profile', checkEmailVerified, updateUserProfile);
 router.post('/update-onboarding', updateOnboarding);
 router.put('/change-password', checkEmailVerified, changePassword);
 router.delete('/delete-account', checkEmailVerified, deleteAccount);

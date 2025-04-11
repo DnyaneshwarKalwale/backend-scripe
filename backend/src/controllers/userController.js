@@ -1,13 +1,12 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
 const Onboarding = require('../models/onboardingModel');
+const generateToken = require('../utils/generateToken');
 
 // @desc    Update user profile
 // @route   PUT /api/users/profile
 // @access  Private
-const updateProfile = asyncHandler(async (req, res) => {
-  const { firstName, lastName, profilePicture } = req.body;
-
+const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
   if (!user) {
@@ -15,26 +14,59 @@ const updateProfile = asyncHandler(async (req, res) => {
     throw new Error('User not found');
   }
 
-  // Update fields
-  if (firstName) user.firstName = firstName;
-  if (lastName) user.lastName = lastName;
-  if (profilePicture) user.profilePicture = profilePicture;
+  // Only update fields that were sent in the request
+  if (req.body.firstName) {
+    user.firstName = req.body.firstName;
+  }
+  
+  if (req.body.lastName) {
+    user.lastName = req.body.lastName;
+  }
+  
+  if (req.body.email && user.email !== req.body.email) {
+    // Check if email already exists
+    const emailExists = await User.findOne({ email: req.body.email });
+    if (emailExists) {
+      res.status(400);
+      throw new Error('Email already in use');
+    }
+    
+    user.email = req.body.email;
+    // If email changed, we should mark it as not verified
+    user.isEmailVerified = false;
+  }
+  
+  if (req.body.password) {
+    user.password = req.body.password;
+  }
+  
+  if (req.body.language) {
+    user.language = req.body.language;
+  }
+  
+  // Add website and mobileNumber fields to user profile update
+  if (req.body.website !== undefined) {
+    user.website = req.body.website;
+  }
+  
+  if (req.body.mobileNumber !== undefined) {
+    user.mobileNumber = req.body.mobileNumber;
+  }
 
-  // Save user
   const updatedUser = await user.save();
 
   res.status(200).json({
-    success: true,
-    user: {
-      id: updatedUser._id,
-      firstName: updatedUser.firstName,
-      lastName: updatedUser.lastName,
-      email: updatedUser.email,
-      profilePicture: updatedUser.profilePicture,
-      isEmailVerified: updatedUser.isEmailVerified,
-      onboardingCompleted: updatedUser.onboardingCompleted,
-      authMethod: updatedUser.authMethod,
-    },
+    _id: updatedUser._id,
+    firstName: updatedUser.firstName,
+    lastName: updatedUser.lastName,
+    email: updatedUser.email,
+    isEmailVerified: updatedUser.isEmailVerified,
+    profilePicture: updatedUser.profilePicture,
+    language: updatedUser.language,
+    website: updatedUser.website,
+    mobileNumber: updatedUser.mobileNumber,
+    role: updatedUser.role,
+    token: generateToken(updatedUser._id),
   });
 });
 
@@ -187,7 +219,7 @@ const deleteAccount = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  updateProfile,
+  updateUserProfile,
   updateOnboarding,
   changePassword,
   deleteAccount,
