@@ -22,7 +22,8 @@ const saveOnboarding = asyncHandler(async (req, res) => {
       email,
       website,
       mobileNumber,
-      inspirationProfiles
+      inspirationProfiles,
+      hasExtension
     } = req.body;
     
     // Find or create onboarding record for user
@@ -43,7 +44,8 @@ const saveOnboarding = asyncHandler(async (req, res) => {
         email,
         website,
         mobileNumber,
-        inspirationProfiles
+        inspirationProfiles,
+        hasExtension
       });
     } else {
       // Update existing onboarding record
@@ -59,6 +61,7 @@ const saveOnboarding = asyncHandler(async (req, res) => {
       if (website !== undefined) onboarding.website = website;
       if (mobileNumber !== undefined) onboarding.mobileNumber = mobileNumber;
       if (inspirationProfiles) onboarding.inspirationProfiles = inspirationProfiles;
+      if (hasExtension !== undefined) onboarding.hasExtension = hasExtension;
     }
     
     await onboarding.save();
@@ -105,7 +108,8 @@ const getOnboarding = asyncHandler(async (req, res) => {
         email: onboarding.email,
         website: onboarding.website,
         mobileNumber: onboarding.mobileNumber,
-        inspirationProfiles: onboarding.inspirationProfiles || []
+        inspirationProfiles: onboarding.inspirationProfiles || [],
+        hasExtension: onboarding.hasExtension
       }
     });
   } catch (error) {
@@ -154,7 +158,7 @@ const updateTeamMembers = asyncHandler(async (req, res) => {
 const updatePostFormat = asyncHandler(async (req, res) => {
   const { postFormat } = req.body;
 
-  if (!postFormat || !['thread', 'concise', 'hashtag', 'visual', 'viral'].includes(postFormat)) {
+  if (!postFormat || !['text', 'carousel', 'document', 'visual', 'poll'].includes(postFormat)) {
     res.status(400);
     throw new Error('Valid post format is required');
   }

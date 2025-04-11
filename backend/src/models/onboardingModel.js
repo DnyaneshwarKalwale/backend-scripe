@@ -50,8 +50,8 @@ const onboardingSchema = mongoose.Schema(
     ],
     postFormat: {
       type: String,
-      enum: ['thread', 'concise', 'hashtag', 'visual', 'viral'],
-      default: 'thread',
+      enum: ['text', 'carousel', 'document', 'visual', 'poll'],
+      default: 'text',
     },
     postFrequency: {
       type: Number,
@@ -82,6 +82,14 @@ const onboardingSchema = mongoose.Schema(
     inspirationProfiles: {
       type: [String],
       default: []
+    },
+    hasExtension: {
+      type: Boolean,
+      default: false
+    },
+    onboardingCompleted: {
+      type: Boolean,
+      default: false
     }
   },
   {
