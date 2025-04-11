@@ -46,11 +46,11 @@ const userSchema = mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     googleId: String,
-    twitterId: String,
+    linkedinId: String,
     profilePicture: String,
     authMethod: {
       type: String,
-      enum: ['email', 'google', 'twitter'],
+      enum: ['email', 'google', 'linkedin'],
       required: true,
     },
     onboardingCompleted: {

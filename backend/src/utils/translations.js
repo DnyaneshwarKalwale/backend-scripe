@@ -33,7 +33,18 @@ const translations = {
     // Error messages
     unauthorized: "Unauthorized access",
     serverError: "Server error",
-    notFound: "Resource not found"
+    notFound: "Resource not found",
+    
+    // LinkedIn related
+    linkedinNotConnected: "LinkedIn account not connected",
+    linkedinFetchError: "Error fetching data from LinkedIn",
+    
+    // User related
+    passwordUpdated: "Password updated successfully",
+    accountDeleted: "Account deleted successfully",
+    
+    // Onboarding related
+    onboardingSaved: "Onboarding progress saved"
   },
   
   german: {
@@ -65,7 +76,18 @@ const translations = {
     // Error messages
     unauthorized: "Nicht autorisierter Zugriff",
     serverError: "Serverfehler",
-    notFound: "Ressource nicht gefunden"
+    notFound: "Ressource nicht gefunden",
+    
+    // LinkedIn related
+    linkedinNotConnected: "LinkedIn account not connected",
+    linkedinFetchError: "Error fetching data from LinkedIn",
+    
+    // User related
+    passwordUpdated: "Passwort erfolgreich aktualisiert",
+    accountDeleted: "Account erfolgreich gelöscht",
+    
+    // Onboarding related
+    onboardingSaved: "Onboarding-Fortschritt gespeichert"
   },
   
   spanish: {
@@ -97,7 +119,18 @@ const translations = {
     // Error messages
     unauthorized: "Acceso no autorizado",
     serverError: "Error del servidor",
-    notFound: "Recurso no encontrado"
+    notFound: "Recurso no encontrado",
+    
+    // LinkedIn related
+    linkedinNotConnected: "Cuenta de LinkedIn no conectada",
+    linkedinFetchError: "Error al obtener datos de LinkedIn",
+    
+    // User related
+    passwordUpdated: "Contraseña actualizada exitosamente",
+    accountDeleted: "Cuenta eliminada exitosamente",
+    
+    // Onboarding related
+    onboardingSaved: "Progreso de incorporación guardado"
   },
   
   french: {
@@ -129,7 +162,18 @@ const translations = {
     // Error messages
     unauthorized: "Accès non autorisé",
     serverError: "Erreur du serveur",
-    notFound: "Ressource non trouvée"
+    notFound: "Ressource non trouvée",
+    
+    // LinkedIn related
+    linkedinNotConnected: "Compte LinkedIn non connecté",
+    linkedinFetchError: "Erreur lors de la récupération des données depuis LinkedIn",
+    
+    // User related
+    passwordUpdated: "Mot de passe mis à jour avec succès",
+    accountDeleted: "Compte supprimé avec succès",
+    
+    // Onboarding related
+    onboardingSaved: "Progression de l'intégration enregistrée"
   }
 };
 
