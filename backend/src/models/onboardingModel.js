@@ -17,7 +17,7 @@ const onboardingSchema = mongoose.Schema(
         'team-invite',
         'post-format',
         'post-frequency',
-        'registration',
+        'inspiration-profiles',
         'extension-install',
         'completion',
         'dashboard'
@@ -78,6 +78,10 @@ const onboardingSchema = mongoose.Schema(
     mobileNumber: {
       type: String,
       default: ''
+    },
+    inspirationProfiles: {
+      type: [String],
+      default: []
     }
   },
   {

@@ -6,50 +6,113 @@ const Onboarding = require('../models/onboardingModel');
 // @route   POST /api/onboarding
 // @access  Private
 const saveOnboarding = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
-
-  // Find the existing onboarding record or create a new one
-  let onboarding = await Onboarding.findOne({ user: userId });
-  
-  if (!onboarding) {
-    onboarding = new Onboarding({
-      user: userId,
-      ...req.body
+  try {
+    const userId = req.user._id;
+    
+    // Extract onboarding data from request body
+    const { 
+      currentStep, 
+      workspaceType, 
+      workspaceName, 
+      teamMembers, 
+      postFormat, 
+      postFrequency,
+      firstName,
+      lastName,
+      email,
+      website,
+      mobileNumber,
+      inspirationProfiles
+    } = req.body;
+    
+    // Find or create onboarding record for user
+    let onboarding = await Onboarding.findOne({ user: userId });
+    
+    if (!onboarding) {
+      // Create new onboarding record
+      onboarding = new Onboarding({
+        user: userId,
+        currentStep,
+        workspaceType,
+        workspaceName,
+        teamMembers,
+        postFormat,
+        postFrequency,
+        firstName,
+        lastName,
+        email,
+        website,
+        mobileNumber,
+        inspirationProfiles
+      });
+    } else {
+      // Update existing onboarding record
+      if (currentStep) onboarding.currentStep = currentStep;
+      if (workspaceType) onboarding.workspaceType = workspaceType;
+      if (workspaceName !== undefined) onboarding.workspaceName = workspaceName;
+      if (teamMembers) onboarding.teamMembers = teamMembers;
+      if (postFormat) onboarding.postFormat = postFormat;
+      if (postFrequency) onboarding.postFrequency = postFrequency;
+      if (firstName !== undefined) onboarding.firstName = firstName;
+      if (lastName !== undefined) onboarding.lastName = lastName;
+      if (email !== undefined) onboarding.email = email;
+      if (website !== undefined) onboarding.website = website;
+      if (mobileNumber !== undefined) onboarding.mobileNumber = mobileNumber;
+      if (inspirationProfiles) onboarding.inspirationProfiles = inspirationProfiles;
+    }
+    
+    await onboarding.save();
+    
+    res.status(200).json({
+      success: true,
+      data: onboarding,
+      message: 'Onboarding progress saved successfully'
     });
-  } else {
-    // Update all fields sent in the request
-    Object.keys(req.body).forEach(key => {
-      onboarding[key] = req.body[key];
-    });
+  } catch (error) {
+    console.error('Error saving onboarding progress:', error);
+    res.status(500);
+    throw new Error('Error saving onboarding progress');
   }
-  
-  await onboarding.save();
-  
-  res.status(200).json({
-    success: true,
-    data: onboarding
-  });
 });
 
 // @desc    Get user's onboarding
 // @route   GET /api/onboarding
 // @access  Private
 const getOnboarding = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
-  
-  const onboarding = await Onboarding.findOne({ user: userId });
-  
-  if (!onboarding) {
-    return res.status(200).json({
+  try {
+    const userId = req.user._id;
+    const onboarding = await Onboarding.findOne({ user: userId });
+    
+    if (!onboarding) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'No onboarding data found for this user'
+      });
+    }
+    
+    res.status(200).json({
       success: true,
-      data: null
+      data: {
+        currentStep: onboarding.currentStep,
+        workspaceType: onboarding.workspaceType,
+        workspaceName: onboarding.workspaceName,
+        teamMembers: onboarding.teamMembers,
+        postFormat: onboarding.postFormat,
+        postFrequency: onboarding.postFrequency,
+        firstName: onboarding.firstName,
+        lastName: onboarding.lastName,
+        email: onboarding.email,
+        website: onboarding.website,
+        mobileNumber: onboarding.mobileNumber,
+        inspirationProfiles: onboarding.inspirationProfiles || []
+      }
     });
+  } catch (error) {
+    console.error('Error fetching onboarding data:', error);
+    res.status(500);
+    throw new Error('Error fetching onboarding data');
   }
-  
-  res.status(200).json({
-    success: true,
-    data: onboarding
-  });
 });
 
 // @desc    Update team members
