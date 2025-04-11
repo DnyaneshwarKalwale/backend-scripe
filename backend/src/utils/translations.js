@@ -1,54 +1,45 @@
 /**
- * Simplified translations utility for error messages
+ * Simplified translations utility
+ * Returns the English string regardless of language parameter
  */
-
-const translations = {
-  // Common messages
-  userRegistered: "User registered successfully",
-  loginSuccess: "Login successful",
-  logoutSuccess: "Logged out successfully",
-  invalidCredentials: "Invalid credentials",
-  userNotFound: "User not found",
-  
-  // Onboarding messages
-  onboardingUpdated: "Onboarding preferences updated",
-  onboardingCompleted: "Onboarding completed successfully",
-  onboardingSaved: "Onboarding progress saved",
-  
-  // User-related messages
-  profileUpdated: "Profile updated successfully",
-  emailAlreadyExists: "Email already exists",
-  passwordUpdated: "Password updated successfully",
-  accountDeleted: "Account deleted successfully",
-  
-  // LinkedIn-related messages
-  linkedinConnected: "LinkedIn account connected successfully",
-  linkedinDisconnected: "LinkedIn account disconnected",
-  linkedinNotConnected: "LinkedIn account not connected",
-  linkedinFetchError: "Error fetching data from LinkedIn",
-  
-  // Team-related messages
-  teamCreated: "Team created successfully",
-  teamUpdated: "Team updated successfully",
-  memberAdded: "Team member added successfully",
-  memberRemoved: "Team member removed",
-  
-  // Error messages
-  unauthorized: "Unauthorized access",
-  serverError: "Server error",
-  notFound: "Resource not found"
-};
 
 /**
- * Get translation for a key
+ * Get the translation for a specific key in the given language
  * @param {string} key - The translation key
- * @returns {string} - The translated text or the key itself if translation not found
+ * @param {string} language - The language (ignored in this implementation)
+ * @returns {string} - The English translation
  */
-const getTranslation = (key) => {
+const getTranslation = (key, language) => {
+  // Simplified translations object with only English
+  const translations = {
+    // Auth translations
+    missingFields: 'Please provide all required fields',
+    invalidEmail: 'Please provide a valid email address',
+    passwordLength: 'Password must be at least 6 characters',
+    emailAlreadyExists: 'Email already exists',
+    userRegistered: 'User registered successfully',
+    invalidOrExpiredToken: 'Invalid or expired token',
+    emailVerified: 'Email verified successfully',
+    userNotFound: 'User not found',
+    emailAlreadyVerified: 'Email already verified',
+    verificationEmailResent: 'Verification email resent',
+    emailSendingError: 'Error sending email',
+    invalidOrExpiredOTP: 'Invalid or expired OTP',
+    invalidCredentials: 'Invalid credentials',
+    passwordResetEmailSent: 'Password reset email sent',
+    passwordResetSuccessful: 'Password reset successful',
+    logoutSuccess: 'Logged out successfully',
+    serverError: 'Server error',
+    
+    // Twitter translations
+    twitterNotConnected: 'Twitter account not connected',
+    twitterFetchError: 'Error fetching Twitter data',
+    twitterIDAndNameRequired: 'Twitter ID and Name required',
+    twitterAuthError: 'Twitter authentication error'
+  };
+  
+  // Return the English translation or the key itself as fallback
   return translations[key] || key;
 };
 
-module.exports = {
-  getTranslation,
-  translations
-}; 
+module.exports = { getTranslation }; 
