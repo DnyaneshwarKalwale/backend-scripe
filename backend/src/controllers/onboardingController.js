@@ -45,10 +45,10 @@ const saveOnboarding = asyncHandler(async (req, res) => {
       
       // Only add fields that exist in the request
       if (currentStep !== undefined) onboardingData.currentStep = currentStep;
-      if (workspaceType !== undefined) onboardingData.workspaceType = workspaceType;
+      if (workspaceType !== undefined) onboardingData.workspaceType = workspaceType || 'personal'; // Default to personal if null
       if (workspaceName !== undefined) onboardingData.workspaceName = workspaceName;
       if (teamMembers !== undefined) onboardingData.teamMembers = teamMembers;
-      if (postFormat !== undefined) onboardingData.postFormat = postFormat;
+      if (postFormat !== undefined) onboardingData.postFormat = postFormat || 'text'; // Default to text if null
       if (postFrequency !== undefined) onboardingData.postFrequency = postFrequency;
       if (firstName !== undefined) onboardingData.firstName = firstName;
       if (lastName !== undefined) onboardingData.lastName = lastName;
@@ -62,10 +62,10 @@ const saveOnboarding = asyncHandler(async (req, res) => {
     } else {
       // Update existing onboarding record
       if (currentStep !== undefined) onboarding.currentStep = currentStep;
-      if (workspaceType !== undefined) onboarding.workspaceType = workspaceType;
+      if (workspaceType !== undefined) onboarding.workspaceType = workspaceType || 'personal'; // Default to personal if null
       if (workspaceName !== undefined) onboarding.workspaceName = workspaceName;
       if (teamMembers && Array.isArray(teamMembers)) onboarding.teamMembers = teamMembers;
-      if (postFormat !== undefined) onboarding.postFormat = postFormat;
+      if (postFormat !== undefined) onboarding.postFormat = postFormat || 'text'; // Default to text if null
       if (postFrequency !== undefined) onboarding.postFrequency = postFrequency;
       if (firstName !== undefined) onboarding.firstName = firstName;
       if (lastName !== undefined) onboarding.lastName = lastName;
@@ -76,13 +76,34 @@ const saveOnboarding = asyncHandler(async (req, res) => {
       if (hasExtension !== undefined) onboarding.hasExtension = hasExtension;
     }
     
-    await onboarding.save();
-    
-    res.status(200).json({
-      success: true,
-      data: onboarding,
-      message: 'Onboarding progress saved successfully'
-    });
+    try {
+      await onboarding.save();
+      
+      res.status(200).json({
+        success: true,
+        data: onboarding,
+        message: 'Onboarding progress saved successfully'
+      });
+    } catch (error) {
+      console.error('Error during onboarding save operation:', error);
+      // Try to recover with default values if validation fails
+      if (error.name === 'ValidationError') {
+        // Apply defaults to any fields with validation errors
+        if (error.errors.workspaceType) onboarding.workspaceType = 'personal';
+        if (error.errors.postFormat) onboarding.postFormat = 'text';
+        
+        // Try saving again
+        await onboarding.save();
+        
+        res.status(200).json({
+          success: true,
+          data: onboarding,
+          message: 'Onboarding progress saved successfully with defaults'
+        });
+      } else {
+        throw error; // Re-throw if it's not a validation error
+      }
+    }
   } catch (error) {
     console.error('Error saving onboarding progress:', error);
     res.status(500);
