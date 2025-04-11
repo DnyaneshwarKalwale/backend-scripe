@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
 const Onboarding = require('../models/onboardingModel');
 
-// @desc    Save onboarding preferences
+// @desc    Save onboarding progress
 // @route   POST /api/onboarding
 // @access  Private
 const saveOnboarding = asyncHandler(async (req, res) => {

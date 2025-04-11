@@ -40,10 +40,6 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     user.password = req.body.password;
   }
   
-  if (req.body.language) {
-    user.language = req.body.language;
-  }
-  
   // Add website and mobileNumber fields to user profile update
   if (req.body.website !== undefined) {
     user.website = req.body.website;
@@ -81,8 +77,6 @@ const updateOnboarding = asyncHandler(async (req, res) => {
     onboardingCompleted,
     workspaceType,
     workspaceName,
-    language,
-    theme,
     postFormat,
     postFrequency
   } = req.body;
@@ -113,8 +107,6 @@ const updateOnboarding = asyncHandler(async (req, res) => {
         user: userId,
         workspaceType,
         workspaceName,
-        language,
-        theme,
         postFormat,
         postFrequency,
         currentStep: 'dashboard' // Set current step to dashboard
@@ -123,8 +115,6 @@ const updateOnboarding = asyncHandler(async (req, res) => {
       // Update all provided fields
       onboarding.workspaceType = workspaceType;
       if (workspaceName) onboarding.workspaceName = workspaceName;
-      if (language) onboarding.language = language;
-      if (theme) onboarding.theme = theme;
       if (postFormat) onboarding.postFormat = postFormat;
       if (postFrequency) onboarding.postFrequency = postFrequency;
       onboarding.currentStep = 'dashboard'; // Set current step to dashboard

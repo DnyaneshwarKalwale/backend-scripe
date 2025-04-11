@@ -1,7 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
 const axios = require('axios');
-const { getTranslation } = require('../utils/translations');
 
 // LinkedIn API base URL
 const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
@@ -17,7 +16,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
     
     if (!user || !user.linkedinId) {
       res.status(400);
-      throw new Error(getTranslation('linkedinNotConnected', req.language));
+      throw new Error('LinkedIn account not connected');
     }
     
     // In a real implementation, we would use the LinkedIn API client
@@ -47,7 +46,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('LinkedIn Profile Error:', error);
     res.status(500);
-    throw new Error(getTranslation('linkedinFetchError', req.language) || 'Error fetching LinkedIn profile');
+    throw new Error('Error fetching LinkedIn profile');
   }
 });
 
@@ -62,7 +61,7 @@ const getUserPosts = asyncHandler(async (req, res) => {
     
     if (!user || !user.linkedinId) {
       res.status(400);
-      throw new Error(getTranslation('linkedinNotConnected', req.language));
+      throw new Error('LinkedIn account not connected');
     }
     
     // Generate sample posts
@@ -109,7 +108,7 @@ const getUserPosts = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('LinkedIn Posts Error:', error);
     res.status(500);
-    throw new Error(getTranslation('linkedinFetchError', req.language) || 'Error fetching posts');
+    throw new Error('Error fetching posts');
   }
 });
 
@@ -124,7 +123,7 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
     
     if (!user || !user.linkedinId) {
       res.status(400);
-      throw new Error(getTranslation('linkedinNotConnected', req.language));
+      throw new Error('LinkedIn account not connected');
     }
     
     // Generate sample analytics data
@@ -191,7 +190,7 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('LinkedIn Analytics Error:', error);
     res.status(500);
-    throw new Error(getTranslation('linkedinFetchError', req.language) || 'Error fetching analytics');
+    throw new Error('Error fetching analytics');
   }
 });
 
