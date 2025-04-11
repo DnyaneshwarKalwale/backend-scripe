@@ -14,8 +14,6 @@ const onboardingSchema = mongoose.Schema(
         'team-selection',
         'team-workspace',
         'team-invite',
-        'theme-selection',
-        'language-selection',
         'post-format',
         'post-frequency',
         'registration',
@@ -49,16 +47,6 @@ const onboardingSchema = mongoose.Schema(
         },
       },
     ],
-    theme: {
-      type: String,
-      enum: ['light', 'dark'],
-      default: 'light',
-    },
-    language: {
-      type: String,
-      enum: ['english', 'german'],
-      default: 'english',
-    },
     postFormat: {
       type: String,
       enum: ['thread', 'concise', 'hashtag', 'visual', 'viral'],

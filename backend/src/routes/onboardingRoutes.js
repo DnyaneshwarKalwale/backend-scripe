@@ -3,8 +3,6 @@ const {
   saveOnboarding,
   getOnboarding,
   updateTeamMembers,
-  updateTheme,
-  updateLanguage,
   updatePostFormat,
   updatePostFrequency,
   completeOnboarding,
@@ -28,8 +26,6 @@ router.route('/')
 router.post('/complete', completeOnboarding);
 
 router.put('/team-members', updateTeamMembers);
-router.put('/theme', updateTheme);
-router.put('/language', updateLanguage);
 router.put('/post-format', updatePostFormat);
 router.put('/post-frequency', updatePostFrequency);
 

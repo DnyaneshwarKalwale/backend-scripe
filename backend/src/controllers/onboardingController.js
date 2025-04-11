@@ -85,60 +85,6 @@ const updateTeamMembers = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Update theme preference
-// @route   PUT /api/onboarding/theme
-// @access  Private
-const updateTheme = asyncHandler(async (req, res) => {
-  const { theme } = req.body;
-
-  if (!theme || !['light', 'dark'].includes(theme)) {
-    res.status(400);
-    throw new Error('Valid theme (light or dark) is required');
-  }
-
-  const onboarding = await Onboarding.findOne({ user: req.user._id });
-
-  if (!onboarding) {
-    res.status(404);
-    throw new Error('Onboarding not found');
-  }
-
-  onboarding.theme = theme;
-  await onboarding.save();
-
-  res.status(200).json({
-    success: true,
-    data: onboarding,
-  });
-});
-
-// @desc    Update language preference
-// @route   PUT /api/onboarding/language
-// @access  Private
-const updateLanguage = asyncHandler(async (req, res) => {
-  const { language } = req.body;
-
-  if (!language || !['english', 'german'].includes(language)) {
-    res.status(400);
-    throw new Error('Valid language (english or german) is required');
-  }
-
-  const onboarding = await Onboarding.findOne({ user: req.user._id });
-
-  if (!onboarding) {
-    res.status(404);
-    throw new Error('Onboarding not found');
-  }
-
-  onboarding.language = language;
-  await onboarding.save();
-
-  res.status(200).json({
-    success: true,
-    data: onboarding,
-  });
-});
-
 // @desc    Update post format
 // @route   PUT /api/onboarding/post-format
 // @access  Private
@@ -252,8 +198,6 @@ module.exports = {
   saveOnboarding,
   getOnboarding,
   updateTeamMembers,
-  updateTheme,
-  updateLanguage,
   updatePostFormat,
   updatePostFrequency,
   completeOnboarding,
