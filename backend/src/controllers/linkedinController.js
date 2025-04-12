@@ -36,27 +36,45 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
     }
     
     console.log(`Attempting to fetch real LinkedIn profile data for user ${user._id}`);
+    console.log(`User LinkedIn ID: ${user.linkedinId}`);
+    console.log(`Token expiry: ${user.linkedinTokenExpiry}`);
     
     try {
       // Try to fetch real data from LinkedIn API
+      console.log('Calling LinkedIn userInfo endpoint...');
       const userInfoResponse = await axios.get(LINKEDIN_USERINFO_URL, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
+      }).catch(error => {
+        console.error('LinkedIn userInfo API error:', error.message);
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', JSON.stringify(error.response.data));
+        }
+        throw error;
       });
       
-      console.log('LinkedIn API userInfo response:', JSON.stringify(userInfoResponse.data));
+      console.log('LinkedIn API userInfo response successful');
       
       // Try to get profile details with additional fields
+      console.log('Calling LinkedIn profile endpoint...');
       const profileResponse = await axios.get(`${LINKEDIN_PROFILE_URL}?projection=(id,firstName,lastName,profilePicture,headline,vanityName)`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
+      }).catch(error => {
+        console.error('LinkedIn profile API error:', error.message);
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', JSON.stringify(error.response.data));
+        }
+        throw error;
       });
       
-      console.log('LinkedIn API profile response:', JSON.stringify(profileResponse.data));
+      console.log('LinkedIn API profile response successful');
       
       // Build profile from API responses
       const username = profileResponse.data.vanityName || 
@@ -76,7 +94,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         verified: true
       };
       
-      console.log('Built LinkedIn profile:', linkedinProfile);
+      console.log('Built LinkedIn profile successfully');
       
       res.status(200).json({
         success: true,
@@ -85,8 +103,37 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
       });
     } catch (apiError) {
       console.error('LinkedIn API Error:', apiError.message);
-      console.error('Error details:', apiError.response?.data || 'No response data');
-      console.error('LinkedIn API access failed. Falling back to sample data');
+      
+      let errorDetails = apiError.message;
+      let errorType = 'api_error';
+      
+      if (apiError.response) {
+        console.error('Error status:', apiError.response.status);
+        console.error('Error details:', apiError.response?.data || 'No response data');
+        
+        // Determine specific error type
+        if (apiError.response.status === 401) {
+          errorType = 'token_expired';
+          errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
+          
+          // Update user record to mark token as expired
+          if (user) {
+            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
+            await user.save();
+          }
+        } else if (apiError.response.status === 403) {
+          errorType = 'permission_denied';
+          errorDetails = 'LinkedIn API access denied. You may need additional permissions.';
+        } else if (apiError.response.status === 404) {
+          errorType = 'not_found';
+          errorDetails = 'LinkedIn resource not found. The API endpoint may have changed.';
+        } else if (apiError.response.status >= 500) {
+          errorType = 'linkedin_server_error';
+          errorDetails = 'LinkedIn servers are experiencing issues. Please try again later.';
+        }
+      }
+      
+      console.error(`LinkedIn API access failed (${errorType}). Falling back to sample data`);
       
       // If API call fails, fall back to sample data
       const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
@@ -110,7 +157,8 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         data: linkedinProfile,
         usingRealData: false,
         error: 'Failed to fetch real data from LinkedIn API. Using sample data instead.',
-        errorDetails: apiError.message
+        errorType: errorType,
+        errorDetails: errorDetails
       });
     }
   } catch (error) {
@@ -148,18 +196,28 @@ const getUserPosts = asyncHandler(async (req, res) => {
     }
     
     console.log(`Attempting to fetch real LinkedIn posts for user ${user._id}`);
+    console.log(`User LinkedIn ID: ${user.linkedinId}`);
+    console.log(`Token expiry: ${user.linkedinTokenExpiry}`);
     
     try {
       // Try to fetch user's posts from LinkedIn
       // Note: This might not work as we're currently using the basic scopes
+      console.log('Calling LinkedIn posts endpoint...');
       const postsResponse = await axios.get(`${LINKEDIN_API_BASE_URL}/posts?author=${user.linkedinId}`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
+      }).catch(error => {
+        console.error('LinkedIn posts API error:', error.message);
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', JSON.stringify(error.response.data));
+        }
+        throw error;
       });
       
-      console.log('LinkedIn API posts response:', JSON.stringify(postsResponse.data));
+      console.log('LinkedIn API posts response successful');
       
       // If we get a successful response, map the data to our format
       const recentPosts = postsResponse.data.map(post => ({
@@ -181,8 +239,37 @@ const getUserPosts = asyncHandler(async (req, res) => {
       });
     } catch (apiError) {
       console.error('LinkedIn API Posts Error:', apiError.message);
-      console.error('Error details:', apiError.response?.data || 'No response data');
-      console.error('LinkedIn API access failed. Falling back to sample data');
+      
+      let errorDetails = apiError.message;
+      let errorType = 'api_error';
+      
+      if (apiError.response) {
+        console.error('Error status:', apiError.response.status);
+        console.error('Error details:', apiError.response?.data || 'No response data');
+        
+        // Determine specific error type
+        if (apiError.response.status === 401) {
+          errorType = 'token_expired';
+          errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
+          
+          // Update user record to mark token as expired
+          if (user) {
+            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
+            await user.save();
+          }
+        } else if (apiError.response.status === 403) {
+          errorType = 'permission_denied';
+          errorDetails = 'LinkedIn API access denied. You may need additional permissions for fetching posts.';
+        } else if (apiError.response.status === 404) {
+          errorType = 'not_found';
+          errorDetails = 'LinkedIn resource not found. The API endpoint may have changed.';
+        } else if (apiError.response.status >= 500) {
+          errorType = 'linkedin_server_error';
+          errorDetails = 'LinkedIn servers are experiencing issues. Please try again later.';
+        }
+      }
+      
+      console.error(`LinkedIn API posts access failed (${errorType}). Falling back to sample data`);
       
       // Generate sample posts
       const recentPosts = [
@@ -226,7 +313,8 @@ const getUserPosts = asyncHandler(async (req, res) => {
         data: recentPosts,
         usingRealData: false,
         error: 'Failed to fetch real data from LinkedIn API. Using sample data instead.',
-        errorDetails: apiError.message
+        errorType: errorType,
+        errorDetails: errorDetails
       });
     }
   } catch (error) {
@@ -264,18 +352,28 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
     }
     
     console.log(`Attempting to fetch real LinkedIn analytics for user ${user._id}`);
+    console.log(`User LinkedIn ID: ${user.linkedinId}`);
+    console.log(`Token expiry: ${user.linkedinTokenExpiry}`);
     
     try {
       // Try to fetch analytics from LinkedIn
       // Note: This requires specific scopes and Premium LinkedIn developer access
+      console.log('Calling LinkedIn analytics endpoint...');
       const analyticsResponse = await axios.get(`${LINKEDIN_API_BASE_URL}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=urn:li:organization:${user.linkedinId}`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
+      }).catch(error => {
+        console.error('LinkedIn analytics API error:', error.message);
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', JSON.stringify(error.response.data));
+        }
+        throw error;
       });
       
-      console.log('LinkedIn API analytics response:', JSON.stringify(analyticsResponse.data));
+      console.log('LinkedIn API analytics response successful');
       
       // Map real analytics to our format
       // This is a placeholder as the actual response will be different
@@ -317,8 +415,37 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
       });
     } catch (apiError) {
       console.error('LinkedIn API Analytics Error:', apiError.message);
-      console.error('Error details:', apiError.response?.data || 'No response data');
-      console.error('LinkedIn API access failed. Falling back to sample data');
+      
+      let errorDetails = apiError.message;
+      let errorType = 'api_error';
+      
+      if (apiError.response) {
+        console.error('Error status:', apiError.response.status);
+        console.error('Error details:', apiError.response?.data || 'No response data');
+        
+        // Determine specific error type
+        if (apiError.response.status === 401) {
+          errorType = 'token_expired';
+          errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
+          
+          // Update user record to mark token as expired
+          if (user) {
+            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
+            await user.save();
+          }
+        } else if (apiError.response.status === 403) {
+          errorType = 'permission_denied';
+          errorDetails = 'LinkedIn API access denied. Analytics features require a Premium LinkedIn Developer account with additional permissions.';
+        } else if (apiError.response.status === 404) {
+          errorType = 'not_found';
+          errorDetails = 'LinkedIn resource not found. The API endpoint may have changed.';
+        } else if (apiError.response.status >= 500) {
+          errorType = 'linkedin_server_error';
+          errorDetails = 'LinkedIn servers are experiencing issues. Please try again later.';
+        }
+      }
+      
+      console.error(`LinkedIn API analytics access failed (${errorType}). Falling back to sample data`);
       
       // Generate sample analytics data
       const now = Date.now();
@@ -382,7 +509,8 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
         data: analyticsData,
         usingRealData: false,
         error: 'Failed to fetch real data from LinkedIn API. Using sample data instead.',
-        errorDetails: apiError.message
+        errorType: errorType,
+        errorDetails: errorDetails
       });
     }
   } catch (error) {
