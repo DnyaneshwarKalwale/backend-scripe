@@ -43,22 +43,39 @@ app.use(cors({
 
 // Configure session middleware with MongoDB store for production
 if (process.env.NODE_ENV === 'production') {
-  const MongoStore = require('connect-mongo');
-  app.use(session({
-    secret: process.env.JWT_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGO_URI,
-      collectionName: 'sessions'
-    }),
-    cookie: { 
-      secure: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true,
-      sameSite: 'none' // Required for cross-domain cookies
-    }
-  }));
+  try {
+    const MongoStore = require('connect-mongo');
+    app.use(session({
+      secret: process.env.JWT_SECRET,
+      resave: false,
+      saveUninitialized: false,
+      store: MongoStore.create({
+        mongoUrl: process.env.MONGO_URI,
+        collectionName: 'sessions'
+      }),
+      cookie: { 
+        secure: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        httpOnly: true,
+        sameSite: 'none' // Required for cross-domain cookies
+      }
+    }));
+    console.log('Using MongoDB session store for production');
+  } catch (error) {
+    console.warn('⚠️ connect-mongo not available, falling back to memory store (not recommended for production)');
+    console.warn('Please run: npm install connect-mongo --save');
+    
+    app.use(session({
+      secret: process.env.JWT_SECRET,
+      resave: false,
+      saveUninitialized: false,
+      cookie: { 
+        secure: false, // Can't use secure cookies without HTTPS
+        maxAge: 24 * 60 * 60 * 1000,
+        httpOnly: true
+      }
+    }));
+  }
 } else {
   // Use simple memory store for development
   app.use(session({
@@ -71,6 +88,7 @@ if (process.env.NODE_ENV === 'production') {
       httpOnly: true
     }
   }));
+  console.log('Using memory session store for development');
 }
 
 // Initialize passport
