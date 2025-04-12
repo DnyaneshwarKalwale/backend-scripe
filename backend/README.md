@@ -53,7 +53,7 @@ TWITTER_CONSUMER_SECRET=your_twitter_consumer_secret
 TWITTER_CALLBACK_URL=http://localhost:5000/api/auth/twitter/callback
 
 # Frontend URL (for redirects)
-FRONTEND_URL=http://localhost:8080
+FRONTEND_URL=https://deluxe-cassata-51d628.netlify.app
 ```
 
 ## Installation
