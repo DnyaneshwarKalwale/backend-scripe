@@ -102,47 +102,131 @@ module.exports = (passport) => {
       },
       async (req, accessToken, refreshToken, params, profile, done) => {
         try {
-          console.log('LinkedIn auth starting with access token');
+          console.log('LinkedIn auth starting with access token:', accessToken ? 'Token received' : 'No token');
+          console.log('LinkedIn params:', JSON.stringify(params));
           console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
           
+          let userData = null;
+
           // The passport-linkedin-oauth2 package might not properly fetch the profile from OpenID Connect endpoint
           // So we'll manually fetch the user info from the OpenID Connect endpoint
           try {
             console.log('Manually fetching user info from OpenID Connect endpoint');
             const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
               headers: {
-                Authorization: `Bearer ${accessToken}`
-              }
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+              },
+              timeout: 10000 // 10 second timeout
             });
             
             console.log('LinkedIn OpenID profile data:', JSON.stringify(userInfoResponse.data));
+            userData = userInfoResponse.data;
             
             // Merge the OpenID Connect profile data with the original profile
-            profile._json = userInfoResponse.data;
-            profile.id = userInfoResponse.data.sub || profile.id;
+            profile._json = userData;
+            profile.id = userData.sub || profile.id;
             
             // Set email from OpenID Connect response
-            if (userInfoResponse.data.email) {
-              profile.emails = [{ value: userInfoResponse.data.email }];
+            if (userData.email) {
+              profile.emails = [{ value: userData.email }];
             }
             
             // Set name from OpenID Connect response
-            if (userInfoResponse.data.given_name || userInfoResponse.data.family_name) {
+            if (userData.given_name || userData.family_name) {
               profile.name = {
-                givenName: userInfoResponse.data.given_name || '',
-                familyName: userInfoResponse.data.family_name || ''
+                givenName: userData.given_name || '',
+                familyName: userData.family_name || ''
               };
               
-              profile.displayName = `${userInfoResponse.data.given_name || ''} ${userInfoResponse.data.family_name || ''}`.trim();
+              profile.displayName = `${userData.given_name || ''} ${userData.family_name || ''}`.trim();
             }
             
             // Set profile picture if available
-            if (userInfoResponse.data.picture) {
-              profile.photos = [{ value: userInfoResponse.data.picture }];
+            if (userData.picture) {
+              profile.photos = [{ value: userData.picture }];
             }
           } catch (error) {
-            console.error('Error fetching LinkedIn OpenID profile:', error.message);
-            // Continue with the original profile data if available
+            console.error('Error fetching LinkedIn OpenID profile:');
+            console.error('Error message:', error.message);
+            if (error.response) {
+              // The request was made and the server responded with a status code
+              // that falls out of the range of 2xx
+              console.error('Response data:', error.response.data);
+              console.error('Response status:', error.response.status);
+              console.error('Response headers:', error.response.headers);
+            } else if (error.request) {
+              // The request was made but no response was received
+              console.error('No response received from LinkedIn API');
+              console.error('Request details:', error.request);
+            }
+            
+            // Try alternative approach: using LinkedIn V2 API directly if OpenID Connect fails
+            try {
+              console.log('Trying alternative LinkedIn API endpoint');
+              // Get basic profile data
+              const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json'
+                },
+                timeout: 10000
+              });
+              
+              console.log('LinkedIn V2 profile data:', JSON.stringify(profileResponse.data));
+              
+              // Get email address through a separate API call
+              const emailResponse = await axios.get('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json'
+                },
+                timeout: 10000
+              });
+              
+              console.log('LinkedIn V2 email data:', JSON.stringify(emailResponse.data));
+              
+              // Extract the email and build the profile data
+              const emailData = emailResponse.data;
+              const v2ProfileData = profileResponse.data;
+              
+              // Build a profile similar to the OpenID Connect format
+              userData = {
+                sub: v2ProfileData.id,
+                given_name: v2ProfileData.localizedFirstName,
+                family_name: v2ProfileData.localizedLastName
+              };
+              
+              // Extract email if available
+              if (emailData && emailData.elements && emailData.elements.length > 0) {
+                userData.email = emailData.elements[0]['handle~'].emailAddress;
+              }
+              
+              profile._json = userData;
+              profile.id = userData.sub;
+              
+              if (userData.email) {
+                profile.emails = [{ value: userData.email }];
+              }
+              
+              profile.name = {
+                givenName: userData.given_name || '',
+                familyName: userData.family_name || ''
+              };
+              
+              profile.displayName = `${userData.given_name || ''} ${userData.family_name || ''}`.trim();
+            } catch (v2Error) {
+              console.error('Error with V2 API fallback:');
+              console.error('Error message:', v2Error.message);
+              
+              if (v2Error.response) {
+                console.error('Response data:', v2Error.response.data);
+                console.error('Response status:', v2Error.response.status);
+              }
+              
+              // Continue with original profile data if available
+              console.log('Continuing with original profile data');
+            }
           }
           
           // Store access tokens for later API calls with proper expiry time
@@ -161,8 +245,15 @@ module.exports = (passport) => {
           console.log(`LinkedIn auth: Email ${email ? 'provided: ' + email : 'not provided'}`);
           
           if (!email) {
-            console.error('LinkedIn auth: No email provided from LinkedIn. Check scope permissions.');
-            return done(new Error('LinkedIn did not provide an email address. Please check your app permissions.'), false);
+            // If no email is available, and this is a production environment,
+            // still try to proceed with the authentication if we have enough other profile data
+            if (!profile.id) {
+              console.error('LinkedIn auth: No profile ID provided');
+              return done(new Error('LinkedIn did not provide sufficient profile information.'), false);
+            }
+            
+            console.warn('LinkedIn auth: No email provided, generating placeholder based on ID');
+            email = `linkedin_${profile.id}@placeholder.scripe.com`;
           }
           
           // First check if user exists by LinkedIn ID
@@ -199,12 +290,6 @@ module.exports = (passport) => {
           
           // If user doesn't exist, create a new one
           if (!user) {
-            // Only proceed if we have an email
-            if (!email) {
-              console.error('LinkedIn auth: No email provided and user does not exist');
-              return done(new Error('LinkedIn account must provide an email address for registration'), false);
-            }
-            
             console.log('LinkedIn auth: Creating new user');
             // Parse name from profile - handle both OAuth 2.0 and OpenID Connect formats
             let firstName = 'User';
