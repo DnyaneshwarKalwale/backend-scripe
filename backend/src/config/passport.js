@@ -36,6 +36,7 @@ module.exports = (passport) => {
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
+        // ✅ FIXED: Removed userProfileURL (was causing 500 error)
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
