@@ -99,12 +99,23 @@ module.exports = (passport) => {
         scope: ['openid', 'profile', 'email'],
         state: true,
         passReqToCallback: true,
+        userProfileURL: 'https://api.linkedin.com/v2/userinfo',
       },
       async (req, accessToken, refreshToken, params, profile, done) => {
         try {
           console.log('LinkedIn auth starting with access token:', accessToken ? 'Token received' : 'No token');
           console.log('LinkedIn params:', JSON.stringify(params));
-          console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
+          
+          // Debug profile data
+          if (!profile) {
+            console.error('LinkedIn auth: No profile received from strategy');
+          } else {
+            console.log('LinkedIn profile ID:', profile.id || 'No ID');
+            console.log('LinkedIn profile has emails:', profile.emails ? 'Yes' : 'No');
+            console.log('LinkedIn profile has name:', profile.name ? 'Yes' : 'No');
+            console.log('LinkedIn profile has _json:', profile._json ? 'Yes' : 'No');
+            console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
+          }
           
           let userData = null;
 
@@ -112,16 +123,38 @@ module.exports = (passport) => {
           // So we'll manually fetch the user info from the OpenID Connect endpoint
           try {
             console.log('Manually fetching user info from OpenID Connect endpoint');
-            const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              timeout: 10000 // 10 second timeout
-            });
+            
+            // Add retry mechanism for userinfo endpoint
+            let userInfoResponse = null;
+            let retryCount = 0;
+            const maxRetries = 2;
+            
+            while (retryCount <= maxRetries) {
+              try {
+                userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                  },
+                  timeout: 10000 // 10 second timeout
+                });
+                break; // Success, exit the retry loop
+              } catch (retryError) {
+                retryCount++;
+                console.log(`OpenID Connect endpoint call failed, attempt ${retryCount} of ${maxRetries + 1}`);
+                if (retryCount > maxRetries) throw retryError;
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+              }
+            }
             
             console.log('LinkedIn OpenID profile data:', JSON.stringify(userInfoResponse.data));
             userData = userInfoResponse.data;
+            
+            // Check if userInfoResponse has basic required data
+            if (!userData || !userData.sub) {
+              console.error('LinkedIn auth: Missing required fields in userInfo response');
+              throw new Error('Invalid profile data received from LinkedIn');
+            }
             
             // Merge the OpenID Connect profile data with the original profile
             profile._json = userData;
@@ -224,7 +257,12 @@ module.exports = (passport) => {
                 console.error('Response status:', v2Error.response.status);
               }
               
-              // Continue with original profile data if available
+              // If both OpenID Connect and V2 API attempts failed, check if we have enough data in the original profile
+              if (!profile.id) {
+                console.error('LinkedIn auth: No profile data available after all attempts');
+                return done(new Error('Failed to fetch LinkedIn user profile'), false);
+              }
+              
               console.log('Continuing with original profile data');
             }
           }
