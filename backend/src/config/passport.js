@@ -1,5 +1,5 @@
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const TwitterStrategy = require('passport-twitter').Strategy;
+const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
 const JwtStrategy = require('passport-jwt').Strategy;
 const ExtractJwt = require('passport-jwt').ExtractJwt;
 const User = require('../models/userModel');
@@ -29,129 +29,120 @@ module.exports = (passport) => {
 
   // Google OAuth Strategy
   passport.use(
-    new GoogleStrategy(
-      {
-        clientID: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL,
-        passReqToCallback: true,
-      },
-      async (req, accessToken, refreshToken, profile, done) => {
-        try {
-          console.log('Google profile:', JSON.stringify(profile));
-          
-          // Check if email is available from Google
-          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
-          const username = profile.displayName.replace(/\s+/g, '').toLowerCase();
-          
-          // If no email is provided or user email preferences are set to private, generate a placeholder
-          const generatedEmail = email || `${username}.google@placeholder.scripe.com`;
-          
-          // Check if user already exists by Google ID first
-          let user = await User.findOne({ googleId: profile.id });
-          
-          // If not found by Google ID but we have an email, try finding by email
-          if (!user && email) {
-            user = await User.findOne({ email });
-            
-            // If user exists by email, update Google ID
-            if (user) {
-              user.googleId = profile.id;
-              if (!user.profilePicture && profile.photos && profile.photos[0]) {
-                user.profilePicture = profile.photos[0].value;
-              }
-              await user.save();
-              return done(null, user);
-            }
-          }
-
-          // If user doesn't exist, create new user
-          if (!user) {
-            user = await User.create({
-              googleId: profile.id,
-              firstName: profile.name.givenName || profile.displayName.split(' ')[0],
-              lastName: profile.name.familyName || '',
-              email: generatedEmail, // Use generated email if actual email isn't available
-              isEmailVerified: email ? true : false, // Only verify if actual email was provided
-              profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
-              authMethod: 'google',
-              onboardingCompleted: false,
-            });
-          }
-
-          return done(null, user);
-        } catch (error) {
-          console.error('Google OAuth Error:', error);
-          return done(error, false);
+    new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
+    }, async (accessToken, refreshToken, profile, done) => {
+      try {
+        // Extract profile information
+        const { id, emails, name, photos } = profile;
+        
+        if (!emails || emails.length === 0) {
+          return done(null, false, { message: 'No email found in Google profile' });
         }
-      }
-    )
-  );
-
-  // Twitter OAuth Strategy
-  passport.use(
-    new TwitterStrategy(
-      {
-        consumerKey: process.env.TWITTER_CONSUMER_KEY,
-        consumerSecret: process.env.TWITTER_CONSUMER_SECRET,
-        callbackURL: process.env.TWITTER_CALLBACK_URL,
-        includeEmail: true, // Request email from Twitter
-        userProfileURL: 'https://api.twitter.com/1.1/account/verify_credentials.json?include_email=true',
-        passReqToCallback: true,
-      },
-      async (req, token, tokenSecret, profile, done) => {
-        try {
-          console.log('Twitter profile:', JSON.stringify(profile));
+        
+        const email = emails[0].value;
+        const firstName = name.givenName;
+        const lastName = name.familyName;
+        const profilePicture = photos[0].value;
+        
+        // Check if user already exists
+        let user = await User.findOne({ googleId: id });
+        
+        // If not found by Google ID, check by email
+        if (!user) {
+          user = await User.findOne({ email });
           
-          // Twitter may not always provide email
-          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
-          const username = profile.username || profile.displayName.replace(/\s+/g, '').toLowerCase();
-          
-          // If no email is provided, generate a placeholder email using the Twitter username
-          const generatedEmail = email || `${username}.twitter@placeholder.scripe.com`;
-          
-          // Check if user exists by Twitter ID
-          let user = await User.findOne({ twitterId: profile.id });
-          
-          // If not found by Twitter ID but email is provided, check by email
-          if (!user && email) {
-            user = await User.findOne({ email });
-            
-            // If user exists by email, update Twitter ID
-            if (user) {
-              user.twitterId = profile.id;
-              if (!user.profilePicture && profile.photos && profile.photos[0]) {
-                user.profilePicture = profile.photos[0].value;
-              }
-              await user.save();
+          if (user) {
+            // Update user with Google ID
+            user.googleId = id;
+            if (!user.profilePicture) {
+              user.profilePicture = profilePicture;
             }
-          }
-          
-          // If user doesn't exist, create a new one
-          if (!user) {
-            // Handle name - use the full name as firstName if no space is found
-            const nameParts = profile.displayName.trim().split(/\s+/);
-            const firstName = nameParts[0] || profile.username || 'User';
-            const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : firstName; // Use firstName as lastName if no last name
-            
+            await user.save();
+          } else {
+            // Create new user
             user = await User.create({
-              twitterId: profile.id,
+              googleId: id,
               firstName,
               lastName,
-              email: generatedEmail,
-              isEmailVerified: email ? true : false,
-              profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
-              authMethod: 'twitter',
-              onboardingCompleted: false,
+              email,
+              profilePicture,
+              isEmailVerified: true,
+              authMethod: 'google',
             });
           }
-
-          return done(null, user);
-        } catch (error) {
-          console.error('Twitter OAuth Error:', error);
-          return done(error, false);
         }
+        
+        return done(null, user);
+      } catch (error) {
+        console.error('Google auth error:', error);
+        return done(error, false);
       }
-    )
+    })
+  );
+
+  // LinkedIn Strategy
+  passport.use(
+    new LinkedInStrategy({
+      clientID: process.env.LINKEDIN_CLIENT_ID,
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+      callbackURL: process.env.LINKEDIN_CALLBACK_URL,
+      scope: ['r_emailaddress', 'r_liteprofile'],
+    }, async (accessToken, refreshToken, profile, done) => {
+      try {
+        // Extract profile information
+        const { id, name, emails, photos } = profile;
+        
+        // Check if user already exists
+        let user = await User.findOne({ linkedinId: id });
+        
+        // If user has email, check if exists by email
+        if (emails && emails.length > 0) {
+          const email = emails[0].value;
+          
+          if (!user) {
+            user = await User.findOne({ email });
+            
+            if (user) {
+              // Update user with LinkedIn ID
+              user.linkedinId = id;
+              if (!user.profilePicture && photos && photos.length > 0) {
+                user.profilePicture = photos[0].value;
+              }
+              await user.save();
+            } else {
+              // Create new user
+              user = await User.create({
+                linkedinId: id,
+                firstName: name.givenName,
+                lastName: name.familyName,
+                email,
+                profilePicture: photos && photos.length > 0 ? photos[0].value : null,
+                isEmailVerified: true,
+                authMethod: 'linkedin',
+              });
+            }
+          }
+        } else if (!user) {
+          // Create user without email (not ideal but possible)
+          user = await User.create({
+            linkedinId: id,
+            firstName: name.givenName || 'LinkedInUser',
+            lastName: name.familyName || '',
+            email: `linkedin_${id}@placeholder.scripe.com`,
+            profilePicture: photos && photos.length > 0 ? photos[0].value : null,
+            isEmailVerified: false,
+            authMethod: 'linkedin',
+          });
+        }
+        
+        return done(null, user);
+      } catch (error) {
+        console.error('LinkedIn auth error:', error);
+        return done(error, false);
+      }
+    })
   );
 }; 

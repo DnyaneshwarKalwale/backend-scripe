@@ -11,7 +11,6 @@ const userRoutes = require('./routes/userRoutes');
 const onboardingRoutes = require('./routes/onboardingRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const linkedinRoutes = require('./routes/linkedinRoutes');
-const twitterRoutes = require('./routes/twitterRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -41,7 +40,7 @@ app.use(cors({
   exposedHeaders: ['Set-Cookie']
 }));
 
-// Configure session middleware (required for Twitter OAuth)
+// Configure session middleware (required for LinkedIn OAuth)
 app.use(session({
   secret: process.env.JWT_SECRET,
   resave: true,
@@ -80,7 +79,6 @@ app.use('/api/users', userRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/linkedin', linkedinRoutes);
-app.use('/api/twitter', twitterRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {

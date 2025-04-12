@@ -1,9 +1,80 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
 const axios = require('axios');
+const { getTranslation } = require('../utils/translations');
+const passport = require('passport');
+const { generateToken } = require('../utils/jwt');
 
-// LinkedIn API base URL
-const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
+/**
+ * Initiates LinkedIn OAuth flow
+ * @route GET /api/auth/linkedin
+ * @access Public
+ */
+const initiateLinkedInAuth = asyncHandler(async (req, res, next) => {
+  passport.authenticate('linkedin')(req, res, next);
+});
+
+/**
+ * LinkedIn OAuth callback handler
+ * @route GET /api/auth/linkedin/callback
+ * @access Public
+ */
+const linkedInCallback = asyncHandler(async (req, res, next) => {
+  passport.authenticate('linkedin', { session: false }, async (err, profile) => {
+    if (err || !profile) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?error=LinkedIn%20authentication%20failed`);
+    }
+
+    try {
+      // Extract profile information
+      const linkedinId = profile.id;
+      const firstName = profile.name.givenName || '';
+      const lastName = profile.name.familyName || '';
+      const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : '';
+      const profilePicture = profile.photos && profile.photos.length > 0 ? profile.photos[0].value : '';
+
+      // Look for existing user by LinkedIn ID
+      let user = await User.findOne({ linkedinId });
+
+      // If not found by LinkedIn ID but email is provided, try to find by email
+      if (!user && email) {
+        user = await User.findOne({ email });
+        if (user) {
+          // Update user with LinkedIn ID if found by email
+          user.linkedinId = linkedinId;
+          if (!user.profilePicture && profilePicture) {
+            user.profilePicture = profilePicture;
+          }
+          await user.save();
+        }
+      }
+
+      // If user still not found, create a new one
+      if (!user) {
+        user = await User.create({
+          linkedinId,
+          firstName,
+          lastName,
+          email,
+          isEmailVerified: email ? true : false,
+          profilePicture: profilePicture || null,
+          authMethod: 'linkedin',
+          onboardingCompleted: false,
+        });
+      }
+
+      // Generate JWT token
+      const token = user.getSignedJwtToken();
+
+      // Redirect back to frontend with token
+      const redirectUrl = `${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&provider=linkedin&onboarding=${!user.onboardingCompleted}`;
+      return res.redirect(redirectUrl);
+    } catch (error) {
+      console.error('LinkedIn Auth Error:', error);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?error=LinkedIn%20authentication%20failed`);
+    }
+  })(req, res, next);
+});
 
 /**
  * Get LinkedIn user profile data
@@ -16,27 +87,24 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
     
     if (!user || !user.linkedinId) {
       res.status(400);
-      throw new Error('LinkedIn account not connected');
+      throw new Error(getTranslation('linkedinNotConnected', req.language));
     }
     
     // In a real implementation, we would use the LinkedIn API client
     // to fetch real user data using access tokens stored for this user
     
     // For now, generate sample data based on the user's info
-    const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
-    
     const linkedinProfile = {
       id: user.linkedinId,
-      username: username,
-      name: `${user.firstName} ${user.lastName || ''}`.trim(),
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
       profileImage: user.profilePicture || 'https://via.placeholder.com/150',
-      bio: `LinkedIn professional connected with Lovable. Generating amazing content with AI.`,
+      headline: `Professional at ${user.firstName}'s Company`,
       location: "Global",
-      url: `https://linkedin.com/in/${username}`,
-      joinedDate: "January 2022",
-      connections: 512,
-      followers: 1024,
-      verified: false
+      industry: "Technology",
+      connectionCount: 500,
+      isVerified: true
     };
     
     res.status(200).json({
@@ -46,74 +114,12 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('LinkedIn Profile Error:', error);
     res.status(500);
-    throw new Error('Error fetching LinkedIn profile');
+    throw new Error(getTranslation('linkedinFetchError', req.language) || 'Error fetching LinkedIn profile');
   }
 });
 
 /**
- * Get user's recent posts
- * @route GET /api/linkedin/posts
- * @access Private
- */
-const getUserPosts = asyncHandler(async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-    
-    if (!user || !user.linkedinId) {
-      res.status(400);
-      throw new Error('LinkedIn account not connected');
-    }
-    
-    // Generate sample posts
-    const recentPosts = [
-      {
-        id: `post-${Date.now()}-1`,
-        text: "Just started using Lovable for my LinkedIn content generation! The AI suggestions are amazing. #ContentCreation #AI",
-        created_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-        public_metrics: {
-          shares: 12,
-          comments: 5,
-          likes: 42,
-          impressions: 1250
-        }
-      },
-      {
-        id: `post-${Date.now()}-2`,
-        text: "How I increased my LinkedIn engagement by 300% using AI content generation. A thread on my journey with @Lovable 🧵",
-        created_at: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        public_metrics: {
-          shares: 24,
-          comments: 18,
-          likes: 89,
-          impressions: 3500
-        }
-      },
-      {
-        id: `post-${Date.now()}-3`,
-        text: "5 ways to improve your LinkedIn content:\n\n1. Consistency\n2. Engage with your audience\n3. Use AI tools like @Lovable\n4. Analyze performance\n5. Join relevant conversations\n\nWhich one are you implementing today?",
-        created_at: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-        public_metrics: {
-          shares: 38,
-          comments: 22,
-          likes: 112,
-          impressions: 5200
-        }
-      }
-    ];
-    
-    res.status(200).json({
-      success: true,
-      data: recentPosts
-    });
-  } catch (error) {
-    console.error('LinkedIn Posts Error:', error);
-    res.status(500);
-    throw new Error('Error fetching posts');
-  }
-});
-
-/**
- * Get user's LinkedIn analytics
+ * Get LinkedIn analytics for the user
  * @route GET /api/linkedin/analytics
  * @access Private
  */
@@ -123,16 +129,16 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
     
     if (!user || !user.linkedinId) {
       res.status(400);
-      throw new Error('LinkedIn account not connected');
+      throw new Error(getTranslation('linkedinNotConnected', req.language));
     }
     
     // Generate sample analytics data
     const now = Date.now();
     const days = 7;
     const labels = [];
-    const impressionsData = [];
+    const viewsData = [];
     const engagementData = [];
-    const followersData = [];
+    const followerData = [];
     
     // Generate data for the last 7 days
     for (let i = days - 1; i >= 0; i--) {
@@ -142,43 +148,43 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
       // Generate realistic-looking data with some randomness but general upward trend
       const dayOffset = days - i;
       
-      // Impressions: 1000-3500 with slight upward trend
-      impressionsData.push(Math.floor(1000 + (dayOffset * 300) + (Math.random() * 500)));
+      // Profile views: 50-250 with slight upward trend
+      viewsData.push(Math.floor(50 + (dayOffset * 25) + (Math.random() * 50)));
       
-      // Engagement: 4-10% engagement rate
-      engagementData.push(Number((4 + (dayOffset * 0.6) + (Math.random() * 2)).toFixed(1)));
+      // Engagement: 2-8% engagement rate
+      engagementData.push(Number((2 + (dayOffset * 0.5) + (Math.random() * 2)).toFixed(1)));
       
-      // Followers: 100-200 with growth
-      followersData.push(Math.floor(100 + (dayOffset * 5) + (Math.random() * 10)));
+      // Followers: 5-20 new followers per day with growth
+      followerData.push(Math.floor(5 + (dayOffset * 2) + (Math.random() * 5)));
     }
     
     const analyticsData = {
-      impressions: {
-        data: impressionsData,
+      views: {
+        data: viewsData,
         labels: labels,
-        increase: 23,
+        increase: 28,
         timeframe: "Last 7 days"
       },
       engagement: {
         data: engagementData,
         labels: labels,
-        increase: 15,
+        increase: 12,
         timeframe: "Last 7 days"
       },
       followers: {
-        data: followersData,
+        data: followerData,
         labels: labels,
-        increase: 8,
+        increase: 15,
         timeframe: "Last 7 days"
       },
       summary: {
-        totalImpressions: impressionsData.reduce((a, b) => a + b, 0),
+        totalViews: viewsData.reduce((a, b) => a + b, 0),
         averageEngagement: Number((engagementData.reduce((a, b) => a + b, 0) / days).toFixed(1)),
-        followerGrowth: followersData[days - 1] - followersData[0],
+        newFollowers: followerData.reduce((a, b) => a + b, 0),
         bestPerformingPost: {
-          text: "How I increased my LinkedIn engagement by 300% using AI content generation. A thread on my journey with @Lovable 🧵",
-          impressions: 3500,
-          engagement: 9.3
+          title: "How I increased my LinkedIn engagement by 200% using AI content generation.",
+          views: 750,
+          engagement: 5.8
         }
       }
     };
@@ -190,12 +196,13 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('LinkedIn Analytics Error:', error);
     res.status(500);
-    throw new Error('Error fetching analytics');
+    throw new Error(getTranslation('linkedinFetchError', req.language) || 'Error fetching analytics');
   }
 });
 
 module.exports = {
+  initiateLinkedInAuth,
+  linkedInCallback,
   getLinkedInProfile,
-  getUserPosts,
   getLinkedInAnalytics
 }; 
