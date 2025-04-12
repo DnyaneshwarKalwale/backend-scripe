@@ -88,30 +88,45 @@ module.exports = (passport) => {
     )
   );
 
-  // LinkedIn OAuth Strategy
+  // LinkedIn OAuth Strategy using OpenID Connect
   passport.use(
     new LinkedInStrategy(
       {
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['r_liteprofile', 'r_emailaddress'],
+        scope: ['openid', 'profile', 'email'],
+        // The userInfoURL is specific to OpenID Connect
+        userProfileURL: 'https://api.linkedin.com/v2/userinfo',
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
+          console.log('LinkedIn auth starting with profile ID:', profile.id);
+          console.log('LinkedIn access token received:', accessToken ? 'Yes (token present)' : 'No token received');
           console.log('LinkedIn profile received:', JSON.stringify(profile));
           
-          // Store access tokens for later API calls
+          // Store access tokens for later API calls with proper expiry time
           const tokenExpiryTime = new Date();
-          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + profile.tokenExpiresIn || 3600);
+          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + (profile.tokenExpiresIn || 3600));
           
-          // LinkedIn may not always provide email if the scope is not authorized
-          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+          // Extract email from the profile based on OpenID Connect format
+          let email = null;
+          if (profile.emails && profile.emails[0]) {
+            email = profile.emails[0].value;
+          } else if (profile._json && profile._json.email) {
+            // OpenID Connect format often puts email directly in _json
+            email = profile._json.email;
+          }
           
           console.log(`LinkedIn auth: Email ${email ? 'provided: ' + email : 'not provided'}`);
+          
+          if (!email) {
+            console.error('LinkedIn auth: No email provided from LinkedIn. Check scope permissions.');
+            return done(new Error('LinkedIn did not provide an email address. Please check your app permissions.'), false);
+          }
           
           // First check if user exists by LinkedIn ID
           let user = await User.findOne({ linkedinId: profile.id });
@@ -154,9 +169,22 @@ module.exports = (passport) => {
             }
             
             console.log('LinkedIn auth: Creating new user');
-            // Parse name from profile
-            const firstName = profile.name?.givenName || profile.displayName.split(' ')[0] || 'User';
-            const lastName = profile.name?.familyName || profile.displayName.split(' ').slice(1).join(' ') || '';
+            // Parse name from profile - handle both OAuth 2.0 and OpenID Connect formats
+            let firstName = 'User';
+            let lastName = '';
+            
+            if (profile.name) {
+              firstName = profile.name.givenName || firstName;
+              lastName = profile.name.familyName || lastName;
+            } else if (profile.displayName) {
+              const nameParts = profile.displayName.split(' ');
+              firstName = nameParts[0] || firstName;
+              lastName = nameParts.slice(1).join(' ') || lastName;
+            } else if (profile._json) {
+              // Try to extract from OpenID Connect format
+              firstName = profile._json.given_name || firstName;
+              lastName = profile._json.family_name || lastName;
+            }
             
             user = await User.create({
               linkedinId: profile.id,
@@ -174,6 +202,7 @@ module.exports = (passport) => {
             console.log('LinkedIn auth: New user created successfully');
           }
 
+          console.log('LinkedIn auth: Authentication successful, returning user');
           return done(null, user);
         } catch (error) {
           console.error('LinkedIn OAuth Error:', error);

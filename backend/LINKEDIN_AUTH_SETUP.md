@@ -13,18 +13,20 @@ LinkedIn has specific requirements for OAuth callback URLs. This guide shows how
    - Legal agreement: Accept the terms
 
 4. Once created, set up the Auth section:
-   - Add the following redirect URL:
-     - `https://backend-scripe.onrender.com/api/auth/linkedin/callback`
-   - Request the following OAuth 2.0 scopes:
-     - `r_liteprofile` - to access basic profile information
-     - `r_emailaddress` - to access the user's email
-   - To add these scopes:
-     1. Go to the "Products" tab in your LinkedIn app
-     2. Add the "Sign In with LinkedIn" product
-     3. Go to the "Auth" tab
-     4. Under "OAuth 2.0 scopes" make sure both scopes are selected and approved
+   - Add the following redirect URLs:
+     - `https://backend-scripe.onrender.com/api/auth/linkedin/callback` (Backend callback URL)
+     - `https://deluxe-cassata-51d628.netlify.app/auth/social-callback` (Frontend callback URL)
+   - Add the "Sign In with LinkedIn using OpenID Connect" product
+   - Under "OAuth 2.0 scopes", make sure these scopes are enabled:
+     - `openid` - Required for OpenID Connect authentication
+     - `profile` - Allows access to the user's basic profile
+     - `email` - Allows access to the user's email
 
-5. Take note of the Client ID and Client Secret from the Auth tab and add them to your Render environment variables.
+5. Use these verified client credentials:
+   ```
+   LINKEDIN_CLIENT_ID=77rawlclal56f1
+   LINKEDIN_CLIENT_SECRET=WPL_AP1.GLiYKT7Fr5tWSTfk.c5so8g==
+   ```
 
 ## Environment Configuration in Render
 
@@ -32,8 +34,8 @@ LinkedIn has specific requirements for OAuth callback URLs. This guide shows how
 2. Navigate to the Environment section
 3. Add the following environment variables:
    ```
-   LINKEDIN_CLIENT_ID=your_linkedin_client_id
-   LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
+   LINKEDIN_CLIENT_ID=77rawlclal56f1
+   LINKEDIN_CLIENT_SECRET=WPL_AP1.GLiYKT7Fr5tWSTfk.c5so8g==
    LINKEDIN_CALLBACK_URL=https://backend-scripe.onrender.com/api/auth/linkedin/callback
    FRONTEND_URL=https://deluxe-cassata-51d628.netlify.app
    ```
@@ -137,4 +139,47 @@ Remember that LinkedIn's OAuth implementation can be sensitive to exact configur
 
 - Mismatched callback URLs (even a trailing slash difference matters)
 - Missing products or permissions in your LinkedIn app
-- LinkedIn app not yet approved for the scopes you're requesting 
+- LinkedIn app not yet approved for the scopes you're requesting
+
+### OpenID Connect Configuration
+
+If you're using the "Sign In with LinkedIn using OpenID Connect" product (which is recommended), note the following:
+
+1. **Correct User Info Endpoint**: 
+   - The OpenID Connect user info endpoint is `https://api.linkedin.com/v2/userinfo`
+   - This endpoint returns user profile information in the OpenID Connect standard format
+
+2. **Profile Structure Differences**:
+   - OpenID Connect returns profile data differently than the legacy OAuth 2.0 API
+   - The email is typically found directly in `profile._json.email` rather than in `profile.emails`
+   - Name information is formatted according to OpenID Connect standards (`given_name`, `family_name`)
+
+3. **Required Configuration in passport.js**:
+   ```javascript
+   passport.use(
+     new LinkedInStrategy({
+       // ... other options
+       scope: ['openid', 'profile', 'email'],
+       userProfileURL: 'https://api.linkedin.com/v2/userinfo',
+     })
+   );
+   ```
+
+## Troubleshooting Scope-related Errors
+
+The most common error when setting up LinkedIn authentication is the scope-related error:
+
+```
+Scope "r_emailaddress" is not authorized for your application
+```
+
+This happens when you're using the wrong authentication product or incorrect scopes. Here's how to fix it:
+
+1. If you're using the "Sign In with LinkedIn using OpenID Connect" product:
+   - Use scopes: `['openid', 'profile', 'email']`
+   - Set `userProfileURL: 'https://api.linkedin.com/v2/userinfo'`
+
+2. If you're using the legacy "Sign In with LinkedIn" product (not OpenID Connect):
+   - Use scopes: `['r_liteprofile', 'r_emailaddress']`
+
+After making these changes, restart your backend server and try the LinkedIn login again. Users should now be able to successfully authenticate with LinkedIn, and those who already have accounts with the same email (e.g., from Google login) will be automatically linked to their existing accounts. 
