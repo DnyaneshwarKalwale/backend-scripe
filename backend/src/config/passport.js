@@ -1,3 +1,93 @@
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const JwtStrategy = require('passport-jwt').Strategy;
+const ExtractJwt = require('passport-jwt').ExtractJwt;
+const User = require('../models/userModel');
+const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
+
+module.exports = (passport) => {
+  // JWT Strategy for token authentication
+  const opts = {
+    jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+    secretOrKey: process.env.JWT_SECRET,
+  };
+
+  passport.use(
+    new JwtStrategy(opts, async (jwt_payload, done) => {
+      try {
+        const user = await User.findById(jwt_payload.id);
+        
+        if (user) {
+          return done(null, user);
+        }
+        
+        return done(null, false);
+      } catch (error) {
+        return done(error, false);
+      }
+    })
+  );
+
+  // Google OAuth Strategy
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: process.env.GOOGLE_CALLBACK_URL,
+        passReqToCallback: true,
+      },
+      async (req, accessToken, refreshToken, profile, done) => {
+        try {
+          console.log('Google profile:', JSON.stringify(profile));
+          
+          // Check if email is available from Google
+          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+          const username = profile.displayName.replace(/\s+/g, '').toLowerCase();
+          
+          // If no email is provided or user email preferences are set to private, generate a placeholder
+          const generatedEmail = email || `${username}.google@placeholder.scripe.com`;
+          
+          // Check if user already exists by Google ID first
+          let user = await User.findOne({ googleId: profile.id });
+          
+          // If not found by Google ID but we have an email, try finding by email
+          if (!user && email) {
+            user = await User.findOne({ email });
+            
+            // If user exists by email, update Google ID
+            if (user) {
+              user.googleId = profile.id;
+              if (!user.profilePicture && profile.photos && profile.photos[0]) {
+                user.profilePicture = profile.photos[0].value;
+              }
+              await user.save();
+              return done(null, user);
+            }
+          }
+
+          // If user doesn't exist, create new user
+          if (!user) {
+            user = await User.create({
+              googleId: profile.id,
+              firstName: profile.name.givenName || profile.displayName.split(' ')[0],
+              lastName: profile.name.familyName || '',
+              email: generatedEmail, // Use generated email if actual email isn't available
+              isEmailVerified: email ? true : false, // Only verify if actual email was provided
+              profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
+              authMethod: 'google',
+              onboardingCompleted: false,
+            });
+          }
+
+          return done(null, user);
+        } catch (error) {
+          console.error('Google OAuth Error:', error);
+          return done(error, false);
+        }
+      }
+    )
+  );
+
   // LinkedIn OAuth Strategy
   passport.use(
     new LinkedInStrategy(
@@ -5,11 +95,11 @@
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['openid', 'profile', 'email', 'w_member_social'], // ✅ FIXED scopes
+        scope: ['openid', 'profile', 'email', 'w_member_social'],
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
-        // ❌ REMOVED: userProfileURL: 'https://api.linkedin.com/v2/userinfo' — this causes "failed to fetch user profile"
+        userProfileURL: 'https://api.linkedin.com/v2/userinfo',
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
@@ -151,3 +241,4 @@
       }
     )
   );
+}; 
