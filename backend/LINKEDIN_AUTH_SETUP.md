@@ -182,4 +182,66 @@ This happens when you're using the wrong authentication product or incorrect sco
 2. If you're using the legacy "Sign In with LinkedIn" product (not OpenID Connect):
    - Use scopes: `['r_liteprofile', 'r_emailaddress']`
 
+After making these changes, restart your backend server and try the LinkedIn login again. Users should now be able to successfully authenticate with LinkedIn, and those who already have accounts with the same email (e.g., from Google login) will be automatically linked to their existing accounts.
+
+### Manual Profile Fetching with OpenID Connect
+
+If you encounter a `{"success":false,"error":"failed to fetch user profile"}` error, you may need to manually fetch the user profile from the OpenID Connect endpoint. This is because the `passport-linkedin-oauth2` package may not be fully compatible with LinkedIn's OpenID Connect implementation.
+
+1. **Make sure axios is installed**:
+   ```
+   npm install axios
+   ```
+
+2. **Update your passport.js configuration to manually fetch the profile**:
+   ```javascript
+   const axios = require('axios');
+   
+   passport.use(
+     new LinkedInStrategy(
+       {
+         clientID: process.env.LINKEDIN_CLIENT_ID,
+         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
+         scope: ['openid', 'profile', 'email'],
+         state: true,
+         passReqToCallback: true,
+       },
+       async (req, accessToken, refreshToken, params, profile, done) => {
+         try {
+           // Manually fetch the profile from the OpenID Connect endpoint
+           const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
+             headers: {
+               Authorization: `Bearer ${accessToken}`
+             }
+           });
+           
+           // Merge the OpenID Connect profile data with the original profile
+           profile._json = userInfoResponse.data;
+           profile.id = userInfoResponse.data.sub || profile.id;
+           
+           // Rest of your authentication logic...
+         } catch (error) {
+           console.error('LinkedIn OAuth Error:', error);
+           return done(error, false);
+         }
+       }
+     )
+   );
+   ```
+
+3. **OpenID Connect Response Format**:
+   The response from the `/v2/userinfo` endpoint follows the OpenID Connect standard and typically contains:
+   ```json
+   {
+     "sub": "LinkedIn-ID",
+     "email": "user@example.com",
+     "email_verified": true,
+     "name": "User Name",
+     "given_name": "User",
+     "family_name": "Name",
+     "picture": "https://..."
+   }
+   ```
+
 After making these changes, restart your backend server and try the LinkedIn login again. Users should now be able to successfully authenticate with LinkedIn, and those who already have accounts with the same email (e.g., from Google login) will be automatically linked to their existing accounts. 

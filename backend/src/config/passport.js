@@ -3,6 +3,7 @@ const JwtStrategy = require('passport-jwt').Strategy;
 const ExtractJwt = require('passport-jwt').ExtractJwt;
 const User = require('../models/userModel');
 const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
+const axios = require('axios');
 
 module.exports = (passport) => {
   // JWT Strategy for token authentication
@@ -96,21 +97,57 @@ module.exports = (passport) => {
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
         scope: ['openid', 'profile', 'email'],
-        // The userInfoURL is specific to OpenID Connect
-        userProfileURL: 'https://api.linkedin.com/v2/userinfo',
-        profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
       },
-      async (req, accessToken, refreshToken, profile, done) => {
+      async (req, accessToken, refreshToken, params, profile, done) => {
         try {
-          console.log('LinkedIn auth starting with profile ID:', profile.id);
-          console.log('LinkedIn access token received:', accessToken ? 'Yes (token present)' : 'No token received');
-          console.log('LinkedIn profile received:', JSON.stringify(profile));
+          console.log('LinkedIn auth starting with access token');
+          console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
+          
+          // The passport-linkedin-oauth2 package might not properly fetch the profile from OpenID Connect endpoint
+          // So we'll manually fetch the user info from the OpenID Connect endpoint
+          try {
+            console.log('Manually fetching user info from OpenID Connect endpoint');
+            const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
+              headers: {
+                Authorization: `Bearer ${accessToken}`
+              }
+            });
+            
+            console.log('LinkedIn OpenID profile data:', JSON.stringify(userInfoResponse.data));
+            
+            // Merge the OpenID Connect profile data with the original profile
+            profile._json = userInfoResponse.data;
+            profile.id = userInfoResponse.data.sub || profile.id;
+            
+            // Set email from OpenID Connect response
+            if (userInfoResponse.data.email) {
+              profile.emails = [{ value: userInfoResponse.data.email }];
+            }
+            
+            // Set name from OpenID Connect response
+            if (userInfoResponse.data.given_name || userInfoResponse.data.family_name) {
+              profile.name = {
+                givenName: userInfoResponse.data.given_name || '',
+                familyName: userInfoResponse.data.family_name || ''
+              };
+              
+              profile.displayName = `${userInfoResponse.data.given_name || ''} ${userInfoResponse.data.family_name || ''}`.trim();
+            }
+            
+            // Set profile picture if available
+            if (userInfoResponse.data.picture) {
+              profile.photos = [{ value: userInfoResponse.data.picture }];
+            }
+          } catch (error) {
+            console.error('Error fetching LinkedIn OpenID profile:', error.message);
+            // Continue with the original profile data if available
+          }
           
           // Store access tokens for later API calls with proper expiry time
           const tokenExpiryTime = new Date();
-          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + (profile.tokenExpiresIn || 3600));
+          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + (params.expires_in || 3600));
           
           // Extract email from the profile based on OpenID Connect format
           let email = null;
@@ -205,7 +242,8 @@ module.exports = (passport) => {
           console.log('LinkedIn auth: Authentication successful, returning user');
           return done(null, user);
         } catch (error) {
-          console.error('LinkedIn OAuth Error:', error);
+          console.error('LinkedIn OAuth Error:', error.message);
+          console.error('Full error stack:', error.stack);
           return done(error, false);
         }
       }
