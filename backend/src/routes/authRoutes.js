@@ -93,35 +93,26 @@ router.get(
       console.error('LinkedIn returned an error:', req.query.error);
       console.error('Error description:', req.query.error_description);
       
-      // Handle common LinkedIn errors
-      if (req.query.error_description && req.query.error_description.includes('scope')) {
-        console.error('This appears to be a scope authorization issue. Please check your LinkedIn app settings.');
-        return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('LinkedIn scope unauthorized. Please check app settings.')}`);
-      }
-      
+      // Always redirect to the main login page with error
       return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent(req.query.error_description || 'LinkedIn authentication failed')}`);
     }
     
-    // Check if auth code is present (a basic validation)
+    // Check if auth code is present
     if (!req.query.code) {
       console.error('LinkedIn callback missing code parameter');
       return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Missing authorization code')}`);
     }
     
-    // Use a try-catch to catch any synchronous errors in passport authenticate
-    try {
-      passport.authenticate('linkedin', { 
-        session: false,
-        failureRedirect: `${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Authentication failed')}`,
-        failWithError: true
-      })(req, res, next);
-    } catch (error) {
-      console.error('Error during LinkedIn authentication:', error);
-      return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Authentication process failed')}`);
-    }
+    // Proceed with LinkedIn authentication
+    passport.authenticate('linkedin', { session: false })(req, res, next);
   },
   (req, res) => {
     try {
+      if (!req.user) {
+        console.error('LinkedIn auth successful but no user object');
+        return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('User profile not found')}`);
+      }
+
       // Generate token
       const token = req.user.getSignedJwtToken();
       
@@ -135,18 +126,17 @@ router.get(
         onboardingStatus
       });
       
-      // Use fully qualified URL with properly encoded parameters
+      // Create the redirect URL to the frontend
       const frontendUrl = process.env.FRONTEND_URL.trim();
       const redirectUrl = `${frontendUrl}/auth/social-callback?token=${encodeURIComponent(token)}&onboarding=${encodeURIComponent(onboardingStatus)}`;
       
-      console.log('Redirecting to:', redirectUrl);
+      console.log('Redirecting to frontend:', redirectUrl);
       
-      // Redirect to frontend with token
+      // Direct redirect to frontend with token
       res.redirect(redirectUrl);
     } catch (error) {
       console.error('Error in LinkedIn callback:', error);
-      // Send to main login page with error
-      res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Internal server error during authentication')}`);
+      res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Authentication error')}`);
     }
   }
 );
@@ -187,6 +177,57 @@ router.use((err, req, res, next) => {
   
   // For other errors, continue to the next error handler
   next(err);
+});
+
+// LinkedIn test route
+router.get('/linkedin-test', (req, res) => {
+  // Provide clear instructions for LinkedIn setup and testing
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>LinkedIn Auth Test</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .card { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        code { background: #f5f5f5; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow: auto; }
+        .important { color: #cc0000; font-weight: bold; }
+        button { background: #0077B5; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 4px; }
+      </style>
+    </head>
+    <body>
+      <h1>LinkedIn Authentication Setup</h1>
+      
+      <div class="card">
+        <h2>Step 1: LinkedIn Developer Portal Setup</h2>
+        <p>In your LinkedIn Developer Portal, make sure you have <span class="important">ONLY</span> the following redirect URL:</p>
+        <pre>${process.env.LINKEDIN_CALLBACK_URL}</pre>
+        <p><span class="important">Important:</span> Do NOT add your frontend URL to LinkedIn's redirect URLs.</p>
+      </div>
+      
+      <div class="card">
+        <h2>Step 2: Verify Your Backend Config</h2>
+        <p>Your current LinkedIn configuration:</p>
+        <ul>
+          <li>LINKEDIN_CALLBACK_URL: <code>${process.env.LINKEDIN_CALLBACK_URL || 'Not set'}</code></li>
+          <li>FRONTEND_URL: <code>${process.env.FRONTEND_URL || 'Not set'}</code></li>
+        </ul>
+      </div>
+      
+      <div class="card">
+        <h2>Step 3: Test Your Authentication Flow</h2>
+        <p>Click the button below to test your LinkedIn authentication:</p>
+        <button onclick="window.location.href='${req.protocol}://${req.get('host')}/api/auth/linkedin'">Test LinkedIn Login</button>
+        <p>This will start the authentication process with LinkedIn.</p>
+        <p>After authentication, the backend will automatically redirect to your frontend:</p>
+        <code>${process.env.FRONTEND_URL}/auth/social-callback?token=YOUR_JWT_TOKEN&onboarding=true|false</code>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  res.send(html);
 });
 
 // Mock LinkedIn auth for development
