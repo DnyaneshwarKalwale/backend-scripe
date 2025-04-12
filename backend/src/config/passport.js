@@ -106,10 +106,23 @@ module.exports = (passport) => {
           
           // Store access tokens for later API calls
           const tokenExpiryTime = new Date();
-          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + profile.tokenExpiresIn || 3600);
+          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + (profile.tokenExpiresIn || 3600));
           
-          // LinkedIn may not always provide email if the scope is not authorized
-          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+          // Extract email from profile (handle both OpenID and old API formats)
+          let email = null;
+          
+          // For OpenID format, the email is available directly in the profile
+          if (profile.emails && profile.emails.length > 0) {
+            email = profile.emails[0].value;
+          } 
+          // For OpenID format with email in the id_token
+          else if (profile.email) {
+            email = profile.email;
+          }
+          // Check if it's available in the _json object (old format)
+          else if (profile._json && profile._json.email) {
+            email = profile._json.email;
+          }
           
           console.log(`LinkedIn auth: Email ${email ? 'provided: ' + email : 'not provided'}`);
           
@@ -130,8 +143,16 @@ module.exports = (passport) => {
               user.linkedinRefreshToken = refreshToken;
               user.linkedinTokenExpiry = tokenExpiryTime;
               
-              if (!user.profilePicture && profile.photos && profile.photos[0]) {
-                user.profilePicture = profile.photos[0].value;
+              // Get profile picture - handle both formats
+              let profilePicture = null;
+              if (profile.photos && profile.photos[0]) {
+                profilePicture = profile.photos[0].value;
+              } else if (profile.picture) {
+                profilePicture = profile.picture;
+              }
+              
+              if (!user.profilePicture && profilePicture) {
+                user.profilePicture = profilePicture;
               }
               await user.save();
               console.log('LinkedIn auth: Account successfully linked');
@@ -154,9 +175,30 @@ module.exports = (passport) => {
             }
             
             console.log('LinkedIn auth: Creating new user');
-            // Parse name from profile
-            const firstName = profile.name?.givenName || profile.displayName.split(' ')[0] || 'User';
-            const lastName = profile.name?.familyName || profile.displayName.split(' ').slice(1).join(' ') || '';
+            // Parse name from profile - handle both formats
+            let firstName, lastName;
+            
+            if (profile.name) {
+              // OpenID format might provide name directly
+              firstName = profile.name.givenName || profile.displayName?.split(' ')[0] || 'User';
+              lastName = profile.name.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+            } else if (profile.firstName || profile.lastName) {
+              // Direct properties 
+              firstName = profile.firstName || 'User';
+              lastName = profile.lastName || '';
+            } else {
+              // Fallback to display name or default
+              firstName = profile.displayName?.split(' ')[0] || 'User';
+              lastName = profile.displayName?.split(' ').slice(1).join(' ') || '';
+            }
+            
+            // Get profile picture - handle both formats
+            let profilePicture = null;
+            if (profile.photos && profile.photos[0]) {
+              profilePicture = profile.photos[0].value;
+            } else if (profile.picture) {
+              profilePicture = profile.picture;
+            }
             
             user = await User.create({
               linkedinId: profile.id,
@@ -164,7 +206,7 @@ module.exports = (passport) => {
               lastName,
               email,
               isEmailVerified: true, // LinkedIn emails are verified
-              profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
+              profilePicture,
               authMethod: 'linkedin',
               onboardingCompleted: false,
               linkedinAccessToken: accessToken,
