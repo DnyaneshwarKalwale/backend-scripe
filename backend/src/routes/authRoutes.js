@@ -37,7 +37,7 @@ router.get(
 );
 router.get(
   '/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Google authentication failed')}` }),
+  passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL}?auth_error=${encodeURIComponent('Google authentication failed')}` }),
   (req, res) => {
     try {
       // Generate token
@@ -64,7 +64,7 @@ router.get(
       res.redirect(redirectUrl);
     } catch (error) {
       console.error('Error in Google callback:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Internal server error during authentication')}`);
+      res.redirect(`${process.env.FRONTEND_URL}?auth_error=${encodeURIComponent('Internal server error during authentication')}`);
     }
   }
 );
@@ -93,14 +93,14 @@ router.get(
       console.error('LinkedIn returned an error:', req.query.error);
       console.error('Error description:', req.query.error_description);
       
-      // Always redirect to the main login page with error
-      return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent(req.query.error_description || 'LinkedIn authentication failed')}`);
+      // Always redirect to the main homepage instead of login with error query params
+      return res.redirect(`${process.env.FRONTEND_URL}?auth_error=${encodeURIComponent(req.query.error_description || 'LinkedIn authentication failed')}`);
     }
     
     // Check if auth code is present
     if (!req.query.code) {
       console.error('LinkedIn callback missing code parameter');
-      return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Missing authorization code')}`);
+      return res.redirect(`${process.env.FRONTEND_URL}?auth_error=${encodeURIComponent('Missing authorization code')}`);
     }
     
     // Proceed with LinkedIn authentication
@@ -110,7 +110,7 @@ router.get(
     try {
       if (!req.user) {
         console.error('LinkedIn auth successful but no user object');
-        return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('User profile not found')}`);
+        return res.redirect(`${process.env.FRONTEND_URL}?auth_error=${encodeURIComponent('User profile not found')}`);
       }
 
       // Generate token
@@ -136,7 +136,7 @@ router.get(
       res.redirect(redirectUrl);
     } catch (error) {
       console.error('Error in LinkedIn callback:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Authentication error')}`);
+      res.redirect(`${process.env.FRONTEND_URL}?auth_error=${encodeURIComponent('Authentication error')}`);
     }
   }
 );
@@ -167,11 +167,11 @@ router.use((err, req, res, next) => {
     }
     
     const frontendUrl = process.env.FRONTEND_URL.trim();
-    // Redirect to the main login page with an error parameter instead
-    const errorUrl = `${frontendUrl}/login?auth_error=${encodeURIComponent(errorDetails)}`;
+    // Redirect to the main homepage with an error parameter instead
+    const errorUrl = `${frontendUrl}?auth_error=${encodeURIComponent(errorDetails)}`;
     console.log('Redirecting to error URL:', errorUrl);
     
-    // Redirect to login with appropriate error
+    // Redirect to homepage with appropriate error
     return res.redirect(errorUrl);
   }
   
@@ -267,7 +267,7 @@ router.get('/mock-linkedin-auth', (req, res) => {
 
   // Log what we're doing for debugging
   console.log(`Mock LinkedIn: Redirecting to ${process.env.FRONTEND_URL}/auth/social-callback with token and onboarding=true`);
-  
+
   // Redirect to frontend with token
   res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${encodeURIComponent(token)}&onboarding=true`);
 });
