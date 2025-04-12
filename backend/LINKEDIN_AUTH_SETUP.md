@@ -107,4 +107,34 @@ If you're encountering this specific error, follow these steps:
    - Some LinkedIn API scopes may require app verification
    - Follow LinkedIn's verification process if prompted
 
-After making these changes, restart your backend server and try the LinkedIn login again. Users should now be able to successfully authenticate with LinkedIn, and those who already have accounts with the same email (e.g., from Google login) will be automatically linked to their existing accounts. 
+After making these changes, restart your backend server and try the LinkedIn login again. Users should now be able to successfully authenticate with LinkedIn, and those who already have accounts with the same email (e.g., from Google login) will be automatically linked to their existing accounts.
+
+## Troubleshooting Frontend Errors
+
+If you see browser console errors like:
+
+```
+Uncaught ReferenceError: require is not defined
+Uncaught Error: TrackingTwo requires an initialPageInstance
+GET https://static.licdn.com/sc/p/com.linkedin.oauth-fe%3Aoauth-fe-static-content%2B4.0.1491/f/%2Foauth-frontend%2Fartdeco%2Fstatic%2Fimages%2Ficons.svg 404 (Not Found)
+```
+
+These errors typically come from LinkedIn's authentication page and are unrelated to your code. Common reasons for these errors appearing:
+
+1. **Browser Extensions**: Ad blockers or privacy extensions can interfere with LinkedIn's authentication scripts
+2. **Network Issues**: Temporary connectivity problems with LinkedIn's servers
+3. **LinkedIn UI Updates**: LinkedIn occasionally updates their authentication UI, causing temporary script errors
+
+If authentication fails and you're redirected with an error message like "Bummer, something went wrong," try these steps:
+
+1. **Check Network Inspector**: Look for failed API requests with error responses
+2. **Server Logs**: Check your backend logs for error messages when LinkedIn tries to call your callback URL
+3. **Restart OAuth Flow**: Try the authentication again from scratch (sometimes it's just a temporary issue)
+4. **Use Incognito/Private Window**: Test in a browser with no extensions to rule out extension interference
+5. **Verify App Settings**: Double-check your LinkedIn Developer Portal settings match your environment configuration
+
+Remember that LinkedIn's OAuth implementation can be sensitive to exact configuration details. The most common issues are:
+
+- Mismatched callback URLs (even a trailing slash difference matters)
+- Missing products or permissions in your LinkedIn app
+- LinkedIn app not yet approved for the scopes you're requesting 
