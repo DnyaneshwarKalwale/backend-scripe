@@ -19,61 +19,23 @@ const initiateLinkedInAuth = asyncHandler(async (req, res, next) => {
  * @route GET /api/auth/linkedin/callback
  * @access Public
  */
-const linkedInCallback = asyncHandler(async (req, res, next) => {
-  passport.authenticate('linkedin', { session: false }, async (err, profile) => {
-    if (err || !profile) {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?error=LinkedIn%20authentication%20failed`);
-    }
+const linkedInCallback = asyncHandler(async (req, res) => {
+  // Check if req.user exists
+  if (!req.user) {
+    console.error('LinkedIn callback: No user object in request');
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_authentication_failed`);
+  }
 
-    try {
-      // Extract profile information
-      const linkedinId = profile.id;
-      const firstName = profile.name.givenName || '';
-      const lastName = profile.name.familyName || '';
-      const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : '';
-      const profilePicture = profile.photos && profile.photos.length > 0 ? profile.photos[0].value : '';
+  try {
+    // Generate token
+    const token = req.user.getSignedJwtToken();
 
-      // Look for existing user by LinkedIn ID
-      let user = await User.findOne({ linkedinId });
-
-      // If not found by LinkedIn ID but email is provided, try to find by email
-      if (!user && email) {
-        user = await User.findOne({ email });
-        if (user) {
-          // Update user with LinkedIn ID if found by email
-          user.linkedinId = linkedinId;
-          if (!user.profilePicture && profilePicture) {
-            user.profilePicture = profilePicture;
-          }
-          await user.save();
-        }
-      }
-
-      // If user still not found, create a new one
-      if (!user) {
-        user = await User.create({
-          linkedinId,
-          firstName,
-          lastName,
-          email,
-          isEmailVerified: email ? true : false,
-          profilePicture: profilePicture || null,
-          authMethod: 'linkedin',
-          onboardingCompleted: false,
-        });
-      }
-
-      // Generate JWT token
-      const token = user.getSignedJwtToken();
-
-      // Redirect back to frontend with token
-      const redirectUrl = `${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&provider=linkedin&onboarding=${!user.onboardingCompleted}`;
-      return res.redirect(redirectUrl);
-    } catch (error) {
-      console.error('LinkedIn Auth Error:', error);
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?error=LinkedIn%20authentication%20failed`);
-    }
-  })(req, res, next);
+    // Redirect to frontend with token
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  } catch (error) {
+    console.error('LinkedIn callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_token_generation_failed`);
+  }
 });
 
 /**

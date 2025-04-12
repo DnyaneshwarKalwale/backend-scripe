@@ -52,6 +52,12 @@ app.use(session({
   }
 }));
 
+// Import user model here before serialization/deserialization
+const User = require('./models/userModel');
+
+// Configure passport
+require('./config/passport')(passport);
+
 // Initialize passport
 app.use(passport.initialize());
 app.use(passport.session());
@@ -63,15 +69,12 @@ passport.serializeUser((user, done) => {
 
 passport.deserializeUser(async (id, done) => {
   try {
-    const User = require('./models/userModel');
     const user = await User.findById(id);
     done(null, user);
   } catch (err) {
     done(err, null);
   }
 });
-
-require('./config/passport')(passport);
 
 // Routes
 app.use('/api/auth', authRoutes);

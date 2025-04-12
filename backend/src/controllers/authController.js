@@ -428,11 +428,22 @@ const resetPassword = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/google/callback
 // @access  Public
 const googleCallback = asyncHandler(async (req, res) => {
-  // Generate token
-  const token = req.user.getSignedJwtToken();
+  // Check if req.user exists
+  if (!req.user) {
+    console.error('Google callback: No user object in request');
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=authentication_failed`);
+  }
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  try {
+    // Generate token
+    const token = req.user.getSignedJwtToken();
+
+    // Redirect to frontend with token
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  } catch (error) {
+    console.error('Google callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=token_generation_failed`);
+  }
 });
 
 // @desc    Logout user

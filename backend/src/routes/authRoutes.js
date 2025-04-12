@@ -36,8 +36,11 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 router.get('/google/callback', googleCallback);
 
 // LinkedIn OAuth Routes
-router.get('/linkedin', initiateLinkedInAuth);
-router.get('/linkedin/callback', linkedInCallback);
+router.get('/linkedin', passport.authenticate('linkedin', { scope: ['r_emailaddress', 'r_liteprofile'] }));
+router.get('/linkedin/callback', passport.authenticate('linkedin', { session: true, failureRedirect: '/api/auth/linkedin-failure' }), linkedInCallback);
+router.get('/linkedin-failure', (req, res) => {
+  res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_authentication_failed`);
+});
 
 // Protected Routes
 router.get('/me', protect, getMe);
