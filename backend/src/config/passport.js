@@ -3,7 +3,6 @@ const JwtStrategy = require('passport-jwt').Strategy;
 const ExtractJwt = require('passport-jwt').ExtractJwt;
 const User = require('../models/userModel');
 const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
-const axios = require('axios');
 
 module.exports = (passport) => {
   // JWT Strategy for token authentication
@@ -89,86 +88,75 @@ module.exports = (passport) => {
     )
   );
 
-  // LinkedIn OAuth Strategy using OpenID Connect
+  // LinkedIn OAuth Strategy
   passport.use(
     new LinkedInStrategy(
       {
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['openid', 'profile', 'email'],
+        scope: ['r_liteprofile', 'r_emailaddress'],
+        profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
-        userProfileURL: 'https://api.linkedin.com/v2/userinfo',
-        profileFields: ['id', 'first-name', 'last-name', 'email-address', 'picture-url'],
       },
-      async (req, accessToken, refreshToken, params, profile, done) => {
+      async (req, accessToken, refreshToken, profile, done) => {
         try {
-          console.log('LinkedIn auth starting with access token received');
-          console.log('LinkedIn params received:', JSON.stringify(params));
+          console.log('LinkedIn profile received:', JSON.stringify(profile));
           
-          // Debug profile data
-          if (!profile) {
-            console.error('LinkedIn auth: No profile received from strategy');
-            return done(new Error('LinkedIn did not provide profile information'), false);
-          }
+          // Store access tokens for later API calls
+          const tokenExpiryTime = new Date();
+          tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + profile.tokenExpiresIn || 3600);
           
-          console.log('LinkedIn profile ID:', profile.id || 'No ID');
-          console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
+          // LinkedIn may not always provide email if the scope is not authorized
+          const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
           
-          // Extract email from the profile
-          let email = null;
-          if (profile.emails && profile.emails.length > 0 && profile.emails[0].value) {
-            email = profile.emails[0].value;
-          } else if (profile._json && profile._json.email) {
-            email = profile._json.email;
-          }
-          
-          if (!email) {
-            console.error('LinkedIn auth: No email provided from LinkedIn');
-            if (!profile.id) {
-              return done(new Error('LinkedIn did not provide sufficient profile information'), false);
-            }
-            // Generate a placeholder email based on ID
-            email = `linkedin_${profile.id}@placeholder.scripe.com`;
-          }
-          
-          console.log(`LinkedIn auth: Using email: ${email}`);
+          console.log(`LinkedIn auth: Email ${email ? 'provided: ' + email : 'not provided'}`);
           
           // First check if user exists by LinkedIn ID
           let user = await User.findOne({ linkedinId: profile.id });
+          console.log(`LinkedIn auth: User by linkedinId ${user ? 'found' : 'not found'}`);
           
           // If not found by LinkedIn ID but email is provided, check by email (to link with existing accounts)
           if (!user && email) {
             user = await User.findOne({ email });
+            console.log(`LinkedIn auth: User by email ${user ? 'found' : 'not found'}`);
             
             // If user exists by email, update LinkedIn ID and tokens (link accounts)
             if (user) {
+              console.log(`LinkedIn auth: Linking LinkedIn account to existing user with email ${email}`);
               user.linkedinId = profile.id;
+              user.linkedinAccessToken = accessToken;
+              user.linkedinRefreshToken = refreshToken;
+              user.linkedinTokenExpiry = tokenExpiryTime;
+              
               if (!user.profilePicture && profile.photos && profile.photos[0]) {
                 user.profilePicture = profile.photos[0].value;
               }
               await user.save();
+              console.log('LinkedIn auth: Account successfully linked');
             }
+          } else if (user) {
+            // Update tokens for existing LinkedIn user
+            console.log('LinkedIn auth: Updating tokens for existing LinkedIn user');
+            user.linkedinAccessToken = accessToken;
+            user.linkedinRefreshToken = refreshToken;
+            user.linkedinTokenExpiry = tokenExpiryTime;
+            await user.save();
           }
           
           // If user doesn't exist, create a new one
           if (!user) {
-            // Parse name from profile
-            let firstName = 'LinkedIn';
-            let lastName = 'User';
-            
-            if (profile.name) {
-              firstName = profile.name.givenName || firstName;
-              lastName = profile.name.familyName || lastName;
-            } else if (profile.displayName) {
-              const nameParts = profile.displayName.split(' ');
-              firstName = nameParts[0] || firstName;
-              lastName = nameParts.slice(1).join(' ') || lastName;
-            } else if (profile._json) {
-              firstName = profile._json.given_name || firstName;
-              lastName = profile._json.family_name || lastName;
+            // Only proceed if we have an email
+            if (!email) {
+              console.error('LinkedIn auth: No email provided and user does not exist');
+              return done(new Error('LinkedIn account must provide an email address for registration'), false);
             }
+            
+            console.log('LinkedIn auth: Creating new user');
+            // Parse name from profile
+            const firstName = profile.name?.givenName || profile.displayName.split(' ')[0] || 'User';
+            const lastName = profile.name?.familyName || profile.displayName.split(' ').slice(1).join(' ') || '';
             
             user = await User.create({
               linkedinId: profile.id,
@@ -178,14 +166,17 @@ module.exports = (passport) => {
               isEmailVerified: true, // LinkedIn emails are verified
               profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
               authMethod: 'linkedin',
-              onboardingCompleted: false
+              onboardingCompleted: false,
+              linkedinAccessToken: accessToken,
+              linkedinRefreshToken: refreshToken,
+              linkedinTokenExpiry: tokenExpiryTime
             });
+            console.log('LinkedIn auth: New user created successfully');
           }
-          
-          console.log('LinkedIn auth: Authentication successful, returning user');
+
           return done(null, user);
         } catch (error) {
-          console.error('LinkedIn OAuth Error:', error.message);
+          console.error('LinkedIn OAuth Error:', error);
           return done(error, false);
         }
       }

@@ -30,69 +30,16 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cors({
   origin: [
     'http://localhost:8080', 
-    'http://localhost:8081',
-    'http://localhost:3000',  
+    'http://localhost:8081', 
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'Origin', 'Accept'],
-  exposedHeaders: ['Set-Cookie', 'Authorization'],
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
+  exposedHeaders: ['Set-Cookie']
 }));
-
-// Add a middleware to handle redirects
-app.use((req, res, next) => {
-  // Store the original redirect method to wrap it
-  const originalRedirect = res.redirect;
-  
-  // Override the redirect method
-  res.redirect = function(url) {
-    console.log('Redirecting to:', url);
-    
-    // Validate the URL - make sure we're only redirecting to known valid frontend routes
-    try {
-      const frontendUrl = process.env.FRONTEND_URL.trim();
-      const urlObj = new URL(url);
-      
-      // Check if this is a frontend URL
-      if (urlObj.href.startsWith(frontendUrl)) {
-        const path = urlObj.pathname;
-        
-        // List of valid frontend paths
-        const validPaths = [
-          '/login',
-          '/auth/social-callback',
-          '/dashboard',
-          '/onboarding',
-          '/onboarding/welcome'
-        ];
-        
-        // Check if the path is valid or is a subpath of a valid path
-        const isValidPath = validPaths.some(validPath => 
-          path === validPath || path.startsWith(`${validPath}/`)
-        );
-        
-        // If invalid, redirect to the homepage instead
-        if (!isValidPath) {
-          console.warn(`Redirect to invalid path '${path}', redirecting to homepage instead`);
-          url = frontendUrl;
-        }
-      }
-    } catch (e) {
-      console.error('Error validating redirect URL:', e);
-      // If there's an error parsing the URL, continue with the original redirect
-    }
-    
-    // Call the original redirect method
-    originalRedirect.call(this, url);
-  };
-  
-  next();
-});
 
 // Configure session middleware (required for Twitter OAuth)
 app.use(session({
