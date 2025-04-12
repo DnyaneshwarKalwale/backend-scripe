@@ -1,3 +1,30 @@
+const JwtStrategy = require('passport-jwt').Strategy;
+const ExtractJwt = require('passport-jwt').ExtractJwt;
+const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
+const User = require('../models/userModel');
+
+module.exports = (passport) => {
+  // JWT Strategy for token authentication
+  passport.use(
+    new JwtStrategy(
+      {
+        jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+        secretOrKey: process.env.JWT_SECRET,
+      },
+      async (jwt_payload, done) => {
+        try {
+          const user = await User.findById(jwt_payload.id);
+          if (user) {
+            return done(null, user);
+          }
+          return done(null, false);
+        } catch (error) {
+          return done(error, false);
+        }
+      }
+    )
+  );
+
   // LinkedIn OAuth Strategy
   passport.use(
     new LinkedInStrategy(
@@ -5,11 +32,10 @@
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['openid', 'profile', 'email', 'w_member_social'], // ✅ FIXED scopes
+        scope: ['openid', 'profile', 'email', 'w_member_social'],
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
-        // ❌ REMOVED: userProfileURL: 'https://api.linkedin.com/v2/userinfo' — this causes "failed to fetch user profile"
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
@@ -151,3 +177,4 @@
       }
     )
   );
+};
