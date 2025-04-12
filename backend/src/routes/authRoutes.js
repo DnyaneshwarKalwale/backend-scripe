@@ -111,6 +111,45 @@ router.get(
   }
 );
 
+// Mock Twitter auth for development
+router.get('/mock-twitter-auth', (req, res) => {
+  // Get parameters from query string or use defaults
+  const { name, twitterId, email, profileImage } = req.query;
+  
+  const fullName = name || 'Twitter User';
+  const nameParts = fullName.split(' ');
+  const firstName = nameParts[0] || 'Twitter';
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'User';
+  
+  // Create a mock user profile
+  const mockUser = {
+    id: twitterId || 'twitter123456',
+    firstName: firstName,
+    lastName: lastName,
+    email: email || 'twitter.user@example.com',
+    isEmailVerified: true,
+    profilePicture: profileImage || 'https://via.placeholder.com/150',
+    authMethod: 'twitter',
+    onboardingCompleted: false,
+    getSignedJwtToken: function() {
+      const jwt = require('jsonwebtoken');
+      return jwt.sign(
+        { id: this.id, email: this.email },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRE }
+      );
+    }
+  };
+
+  console.log('Mock Twitter authentication successful:', mockUser);
+
+  // Generate token
+  const token = mockUser.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
+});
+
 // Mock LinkedIn auth for development
 router.get('/mock-linkedin-auth', (req, res) => {
   // Get parameters from query string or use defaults
