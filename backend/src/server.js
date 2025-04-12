@@ -30,16 +30,34 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cors({
   origin: [
     'http://localhost:8080', 
-    'http://localhost:8081', 
+    'http://localhost:8081',
+    'http://localhost:3000',  
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
-  exposedHeaders: ['Set-Cookie']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'Origin', 'Accept'],
+  exposedHeaders: ['Set-Cookie', 'Authorization'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Add a middleware to handle redirects
+app.use((req, res, next) => {
+  // Store the original redirect method to wrap it
+  const originalRedirect = res.redirect;
+  
+  // Override the redirect method
+  res.redirect = function(url) {
+    console.log('Redirecting to:', url);
+    // Call the original redirect method
+    originalRedirect.call(this, url);
+  };
+  
+  next();
+});
 
 // Configure session middleware (required for Twitter OAuth)
 app.use(session({

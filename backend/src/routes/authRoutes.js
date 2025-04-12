@@ -129,8 +129,14 @@ router.get(
         onboardingStatus
       });
       
+      // Use fully qualified URL with properly encoded parameters
+      const frontendUrl = process.env.FRONTEND_URL.trim();
+      const redirectUrl = `${frontendUrl}/auth/social-callback?token=${encodeURIComponent(token)}&onboarding=${encodeURIComponent(onboardingStatus)}`;
+      
+      console.log('Redirecting to:', redirectUrl);
+      
       // Redirect to frontend with token
-      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+      res.redirect(redirectUrl);
     } catch (error) {
       console.error('Error in LinkedIn callback:', error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
@@ -141,8 +147,12 @@ router.get(
 // Error handler specifically for LinkedIn auth failures
 router.use((err, req, res, next) => {
   // Check if this is a LinkedIn auth error (from the callback route)
-  if (req.path === '/linkedin/callback' && err) {
-    console.error('LinkedIn authentication error middleware caught:', err);
+  if (req.originalUrl.includes('/linkedin/callback') && err) {
+    console.error('LinkedIn authentication error middleware caught:');
+    console.error('Error message:', err.message);
+    console.error('Error stack:', err.stack);
+    console.error('Original URL:', req.originalUrl);
+    console.error('Path:', req.path);
     
     // Create a readable error message for the user
     let errorDetails = 'Authentication failed';
@@ -159,8 +169,12 @@ router.use((err, req, res, next) => {
       }
     }
     
+    const frontendUrl = process.env.FRONTEND_URL.trim();
+    const errorUrl = `${frontendUrl}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(errorDetails)}`;
+    console.log('Redirecting to error URL:', errorUrl);
+    
     // Redirect to login with appropriate error
-    return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(errorDetails)}`);
+    return res.redirect(errorUrl);
   }
   
   // For other errors, continue to the next error handler
@@ -202,8 +216,66 @@ router.get('/mock-linkedin-auth', (req, res) => {
   // Generate token
   const token = mockUser.getSignedJwtToken();
 
+  // Log what we're doing for debugging
+  console.log(`Mock LinkedIn: Redirecting to ${process.env.FRONTEND_URL}/auth/social-callback with token and onboarding=true`);
+  
   // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${encodeURIComponent(token)}&onboarding=true`);
+});
+
+// HTML page for easy mock auth testing
+router.get('/mock-auth-test', (req, res) => {
+  // Only show this in development mode
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).send('Not found');
+  }
+  
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const backendUrl = process.env.LINKEDIN_CALLBACK_URL 
+    ? process.env.LINKEDIN_CALLBACK_URL.split('/').slice(0, 3).join('/')
+    : 'http://localhost:5000';
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>LinkedIn Auth Test</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        button { background: #0077B5; color: white; border: none; padding: 10px 15px; cursor: pointer; margin: 10px 0; }
+        .card { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        pre { background: #f5f5f5; padding: 10px; overflow: auto; }
+      </style>
+    </head>
+    <body>
+      <h1>LinkedIn Auth Testing Page</h1>
+      
+      <div class="card">
+        <h2>Mock LinkedIn Login</h2>
+        <p>This will simulate a successful LinkedIn login with a mock user:</p>
+        <button onclick="window.location.href='${backendUrl}/api/auth/mock-linkedin-auth'">Login with Mock LinkedIn</button>
+      </div>
+      
+      <div class="card">
+        <h2>Real LinkedIn Login</h2>
+        <p>This will initiate a real LinkedIn OAuth flow:</p>
+        <button onclick="window.location.href='${backendUrl}/api/auth/linkedin'">Login with Real LinkedIn</button>
+      </div>
+      
+      <div class="card">
+        <h2>Debugging Info</h2>
+        <p>Current configuration:</p>
+        <pre>
+Frontend URL: ${frontendUrl}
+Backend URL: ${backendUrl}
+Environment: ${process.env.NODE_ENV || 'development'}
+        </pre>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  res.send(html);
 });
 
 // Simple direct development login (no OAuth)

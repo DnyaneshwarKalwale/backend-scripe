@@ -100,6 +100,8 @@ module.exports = (passport) => {
         state: true,
         passReqToCallback: true,
         userProfileURL: 'https://api.linkedin.com/v2/userinfo',
+        skipUserProfile: false,
+        profileFields: ['id', 'first-name', 'last-name', 'email-address', 'picture-url'],
       },
       async (req, accessToken, refreshToken, params, profile, done) => {
         try {
@@ -109,13 +111,28 @@ module.exports = (passport) => {
           // Debug profile data
           if (!profile) {
             console.error('LinkedIn auth: No profile received from strategy');
-          } else {
-            console.log('LinkedIn profile ID:', profile.id || 'No ID');
-            console.log('LinkedIn profile has emails:', profile.emails ? 'Yes' : 'No');
-            console.log('LinkedIn profile has name:', profile.name ? 'Yes' : 'No');
-            console.log('LinkedIn profile has _json:', profile._json ? 'Yes' : 'No');
-            console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
+            
+            // If no profile was received but we have an access token, we might still be able to continue
+            if (!accessToken) {
+              return done(new Error('LinkedIn authentication failed: No access token received'), false);
+            }
+            
+            // Create a minimal profile to work with
+            profile = { 
+              id: 'temp_' + Date.now(), 
+              _json: {},
+              emails: [],
+              photos: [],
+              name: {} 
+            };
+            console.log('LinkedIn auth: Created a minimal profile to continue');
           }
+          
+          console.log('LinkedIn profile ID:', profile.id || 'No ID');
+          console.log('LinkedIn profile has emails:', profile.emails ? 'Yes' : 'No');
+          console.log('LinkedIn profile has name:', profile.name ? 'Yes' : 'No');
+          console.log('LinkedIn profile has _json:', profile._json ? 'Yes' : 'No');
+          console.log('LinkedIn profile from strategy:', JSON.stringify(profile));
           
           let userData = null;
 
@@ -134,7 +151,9 @@ module.exports = (passport) => {
                 userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
                   headers: {
                     'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Origin': process.env.LINKEDIN_CALLBACK_URL.split('/').slice(0, 3).join('/')
                   },
                   timeout: 10000, // 10 second timeout
                   // Add proxy configuration to bypass potential network issues
