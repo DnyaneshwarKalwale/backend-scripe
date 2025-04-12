@@ -11,39 +11,221 @@ const {
   forgotPassword,
   resetPassword,
   googleCallback,
-  logout,
+  linkedinCallback,
+  linkedinAuth,
+  logout
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
-const {
-  initiateLinkedInAuth,
-  linkedInCallback
-} = require('../controllers/linkedinController');
 
 const router = express.Router();
 
-// Public Routes
+// Email/password routes
 router.post('/register', registerUser);
 router.post('/login', loginUser);
+router.get('/me', protect, getMe);
+router.get('/verify-email/:token', verifyEmail);
 router.post('/verify-otp', verifyOTP);
 router.post('/resend-otp', resendOTP);
-router.get('/verify-email/:token', verifyEmail);
+router.post('/resend-verification', protect, resendVerification);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);
-router.get('/logout', logout);
 
-// Google OAuth Routes
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-router.get('/google/callback', googleCallback);
+// Google OAuth routes
+router.get(
+  '/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+router.get(
+  '/google/callback',
+  passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?error=oauth_failed` }),
+  (req, res) => {
+    try {
+      // Generate token
+      const token = req.user.getSignedJwtToken();
+      
+      // Check if onboarding is completed
+      const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+      
+      // Log successful authentication
+      console.log('Google authentication successful:', {
+        userId: req.user.id,
+        email: req.user.email || '(email not provided)',
+        onboardingStatus,
+        emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
+      });
+      
+      // Redirect to frontend with token
+      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    } catch (error) {
+      console.error('Error in Google callback:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+    }
+  }
+);
 
-// LinkedIn OAuth Routes
-router.get('/linkedin', passport.authenticate('linkedin', { scope: ['r_emailaddress', 'r_liteprofile'] }));
-router.get('/linkedin/callback', passport.authenticate('linkedin', { session: true, failureRedirect: '/api/auth/linkedin-failure' }), linkedInCallback);
-router.get('/linkedin-failure', (req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_authentication_failed`);
+// LinkedIn OAuth routes
+router.get(
+  '/linkedin',
+  (req, res, next) => {
+    console.log('Starting LinkedIn OAuth flow...');
+    next();
+  },
+  passport.authenticate('linkedin', { 
+    state: true,
+    session: false
+  })
+);
+
+router.get(
+  '/linkedin/callback',
+  (req, res, next) => {
+    console.log('LinkedIn callback received');
+    console.log('Session data:', req.session);
+    
+    passport.authenticate('linkedin', { 
+      session: false,
+      failureRedirect: `${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed` 
+    })(req, res, next);
+  },
+  (req, res) => {
+    try {
+      // Generate token
+      const token = req.user.getSignedJwtToken();
+      
+      // Check if onboarding is completed
+      const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+      
+      // Log successful authentication
+      console.log('LinkedIn authentication successful:', {
+        userId: req.user.id,
+        email: req.user.email,
+        onboardingStatus
+      });
+      
+      // Redirect to frontend with token
+      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+    } catch (error) {
+      console.error('Error in LinkedIn callback:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+    }
+  }
+);
+
+// Mock Twitter auth for development
+router.get('/mock-twitter-auth', (req, res) => {
+  // Get parameters from query string or use defaults
+  const { name, twitterId, email, profileImage } = req.query;
+  
+  const fullName = name || 'Twitter User';
+  const nameParts = fullName.split(' ');
+  const firstName = nameParts[0] || 'Twitter';
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'User';
+  
+  // Create a mock user profile
+  const mockUser = {
+    id: twitterId || 'twitter123456',
+    firstName: firstName,
+    lastName: lastName,
+    email: email || 'twitter.user@example.com',
+    isEmailVerified: true,
+    profilePicture: profileImage || 'https://via.placeholder.com/150',
+    authMethod: 'twitter',
+    onboardingCompleted: false,
+    getSignedJwtToken: function() {
+      const jwt = require('jsonwebtoken');
+      return jwt.sign(
+        { id: this.id, email: this.email },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRE }
+      );
+    }
+  };
+
+  console.log('Mock Twitter authentication successful:', mockUser);
+
+  // Generate token
+  const token = mockUser.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
 });
 
-// Protected Routes
-router.get('/me', protect, getMe);
-router.post('/resend-verification', protect, resendVerification);
+// Mock LinkedIn auth for development
+router.get('/mock-linkedin-auth', (req, res) => {
+  // Get parameters from query string or use defaults
+  const { name, linkedinId, email, profileImage } = req.query;
+  
+  const fullName = name || 'LinkedIn User';
+  const nameParts = fullName.split(' ');
+  const firstName = nameParts[0] || 'LinkedIn';
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'User';
+  
+  // Create a mock user profile
+  const mockUser = {
+    id: linkedinId || 'linkedin123456',
+    firstName: firstName,
+    lastName: lastName,
+    email: email || 'linkedin.user@example.com',
+    isEmailVerified: true,
+    profilePicture: profileImage || 'https://via.placeholder.com/150',
+    authMethod: 'linkedin',
+    onboardingCompleted: false,
+    getSignedJwtToken: function() {
+      const jwt = require('jsonwebtoken');
+      return jwt.sign(
+        { id: this.id, email: this.email },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRE }
+      );
+    }
+  };
+
+  console.log('Mock LinkedIn authentication successful:', mockUser);
+
+  // Generate token
+  const token = mockUser.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
+});
+
+// Simple direct development login (no OAuth)
+router.get('/dev-login', (req, res) => {
+  // Create a mock admin user
+  const mockUser = {
+    id: 'dev_admin_123',
+    firstName: 'Developer',
+    lastName: 'Admin',
+    email: 'dev.admin@example.com',
+    isEmailVerified: true,
+    profilePicture: 'https://via.placeholder.com/150',
+    authMethod: 'dev',
+    onboardingCompleted: false,
+  };
+
+  // Generate token
+  const jwt = require('jsonwebtoken');
+  const token = jwt.sign(
+    { id: mockUser.id, email: mockUser.email },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE }
+  );
+
+  console.log('Dev login successful:', mockUser);
+
+  // Return the token in JSON format or redirect
+  if (req.query.redirect === 'true') {
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
+  } else {
+    res.json({
+      success: true,
+      token,
+      user: mockUser
+    });
+  }
+});
+
+// Add the direct LinkedIn auth route 
+router.post('/linkedin-auth', linkedinAuth);
 
 module.exports = router; 

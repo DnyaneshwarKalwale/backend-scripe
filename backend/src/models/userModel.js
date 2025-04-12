@@ -47,6 +47,9 @@ const userSchema = mongoose.Schema(
     resetPasswordExpire: Date,
     googleId: String,
     linkedinId: String,
+    linkedinAccessToken: String,
+    linkedinRefreshToken: String,
+    linkedinTokenExpiry: Date,
     profilePicture: String,
     authMethod: {
       type: String,

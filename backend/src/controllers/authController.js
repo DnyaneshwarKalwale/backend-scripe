@@ -428,21 +428,93 @@ const resetPassword = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/google/callback
 // @access  Public
 const googleCallback = asyncHandler(async (req, res) => {
-  // Check if req.user exists
-  if (!req.user) {
-    console.error('Google callback: No user object in request');
-    return res.redirect(`${process.env.FRONTEND_URL}/login?error=authentication_failed`);
-  }
+  // Generate token
+  const token = req.user.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+});
+
+// @desc    LinkedIn OAuth callback
+// @route   GET /api/auth/linkedin/callback
+// @access  Public
+const linkedinCallback = asyncHandler(async (req, res) => {
+  // Generate token
+  const token = req.user.getSignedJwtToken();
+
+  // Redirect to frontend with token
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+});
+
+// @desc    Direct LinkedIn auth (for development)
+// @route   POST /api/auth/linkedin-auth
+// @access  Public
+const linkedinAuth = asyncHandler(async (req, res) => {
+  const { linkedinId, name, email, profileImage } = req.body;
 
   try {
-    // Generate token
-    const token = req.user.getSignedJwtToken();
+    if (!linkedinId || !name || !email) {
+      res.status(400);
+      throw new Error(getTranslation('linkedinInfoRequired', req.language));
+    }
 
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+    // Handle name - use the full name as firstName if no space is found
+    const nameParts = name.trim().split(/\s+/);
+    const firstName = nameParts[0] || 'User';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+    // Find user by LinkedIn ID first
+    let user = await User.findOne({ linkedinId });
+
+    // If not found by LinkedIn ID, try to find by email
+    if (!user) {
+      user = await User.findOne({ email });
+      if (user) {
+        // Update user with LinkedIn ID if found by email
+        user.linkedinId = linkedinId;
+        if (!user.profilePicture && profileImage) {
+          user.profilePicture = profileImage;
+        }
+        await user.save();
+      }
+    }
+
+    // If user still not found, create a new one
+    if (!user) {
+      user = await User.create({
+        linkedinId,
+        firstName,
+        lastName,
+        email,
+        isEmailVerified: true, // LinkedIn emails are verified
+        profilePicture: profileImage || null,
+        authMethod: 'linkedin',
+        onboardingCompleted: false,
+      });
+    }
+
+    // Generate JWT token
+    const token = user.getSignedJwtToken();
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        language: user.language,
+        isEmailVerified: user.isEmailVerified,
+        onboardingCompleted: user.onboardingCompleted,
+        profilePicture: user.profilePicture,
+      },
+      redirectTo: !user.onboardingCompleted ? '/onboarding' : '/dashboard',
+    });
   } catch (error) {
-    console.error('Google callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=token_generation_failed`);
+    console.error('LinkedIn Auth Error:', error);
+    res.status(500);
+    throw new Error(getTranslation('linkedinAuthError', req.language));
   }
 });
 
@@ -473,6 +545,8 @@ module.exports = {
   forgotPassword,
   resetPassword,
   googleCallback,
+  linkedinCallback,
+  linkedinAuth,
   logout,
   verifyOTP,
   resendOTP,
