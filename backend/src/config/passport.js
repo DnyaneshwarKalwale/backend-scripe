@@ -99,10 +99,14 @@ module.exports = (passport) => {
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
+        userProfileURL: 'https://api.linkedin.com/v2/userinfo',
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
-          console.log('LinkedIn profile received:', JSON.stringify(profile));
+          console.log('LinkedIn auth: OAuth flow successful');
+          console.log('LinkedIn accessToken:', accessToken);
+          console.log('LinkedIn refreshToken:', refreshToken ? 'Present' : 'Not provided');
+          console.log('LinkedIn profile received:', JSON.stringify(profile, null, 2));
           
           // Store access tokens for later API calls
           const tokenExpiryTime = new Date();
@@ -186,6 +190,10 @@ module.exports = (passport) => {
               // Direct properties 
               firstName = profile.firstName || 'User';
               lastName = profile.lastName || '';
+            } else if (profile.given_name || profile.family_name) {
+              // OpenID Connect standard claims
+              firstName = profile.given_name || 'User';
+              lastName = profile.family_name || '';
             } else {
               // Fallback to display name or default
               firstName = profile.displayName?.split(' ')[0] || 'User';
@@ -200,25 +208,34 @@ module.exports = (passport) => {
               profilePicture = profile.picture;
             }
             
-            user = await User.create({
-              linkedinId: profile.id,
-              firstName,
-              lastName,
-              email,
-              isEmailVerified: true, // LinkedIn emails are verified
-              profilePicture,
-              authMethod: 'linkedin',
-              onboardingCompleted: false,
-              linkedinAccessToken: accessToken,
-              linkedinRefreshToken: refreshToken,
-              linkedinTokenExpiry: tokenExpiryTime
-            });
-            console.log('LinkedIn auth: New user created successfully');
+            try {
+              user = await User.create({
+                linkedinId: profile.id,
+                firstName,
+                lastName,
+                email,
+                isEmailVerified: true, // LinkedIn emails are verified
+                profilePicture,
+                authMethod: 'linkedin',
+                onboardingCompleted: false,
+                linkedinAccessToken: accessToken,
+                linkedinRefreshToken: refreshToken,
+                linkedinTokenExpiry: tokenExpiryTime
+              });
+              console.log('LinkedIn auth: New user created successfully');
+            } catch (createError) {
+              console.error('LinkedIn auth: Error creating user:', createError.message);
+              return done(createError, false);
+            }
           }
 
           return done(null, user);
         } catch (error) {
           console.error('LinkedIn OAuth Error:', error);
+          // Add more detailed error logging
+          if (error.response) {
+            console.error('LinkedIn API Error Response:', error.response.data);
+          }
           return done(error, false);
         }
       }
