@@ -16,8 +16,13 @@ LinkedIn has specific requirements for OAuth callback URLs. This guide shows how
    - Add the following redirect URL:
      - `https://backend-scripe.onrender.com/api/auth/linkedin/callback`
    - Request the following OAuth 2.0 scopes:
-     - `r_emailaddress` - to access the user's email
      - `r_liteprofile` - to access basic profile information
+     - `r_emailaddress` - to access the user's email
+   - To add these scopes:
+     1. Go to the "Products" tab in your LinkedIn app
+     2. Add the "Sign In with LinkedIn" product
+     3. Go to the "Auth" tab
+     4. Under "OAuth 2.0 scopes" make sure both scopes are selected and approved
 
 5. Take note of the Client ID and Client Secret from the Auth tab and add them to your Render environment variables.
 
@@ -73,4 +78,33 @@ Common LinkedIn OAuth issues:
 
 3. **"Invalid client ID or secret"**:
    - Double-check your client ID and client secret in your environment variables
-   - Make sure they match exactly what's shown in the LinkedIn Developer Portal 
+   - Make sure they match exactly what's shown in the LinkedIn Developer Portal
+
+### Fixing "Scope 'r_emailaddress' is not authorized for your application" Error
+
+If you're encountering this specific error, follow these steps:
+
+1. **Add required products to your app:**
+   - Go to the LinkedIn Developer Portal > Your App > Products
+   - Click on "Select Products"
+   - Add "Sign In with LinkedIn" product to your application
+   - This product grants access to both `r_liteprofile` and `r_emailaddress` scopes
+
+2. **Verify scope permissions:**
+   - Go to the "Auth" tab in your app settings
+   - Under "OAuth 2.0 scopes", make sure both scopes are listed:
+     - `r_liteprofile`
+     - `r_emailaddress`
+   - If they're not listed, you need to add the "Sign In with LinkedIn" product first
+
+3. **Update scope configuration in your app code:**
+   - Make sure your passport.js configuration includes both scopes in this order:
+     ```javascript
+     scope: ['r_liteprofile', 'r_emailaddress']
+     ```
+
+4. **Request app verification if needed:**
+   - Some LinkedIn API scopes may require app verification
+   - Follow LinkedIn's verification process if prompted
+
+After making these changes, restart your backend server and try the LinkedIn login again. Users should now be able to successfully authenticate with LinkedIn, and those who already have accounts with the same email (e.g., from Google login) will be automatically linked to their existing accounts. 

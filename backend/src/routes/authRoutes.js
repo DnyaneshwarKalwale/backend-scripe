@@ -80,7 +80,21 @@ router.get(
   '/linkedin/callback',
   (req, res, next) => {
     console.log('LinkedIn callback received');
-    console.log('Session data:', req.session);
+    console.log('Query params:', req.query);
+    
+    // Check for LinkedIn error
+    if (req.query.error) {
+      console.error('LinkedIn returned an error:', req.query.error);
+      console.error('Error description:', req.query.error_description);
+      
+      // Handle common LinkedIn errors
+      if (req.query.error_description && req.query.error_description.includes('scope')) {
+        console.error('This appears to be a scope authorization issue. Please check your LinkedIn app settings.');
+        return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_scope_unauthorized&details=${encodeURIComponent(req.query.error_description)}`);
+      }
+      
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(req.query.error_description || '')}`);
+    }
     
     passport.authenticate('linkedin', { 
       session: false,

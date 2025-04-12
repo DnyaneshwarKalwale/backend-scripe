@@ -95,35 +95,36 @@ module.exports = (passport) => {
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['r_emailaddress', 'r_liteprofile'],
+        scope: ['r_liteprofile', 'r_emailaddress'],
+        profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
-          console.log('LinkedIn profile:', JSON.stringify(profile));
+          console.log('LinkedIn profile received:', JSON.stringify(profile));
           
           // Store access tokens for later API calls
           const tokenExpiryTime = new Date();
           tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + profile.tokenExpiresIn || 3600);
           
-          // LinkedIn always provides email
+          // LinkedIn may not always provide email if the scope is not authorized
           const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
           
-          if (!email) {
-            console.error('LinkedIn did not provide an email address');
-            return done(new Error('LinkedIn account must have an email address'), false);
-          }
+          console.log(`LinkedIn auth: Email ${email ? 'provided: ' + email : 'not provided'}`);
           
-          // Check if user exists by LinkedIn ID
+          // First check if user exists by LinkedIn ID
           let user = await User.findOne({ linkedinId: profile.id });
+          console.log(`LinkedIn auth: User by linkedinId ${user ? 'found' : 'not found'}`);
           
-          // If not found by LinkedIn ID, check by email
-          if (!user) {
+          // If not found by LinkedIn ID but email is provided, check by email (to link with existing accounts)
+          if (!user && email) {
             user = await User.findOne({ email });
+            console.log(`LinkedIn auth: User by email ${user ? 'found' : 'not found'}`);
             
-            // If user exists by email, update LinkedIn ID and tokens
+            // If user exists by email, update LinkedIn ID and tokens (link accounts)
             if (user) {
+              console.log(`LinkedIn auth: Linking LinkedIn account to existing user with email ${email}`);
               user.linkedinId = profile.id;
               user.linkedinAccessToken = accessToken;
               user.linkedinRefreshToken = refreshToken;
@@ -133,9 +134,11 @@ module.exports = (passport) => {
                 user.profilePicture = profile.photos[0].value;
               }
               await user.save();
+              console.log('LinkedIn auth: Account successfully linked');
             }
-          } else {
+          } else if (user) {
             // Update tokens for existing LinkedIn user
+            console.log('LinkedIn auth: Updating tokens for existing LinkedIn user');
             user.linkedinAccessToken = accessToken;
             user.linkedinRefreshToken = refreshToken;
             user.linkedinTokenExpiry = tokenExpiryTime;
@@ -144,6 +147,13 @@ module.exports = (passport) => {
           
           // If user doesn't exist, create a new one
           if (!user) {
+            // Only proceed if we have an email
+            if (!email) {
+              console.error('LinkedIn auth: No email provided and user does not exist');
+              return done(new Error('LinkedIn account must provide an email address for registration'), false);
+            }
+            
+            console.log('LinkedIn auth: Creating new user');
             // Parse name from profile
             const firstName = profile.name?.givenName || profile.displayName.split(' ')[0] || 'User';
             const lastName = profile.name?.familyName || profile.displayName.split(' ').slice(1).join(' ') || '';
@@ -161,6 +171,7 @@ module.exports = (passport) => {
               linkedinRefreshToken: refreshToken,
               linkedinTokenExpiry: tokenExpiryTime
             });
+            console.log('LinkedIn auth: New user created successfully');
           }
 
           return done(null, user);
