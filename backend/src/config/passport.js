@@ -136,8 +136,20 @@ module.exports = (passport) => {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                   },
-                  timeout: 10000 // 10 second timeout
+                  timeout: 10000, // 10 second timeout
+                  // Add proxy configuration to bypass potential network issues
+                  proxy: false,
+                  maxRedirects: 5,
+                  validateStatus: status => status < 500, // Accept all status codes less than 500
                 });
+                
+                // Check if response has the basic data we need
+                if (!userInfoResponse.data || !userInfoResponse.data.sub) {
+                  console.error('LinkedIn auth: Invalid response from userinfo endpoint:', 
+                    JSON.stringify(userInfoResponse.data));
+                  throw new Error('Invalid response from LinkedIn OpenID Connect endpoint');
+                }
+                
                 break; // Success, exit the retry loop
               } catch (retryError) {
                 retryCount++;

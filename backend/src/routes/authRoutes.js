@@ -203,4 +203,56 @@ router.get('/dev-login', (req, res) => {
 // Add the direct LinkedIn auth route 
 router.post('/linkedin-auth', linkedinAuth);
 
+// Debug route for LinkedIn configuration
+router.get('/linkedin-debug', (req, res) => {
+  try {
+    // Check LinkedIn configuration
+    const linkedinConfig = {
+      clientID: process.env.LINKEDIN_CLIENT_ID ? '✓ Configured' : '✗ Missing',
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET ? '✓ Configured' : '✗ Missing',
+      callbackURL: process.env.LINKEDIN_CALLBACK_URL ? process.env.LINKEDIN_CALLBACK_URL : '✗ Missing',
+      scope: ['openid', 'profile', 'email'],
+      nodeEnv: process.env.NODE_ENV || 'development'
+    };
+    
+    // Check axios installation
+    let axiosStatus = '✓ Installed';
+    try {
+      require('axios');
+    } catch (error) {
+      axiosStatus = '✗ Not installed or accessible';
+    }
+    
+    res.json({
+      success: true,
+      message: 'LinkedIn debug information',
+      config: linkedinConfig,
+      dependencies: {
+        axios: axiosStatus
+      },
+      networkTest: {
+        message: 'Check server logs for network test results'
+      }
+    });
+    
+    // Perform a simple network test in the background
+    console.log('LinkedIn debug - Testing network access to LinkedIn API endpoints...');
+    const axios = require('axios');
+    axios.get('https://api.linkedin.com/v2/', { timeout: 5000 })
+      .then(response => {
+        console.log('LinkedIn debug - API root accessible:', response.status);
+      })
+      .catch(error => {
+        console.error('LinkedIn debug - API root test failed:', error.message);
+      });
+      
+  } catch (error) {
+    console.error('Error in LinkedIn debug route:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve LinkedIn debug information'
+    });
+  }
+});
+
 module.exports = router; 
