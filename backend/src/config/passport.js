@@ -215,7 +215,10 @@ module.exports = (passport) => {
                   'Authorization': `Bearer ${accessToken}`,
                   'Content-Type': 'application/json'
                 },
-                timeout: 10000
+                timeout: 10000,
+                proxy: false,
+                maxRedirects: 5,
+                validateStatus: status => status < 500
               });
               
               console.log('LinkedIn V2 profile data:', JSON.stringify(profileResponse.data));
@@ -226,7 +229,10 @@ module.exports = (passport) => {
                   'Authorization': `Bearer ${accessToken}`,
                   'Content-Type': 'application/json'
                 },
-                timeout: 10000
+                timeout: 10000,
+                proxy: false,
+                maxRedirects: 5,
+                validateStatus: status => status < 500
               });
               
               console.log('LinkedIn V2 email data:', JSON.stringify(emailResponse.data));

@@ -96,10 +96,23 @@ router.get(
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(req.query.error_description || '')}`);
     }
     
-    passport.authenticate('linkedin', { 
-      session: false,
-      failureRedirect: `${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed` 
-    })(req, res, next);
+    // Check if auth code is present (a basic validation)
+    if (!req.query.code) {
+      console.error('LinkedIn callback missing code parameter');
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=Missing authorization code`);
+    }
+    
+    // Use a try-catch to catch any synchronous errors in passport authenticate
+    try {
+      passport.authenticate('linkedin', { 
+        session: false,
+        failureRedirect: `${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed`,
+        failWithError: true
+      })(req, res, next);
+    } catch (error) {
+      console.error('Error during LinkedIn authentication:', error);
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=Authentication process failed`);
+    }
   },
   (req, res) => {
     try {
@@ -124,6 +137,35 @@ router.get(
     }
   }
 );
+
+// Error handler specifically for LinkedIn auth failures
+router.use((err, req, res, next) => {
+  // Check if this is a LinkedIn auth error (from the callback route)
+  if (req.path === '/linkedin/callback' && err) {
+    console.error('LinkedIn authentication error middleware caught:', err);
+    
+    // Create a readable error message for the user
+    let errorDetails = 'Authentication failed';
+    if (err.message) {
+      errorDetails = err.message;
+      
+      // Look for specific known error messages
+      if (err.message.includes('failed to fetch user profile')) {
+        errorDetails = 'Failed to retrieve LinkedIn profile. Please try again later.';
+      } else if (err.message.includes('Invalid OAuth state')) {
+        errorDetails = 'Security verification failed. Please try again.';
+      } else if (err.message.includes('access_denied')) {
+        errorDetails = 'LinkedIn access was denied or cancelled.';
+      }
+    }
+    
+    // Redirect to login with appropriate error
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(errorDetails)}`);
+  }
+  
+  // For other errors, continue to the next error handler
+  next(err);
+});
 
 // Mock LinkedIn auth for development
 router.get('/mock-linkedin-auth', (req, res) => {
@@ -252,6 +294,24 @@ router.get('/linkedin-debug', (req, res) => {
       success: false,
       error: 'Failed to retrieve LinkedIn debug information'
     });
+  }
+});
+
+// LinkedIn auth logging (for production troubleshooting)
+router.post('/linkedin-auth-log', (req, res) => {
+  try {
+    const { error, details, clientInfo } = req.body;
+    
+    console.log('LinkedIn auth client-side error log:');
+    console.log('Error:', error);
+    console.log('Details:', details);
+    console.log('Client Info:', clientInfo);
+    
+    // Always return success to avoid exposing info
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Error in LinkedIn logging endpoint:', err);
+    res.json({ received: true });
   }
 });
 
