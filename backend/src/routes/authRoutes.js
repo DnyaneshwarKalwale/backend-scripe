@@ -37,7 +37,7 @@ router.get(
 );
 router.get(
   '/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?error=oauth_failed` }),
+  passport.authenticate('google', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Google authentication failed')}` }),
   (req, res) => {
     try {
       // Generate token
@@ -54,11 +54,17 @@ router.get(
         emailSource: req.user.email && req.user.email.includes('@placeholder.scripe.com') ? 'generated' : 'provided by user'
       });
       
+      // Use encoded parameters for the redirect
+      const frontendUrl = process.env.FRONTEND_URL.trim();
+      const redirectUrl = `${frontendUrl}/auth/social-callback?token=${encodeURIComponent(token)}&onboarding=${encodeURIComponent(onboardingStatus)}`;
+      
+      console.log('Redirecting to:', redirectUrl);
+      
       // Redirect to frontend with token
-      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+      res.redirect(redirectUrl);
     } catch (error) {
       console.error('Error in Google callback:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+      res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Internal server error during authentication')}`);
     }
   }
 );
@@ -90,28 +96,28 @@ router.get(
       // Handle common LinkedIn errors
       if (req.query.error_description && req.query.error_description.includes('scope')) {
         console.error('This appears to be a scope authorization issue. Please check your LinkedIn app settings.');
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_scope_unauthorized&details=${encodeURIComponent(req.query.error_description)}`);
+        return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('LinkedIn scope unauthorized. Please check app settings.')}`);
       }
       
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(req.query.error_description || '')}`);
+      return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent(req.query.error_description || 'LinkedIn authentication failed')}`);
     }
     
     // Check if auth code is present (a basic validation)
     if (!req.query.code) {
       console.error('LinkedIn callback missing code parameter');
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=Missing authorization code`);
+      return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Missing authorization code')}`);
     }
     
     // Use a try-catch to catch any synchronous errors in passport authenticate
     try {
       passport.authenticate('linkedin', { 
         session: false,
-        failureRedirect: `${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed`,
+        failureRedirect: `${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Authentication failed')}`,
         failWithError: true
       })(req, res, next);
     } catch (error) {
       console.error('Error during LinkedIn authentication:', error);
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=Authentication process failed`);
+      return res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Authentication process failed')}`);
     }
   },
   (req, res) => {
@@ -139,7 +145,8 @@ router.get(
       res.redirect(redirectUrl);
     } catch (error) {
       console.error('Error in LinkedIn callback:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
+      // Send to main login page with error
+      res.redirect(`${process.env.FRONTEND_URL}/login?auth_error=${encodeURIComponent('Internal server error during authentication')}`);
     }
   }
 );
@@ -170,7 +177,8 @@ router.use((err, req, res, next) => {
     }
     
     const frontendUrl = process.env.FRONTEND_URL.trim();
-    const errorUrl = `${frontendUrl}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(errorDetails)}`;
+    // Redirect to the main login page with an error parameter instead
+    const errorUrl = `${frontendUrl}/login?auth_error=${encodeURIComponent(errorDetails)}`;
     console.log('Redirecting to error URL:', errorUrl);
     
     // Redirect to login with appropriate error

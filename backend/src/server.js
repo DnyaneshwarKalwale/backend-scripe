@@ -52,6 +52,41 @@ app.use((req, res, next) => {
   // Override the redirect method
   res.redirect = function(url) {
     console.log('Redirecting to:', url);
+    
+    // Validate the URL - make sure we're only redirecting to known valid frontend routes
+    try {
+      const frontendUrl = process.env.FRONTEND_URL.trim();
+      const urlObj = new URL(url);
+      
+      // Check if this is a frontend URL
+      if (urlObj.href.startsWith(frontendUrl)) {
+        const path = urlObj.pathname;
+        
+        // List of valid frontend paths
+        const validPaths = [
+          '/login',
+          '/auth/social-callback',
+          '/dashboard',
+          '/onboarding',
+          '/onboarding/welcome'
+        ];
+        
+        // Check if the path is valid or is a subpath of a valid path
+        const isValidPath = validPaths.some(validPath => 
+          path === validPath || path.startsWith(`${validPath}/`)
+        );
+        
+        // If invalid, redirect to the homepage instead
+        if (!isValidPath) {
+          console.warn(`Redirect to invalid path '${path}', redirecting to homepage instead`);
+          url = frontendUrl;
+        }
+      }
+    } catch (e) {
+      console.error('Error validating redirect URL:', e);
+      // If there's an error parsing the URL, continue with the original redirect
+    }
+    
     // Call the original redirect method
     originalRedirect.call(this, url);
   };
