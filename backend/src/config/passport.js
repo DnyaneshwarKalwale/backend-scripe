@@ -1,30 +1,3 @@
-const JwtStrategy = require('passport-jwt').Strategy;
-const ExtractJwt = require('passport-jwt').ExtractJwt;
-const LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
-const User = require('../models/userModel');
-
-module.exports = (passport) => {
-  // JWT Strategy for token authentication
-  passport.use(
-    new JwtStrategy(
-      {
-        jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-        secretOrKey: process.env.JWT_SECRET,
-      },
-      async (jwt_payload, done) => {
-        try {
-          const user = await User.findById(jwt_payload.id);
-          if (user) {
-            return done(null, user);
-          }
-          return done(null, false);
-        } catch (error) {
-          return done(error, false);
-        }
-      }
-    )
-  );
-
   // LinkedIn OAuth Strategy
   passport.use(
     new LinkedInStrategy(
@@ -32,11 +5,11 @@ module.exports = (passport) => {
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['openid', 'profile', 'email', 'w_member_social'],
+        scope: ['openid', 'profile', 'email', 'w_member_social'], // ✅ FIXED scopes
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,
-        // ✅ FIXED: Removed userProfileURL (was causing 500 error)
+        // ❌ REMOVED: userProfileURL: 'https://api.linkedin.com/v2/userinfo' — this causes "failed to fetch user profile"
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
@@ -146,19 +119,19 @@ module.exports = (passport) => {
             }
             
             try {
-              user = await User.create({
+            user = await User.create({
                 linkedinId: profile.id,
-                firstName,
-                lastName,
+              firstName,
+              lastName,
                 email,
                 isEmailVerified: true, // LinkedIn emails are verified
                 profilePicture,
                 authMethod: 'linkedin',
-                onboardingCompleted: false,
+              onboardingCompleted: false,
                 linkedinAccessToken: accessToken,
                 linkedinRefreshToken: refreshToken,
                 linkedinTokenExpiry: tokenExpiryTime
-              });
+            });
               console.log('LinkedIn auth: New user created successfully');
             } catch (createError) {
               console.error('LinkedIn auth: Error creating user:', createError.message);
@@ -178,4 +151,3 @@ module.exports = (passport) => {
       }
     )
   );
-};

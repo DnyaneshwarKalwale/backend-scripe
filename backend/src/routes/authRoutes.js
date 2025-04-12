@@ -70,7 +70,10 @@ router.get(
     console.log('Starting LinkedIn OAuth flow...');
     next();
   },
-  passport.authenticate('linkedin', { state: true, session: false })
+  passport.authenticate('linkedin', { 
+    state: true,
+    session: false
+  })
 );
 
 router.get(
@@ -79,36 +82,23 @@ router.get(
     console.log('LinkedIn callback received');
     console.log('Query params:', req.query);
     
-    // Check for LinkedIn error in query parameters
+    // Check for LinkedIn error
     if (req.query.error) {
       console.error('LinkedIn returned an error:', req.query.error);
       console.error('Error description:', req.query.error_description);
       
-      // Handle common LinkedIn errors (e.g., missing scope permissions)
+      // Handle common LinkedIn errors
       if (req.query.error_description && req.query.error_description.includes('scope')) {
         console.error('This appears to be a scope authorization issue. Please check your LinkedIn app settings.');
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_scope_unauthorized&details=${encodeURIComponent(req.query.error_description)}`);
       }
       
-      // Generic LinkedIn OAuth failure
       return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(req.query.error_description || '')}`);
     }
     
-    // Authenticate with Passport (custom callback to handle success/failure)
-    passport.authenticate('linkedin', { session: false }, (err, user, info) => {
-      if (err) {
-        console.error('Error during LinkedIn authentication:', err);
-        // Redirect to login with an error flag (avoid crashing the server)
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed`);
-      }
-      if (!user) {
-        console.warn('LinkedIn authentication failed: no user returned', info ? `(${info})` : '');
-        // No user object means authentication failed (e.g., denied or profile fetch issue)
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed`);
-      }
-      // Authentication successful – attach user to request and proceed to next handler
-      req.user = user;
-      return next();
+    passport.authenticate('linkedin', { 
+      session: false,
+      failureRedirect: `${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed` 
     })(req, res, next);
   },
   (req, res) => {
@@ -135,7 +125,7 @@ router.get(
   }
 );
 
-// Mock LinkedIn auth for development (bypass OAuth flow with dummy data)
+// Mock LinkedIn auth for development
 router.get('/mock-linkedin-auth', (req, res) => {
   // Get parameters from query string or use defaults
   const { name, linkedinId, email, profileImage } = req.query;
@@ -170,7 +160,7 @@ router.get('/mock-linkedin-auth', (req, res) => {
   // Generate token
   const token = mockUser.getSignedJwtToken();
 
-  // Redirect to frontend with token (onboarding assumed true for new user)
+  // Redirect to frontend with token
   res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
 });
 
@@ -198,7 +188,7 @@ router.get('/dev-login', (req, res) => {
 
   console.log('Dev login successful:', mockUser);
 
-  // Return the token in JSON format or redirect to frontend
+  // Return the token in JSON format or redirect
   if (req.query.redirect === 'true') {
     res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=true`);
   } else {
@@ -210,7 +200,7 @@ router.get('/dev-login', (req, res) => {
   }
 });
 
-// LinkedIn direct auth route (if using authorization code from frontend)
+// Add the direct LinkedIn auth route 
 router.post('/linkedin-auth', linkedinAuth);
 
-module.exports = router;
+module.exports = router; 
