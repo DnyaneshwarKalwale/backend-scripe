@@ -87,7 +87,8 @@ const updateOnboarding = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Update user's onboarding status
+    // Update user's onboarding status - explicitly set to true since this endpoint completes onboarding
+    console.log(`Setting onboardingCompleted to true for user ${userId}`);
     const user = await User.findByIdAndUpdate(
       userId, 
       { onboardingCompleted: true },

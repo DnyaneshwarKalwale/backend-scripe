@@ -442,8 +442,12 @@ const linkedinCallback = asyncHandler(async (req, res) => {
   // Generate token
   const token = req.user.getSignedJwtToken();
 
-  // Redirect to frontend with token
-  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${!req.user.onboardingCompleted}`);
+  // Convert boolean to string 'true' or 'false' for URL parameter
+  const needsOnboarding = req.user.onboardingCompleted ? 'false' : 'true';
+  console.log(`LinkedIn callback - User needs onboarding: ${needsOnboarding}`);
+
+  // Redirect to frontend with token and explicit onboarding parameter
+  res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${needsOnboarding}`);
 });
 
 // @desc    Direct LinkedIn auth (for development)
