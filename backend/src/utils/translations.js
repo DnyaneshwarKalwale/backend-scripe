@@ -30,12 +30,6 @@ const getTranslation = (key, language) => {
     passwordResetSuccessful: 'Password reset successful',
     logoutSuccess: 'Logged out successfully',
     serverError: 'Server error',
-    
-    // Twitter translations
-    twitterNotConnected: 'Twitter account not connected',
-    twitterFetchError: 'Error fetching Twitter data',
-    twitterIDAndNameRequired: 'Twitter ID and Name required',
-    twitterAuthError: 'Twitter authentication error'
   };
   
   // Return the English translation or the key itself as fallback
