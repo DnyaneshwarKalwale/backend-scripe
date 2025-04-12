@@ -16,6 +16,8 @@ const {
   logout
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
+const axios = require('axios');
+const User = require('../models/userModel');
 
 const router = express.Router();
 
@@ -75,6 +77,145 @@ router.get(
     session: false
   })
 );
+
+// Direct LinkedIn OAuth route (without Passport)
+router.get('/linkedin-direct', (req, res) => {
+  try {
+    // Generate LinkedIn authorization URL with OpenID Connect scopes
+    console.log('Generating LinkedIn authorization URL with OpenID Connect');
+    console.log('Using client ID:', process.env.LINKEDIN_CLIENT_ID.substring(0, 3) + '...');
+    console.log('Using callback URL:', process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`);
+    
+    // Use a specific callback URL for direct auth
+    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
+    
+    // Using OpenID Connect scopes: openid, profile, email (omitting w_member_social for now)
+    const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=openid%20profile%20email&state=${Math.random().toString(36).substring(2, 15)}`;
+    
+    console.log('Generated URL:', linkedinAuthUrl);
+    res.redirect(linkedinAuthUrl);
+  } catch (error) {
+    console.error('Error generating LinkedIn auth URL:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed`);
+  }
+});
+
+// Direct LinkedIn callback handler (without Passport)
+router.get('/linkedin-direct/callback', async (req, res) => {
+  const { code, error, error_description } = req.query;
+  
+  // Check for LinkedIn error
+  if (error) {
+    console.error('LinkedIn returned an error:', error);
+    console.error('Error description:', error_description);
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=linkedin_oauth_failed&details=${encodeURIComponent(error_description || '')}`);
+  }
+  
+  if (!code) {
+    console.error('No authorization code received from LinkedIn');
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=no_code`);
+  }
+  
+  try {
+    // Use a specific callback URL for direct auth
+    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
+    
+    console.log('Received authorization code, exchanging for access token');
+    // Exchange authorization code for access token
+    const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
+      params: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: callbackUrl,
+        client_id: process.env.LINKEDIN_CLIENT_ID,
+        client_secret: process.env.LINKEDIN_CLIENT_SECRET
+      },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+    
+    console.log('Access token received');
+    const { access_token, refresh_token, expires_in } = tokenResponse.data;
+    
+    // With OpenID Connect, we can get user info from the userinfo endpoint
+    console.log('Fetching user info from OpenID Connect userinfo endpoint');
+    const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
+      headers: {
+        Authorization: `Bearer ${access_token}`
+      }
+    });
+    
+    console.log('User info received:', JSON.stringify(userInfoResponse.data, null, 2));
+    
+    // Calculate token expiry time
+    const tokenExpiryTime = new Date();
+    tokenExpiryTime.setSeconds(tokenExpiryTime.getSeconds() + (expires_in || 3600));
+    
+    // Extract data from LinkedIn response
+    const { sub: linkedinId, email, given_name: firstName, family_name: lastName, picture } = userInfoResponse.data;
+    
+    // Find or create user
+    let user = await User.findOne({ linkedinId });
+    
+    // If not found by LinkedIn ID, try to find by email
+    if (!user && email) {
+      user = await User.findOne({ email });
+      if (user) {
+        // Update user with LinkedIn ID if found by email
+        user.linkedinId = linkedinId;
+        user.linkedinAccessToken = access_token;
+        user.linkedinRefreshToken = refresh_token;
+        user.linkedinTokenExpiry = tokenExpiryTime;
+        
+        if (!user.profilePicture && picture) {
+          user.profilePicture = picture;
+        }
+        await user.save();
+      }
+    }
+    
+    // If user still not found, create a new one
+    if (!user) {
+      if (!email) {
+        return res.redirect(`${process.env.FRONTEND_URL}/login?error=email_required`);
+      }
+      
+      user = await User.create({
+        linkedinId,
+        firstName: firstName || 'LinkedIn',
+        lastName: lastName || 'User',
+        email,
+        isEmailVerified: true, // LinkedIn emails are verified
+        profilePicture: picture || null,
+        authMethod: 'linkedin',
+        onboardingCompleted: false,
+        linkedinAccessToken: access_token,
+        linkedinRefreshToken: refresh_token,
+        linkedinTokenExpiry: tokenExpiryTime
+      });
+    }
+    
+    // Generate token
+    const token = user.getSignedJwtToken();
+    
+    // Check if onboarding is completed
+    const needsOnboarding = user.onboardingCompleted ? 'false' : 'true';
+    
+    // Log successful authentication
+    console.log('LinkedIn authentication successful:', {
+      userId: user.id,
+      email: user.email,
+      needsOnboarding
+    });
+    
+    // Redirect to frontend with token and explicit onboarding parameter
+    res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${needsOnboarding}`);
+  } catch (error) {
+    console.error('LinkedIn auth error details:', error.response ? JSON.stringify(error.response.data) : error.message);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed&message=${encodeURIComponent(error.message)}`);
+  }
+});
 
 router.get(
   '/linkedin/callback',
