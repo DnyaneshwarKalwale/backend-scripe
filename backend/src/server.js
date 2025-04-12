@@ -41,17 +41,37 @@ app.use(cors({
   exposedHeaders: ['Set-Cookie']
 }));
 
-// Configure session middleware (required for Twitter OAuth)
-app.use(session({
-  secret: process.env.JWT_SECRET,
-  resave: true,
-  saveUninitialized: true,
-  cookie: { 
-    secure: false, // Set to false for both HTTP and HTTPS
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    httpOnly: true
-  }
-}));
+// Configure session middleware with MongoDB store for production
+if (process.env.NODE_ENV === 'production') {
+  const MongoStore = require('connect-mongo');
+  app.use(session({
+    secret: process.env.JWT_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      collectionName: 'sessions'
+    }),
+    cookie: { 
+      secure: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      httpOnly: true,
+      sameSite: 'none' // Required for cross-domain cookies
+    }
+  }));
+} else {
+  // Use simple memory store for development
+  app.use(session({
+    secret: process.env.JWT_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+      secure: false,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      httpOnly: true
+    }
+  }));
+}
 
 // Initialize passport
 app.use(passport.initialize());
@@ -94,9 +114,21 @@ app.get('/health', async (req, res) => {
   });
 });
 
+// Root route to confirm server is running
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'Scripe API is running',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handler middleware
 app.use(errorHandler);
 
-// Start server
+// Start server - Make sure to bind to 0.0.0.0 for Render
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+  console.log(`Health check available at: http://localhost:${PORT}/health`);
+}); 
