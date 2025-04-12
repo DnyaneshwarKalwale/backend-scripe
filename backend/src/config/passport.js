@@ -95,7 +95,7 @@ module.exports = (passport) => {
         clientID: process.env.LINKEDIN_CLIENT_ID,
         clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
         callbackURL: process.env.LINKEDIN_CALLBACK_URL,
-        scope: ['r_liteprofile', 'r_emailaddress'],
+        scope: ['openid', 'profile', 'email', 'w_member_social'],
         profileFields: ['id', 'first-name', 'last-name', 'email-address', 'profile-picture'],
         state: true,
         passReqToCallback: true,

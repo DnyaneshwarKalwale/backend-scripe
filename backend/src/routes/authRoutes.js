@@ -107,17 +107,17 @@ router.get(
       const token = req.user.getSignedJwtToken();
       
       // Check if onboarding is completed
-      const onboardingStatus = req.user.onboardingCompleted ? 'false' : 'true';
+      const needsOnboarding = req.user.onboardingCompleted ? 'false' : 'true';
       
       // Log successful authentication
       console.log('LinkedIn authentication successful:', {
         userId: req.user.id,
         email: req.user.email,
-        onboardingStatus
+        needsOnboarding
       });
       
-      // Redirect to frontend with token
-      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${onboardingStatus}`);
+      // Redirect to frontend with token and explicit onboarding parameter
+      res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=${needsOnboarding}`);
     } catch (error) {
       console.error('Error in LinkedIn callback:', error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=internal_server_error`);
