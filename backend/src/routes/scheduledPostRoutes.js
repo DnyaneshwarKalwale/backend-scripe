@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
+const { protect } = require('../middleware/authMiddleware');
 const ScheduledPost = require('../models/ScheduledPost');
 const UserToken = require('../models/UserToken');
 const axios = require('axios');
 
 // Get all user's scheduled posts and drafts
-router.get('/', auth, async (req, res) => {
+router.get('/', protect, async (req, res) => {
   try {
     const posts = await ScheduledPost.find({ user: req.user.id }).sort({ scheduledTime: 1 });
     res.json(posts);
@@ -17,7 +17,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // Create a new draft or scheduled post
-router.post('/', auth, async (req, res) => {
+router.post('/', protect, async (req, res) => {
   try {
     const { scheduledTime, postData, status = 'draft' } = req.body;
     
@@ -38,7 +38,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // Get a single scheduled post by ID
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', protect, async (req, res) => {
   try {
     const post = await ScheduledPost.findOne({ _id: req.params.id, user: req.user.id });
     
@@ -54,7 +54,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // Update a scheduled post
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', protect, async (req, res) => {
   try {
     const { scheduledTime, postData, status } = req.body;
     
@@ -85,7 +85,7 @@ router.put('/:id', auth, async (req, res) => {
 });
 
 // Delete a scheduled post
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', protect, async (req, res) => {
   try {
     const post = await ScheduledPost.findOne({ _id: req.params.id, user: req.user.id });
     
@@ -98,7 +98,7 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(400).json({ error: 'Published posts cannot be deleted' });
     }
     
-    await post.remove();
+    await ScheduledPost.deleteOne({ _id: req.params.id });
     res.json({ success: true, message: 'Post deleted successfully' });
   } catch (err) {
     console.error('Error deleting scheduled post:', err);
@@ -107,7 +107,7 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // Publish a scheduled/draft post immediately
-router.post('/:id/publish', auth, async (req, res) => {
+router.post('/:id/publish', protect, async (req, res) => {
   try {
     const post = await ScheduledPost.findOne({ _id: req.params.id, user: req.user.id });
     
