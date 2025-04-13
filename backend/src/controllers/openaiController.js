@@ -60,7 +60,7 @@ const generateLinkedInContent = asyncHandler(async (req, res) => {
       systemMessage += ` The tone should be ${tone}.`;
     }
     
-    // Request to include hashtags
+    // Request to include hashtags nnenw
     systemMessage += ' Include 3-5 relevant hashtags at the end of the post.';
 
     const completion = await openai.chat.completions.create({
