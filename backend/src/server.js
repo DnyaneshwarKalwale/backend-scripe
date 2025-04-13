@@ -4,7 +4,6 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const passport = require('passport');
 const session = require('express-session');
-const path = require('path');
 const { errorHandler } = require('./middleware/errorMiddleware');
 const { checkMongoConnection } = require('./utils/dbCheck');
 const authRoutes = require('./routes/authRoutes');
@@ -13,7 +12,8 @@ const onboardingRoutes = require('./routes/onboardingRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const linkedinRoutes = require('./routes/linkedinRoutes');
 const twitterRoutes = require('./routes/twitterRoutes');
-const aiContentRoutes = require('./routes/aiContentRoutes');
+const openaiRoutes = require('./routes/openaiRoutes');
+const youtubeRoutes = require('./routes/youtubeRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -76,8 +76,13 @@ passport.deserializeUser(async (id, done) => {
 
 require('./config/passport')(passport);
 
-// Set up uploads folder
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Ensure upload directory exists
+const fs = require('fs');
+const path = require('path');
+const uploadDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -86,7 +91,8 @@ app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
-app.use('/api/ai', aiContentRoutes);
+app.use('/api/openai', openaiRoutes);
+app.use('/api/youtube', youtubeRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
