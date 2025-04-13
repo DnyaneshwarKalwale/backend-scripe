@@ -12,8 +12,8 @@ const onboardingRoutes = require('./routes/onboardingRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const linkedinRoutes = require('./routes/linkedinRoutes');
 const twitterRoutes = require('./routes/twitterRoutes');
-const openaiRoutes = require('./routes/openaiRoutes');
 const youtubeRoutes = require('./routes/youtubeRoutes');
+const cloudinaryRoutes = require('./routes/cloudinaryRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -76,14 +76,6 @@ passport.deserializeUser(async (id, done) => {
 
 require('./config/passport')(passport);
 
-// Ensure upload directory exists
-const fs = require('fs');
-const path = require('path');
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -91,8 +83,8 @@ app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
-app.use('/api/openai', openaiRoutes);
 app.use('/api/youtube', youtubeRoutes);
+app.use('/api/cloudinary', cloudinaryRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
