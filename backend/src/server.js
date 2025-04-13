@@ -14,7 +14,6 @@ const linkedinRoutes = require('./routes/linkedinRoutes');
 const twitterRoutes = require('./routes/twitterRoutes');
 const youtubeRoutes = require('./routes/youtubeRoutes');
 const cloudinaryRoutes = require('./routes/cloudinaryRoutes');
-const aiRoutes = require('./routes/aiRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -86,7 +85,6 @@ app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api/cloudinary', cloudinaryRoutes);
-app.use('/api/ai', aiRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
