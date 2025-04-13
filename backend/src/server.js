@@ -199,6 +199,10 @@ app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
 
+// Import scheduled posts route
+const scheduledPostRoutes = require('./routes/scheduledPostRoutes');
+app.use('/api/scheduled-posts', scheduledPostRoutes);
+
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
