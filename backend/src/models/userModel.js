@@ -65,6 +65,69 @@ const userSchema = mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    // AI Content Generation fields
+    aiGeneratedContent: [
+      {
+        contentType: {
+          type: String,
+          enum: ['post', 'article', 'carousel', 'poll', 'comment'],
+          default: 'post'
+        },
+        prompt: String,
+        result: String,
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
+    generatedImages: [
+      {
+        prompt: String,
+        cloudinaryUrl: String,
+        cloudinaryPublicId: String,
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
+    uploadedImages: [
+      {
+        originalName: String,
+        cloudinaryUrl: String,
+        cloudinaryPublicId: String,
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
+    youtubeTranscripts: [
+      {
+        videoId: String,
+        videoTitle: String,
+        transcript: String,
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
+    contentPreferences: {
+      industry: String,
+      targetAudience: String,
+      preferredTone: String,
+      contentGoals: [String],
+      includeHashtags: {
+        type: Boolean,
+        default: true
+      },
+      includeEmojis: {
+        type: Boolean,
+        default: true
+      }
+    }
   },
   {
     timestamps: true,
