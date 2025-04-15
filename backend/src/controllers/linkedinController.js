@@ -1,6 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
 const axios = require('axios');
+const path = require('path');
+const fs = require('fs');
 
 // LinkedIn API base URLs
 const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
@@ -169,6 +171,231 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Upload an image to LinkedIn and get the asset URN
+ * @param {string} accessToken LinkedIn access token
+ * @param {string} userUrn User's LinkedIn URN
+ * @param {string} imagePath Path to the image file
+ * @returns {Promise<{success: boolean, assetUrn: string, error: string}>}
+ */
+const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath) => {
+  try {
+    console.log('Starting LinkedIn image upload process');
+    
+    // Step 1: Register upload with LinkedIn
+    console.log('Registering image upload with LinkedIn...');
+    const registerResponse = await axios.post(
+      `${LINKEDIN_API_BASE_URL}/assets?action=registerUpload`,
+      {
+        registerUploadRequest: {
+          recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
+          owner: userUrn,
+          serviceRelationships: [
+            {
+              relationshipType: "OWNER",
+              identifier: "urn:li:userGeneratedContent"
+            }
+          ]
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0'
+        }
+      }
+    );
+
+    // Step 2: Get upload URL and asset URN
+    const uploadUrl = registerResponse.data.value.uploadMechanism["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"].uploadUrl;
+    const assetUrn = registerResponse.data.value.asset;
+
+    console.log('Upload URL:', uploadUrl);
+    console.log('Asset URN:', assetUrn);
+
+    // Step 3: Upload the image binary to LinkedIn
+    console.log('Uploading image to LinkedIn...', imagePath);
+    
+    // Make sure imagePath has the correct format
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const absoluteImagePath = path.join(uploadsDir, path.basename(imagePath));
+    
+    console.log('Absolute image path:', absoluteImagePath);
+    
+    if (!fs.existsSync(absoluteImagePath)) {
+      throw new Error(`Image file not found at path: ${absoluteImagePath}`);
+    }
+    
+    const imageBuffer = fs.readFileSync(absoluteImagePath);
+    
+    await axios.put(
+      uploadUrl,
+      imageBuffer,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/octet-stream'
+        }
+      }
+    );
+
+    console.log('Image uploaded successfully');
+    return {
+      success: true,
+      assetUrn: assetUrn
+    };
+  } catch (error) {
+    console.error('Error uploading image to LinkedIn:', error);
+    if (error.response) {
+      console.error('Response data:', error.response.data);
+      console.error('Response status:', error.response.status);
+    }
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Create a LinkedIn post
+ * @route POST /api/linkedin/post
+ * @access Private
+ */
+const createLinkedInPost = asyncHandler(async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    
+    if (!user || !user.linkedinId) {
+      res.status(400);
+      throw new Error('LinkedIn account not connected');
+    }
+    
+    // Check if we have a valid access token
+    if (!user.linkedinAccessToken) {
+      console.error('No LinkedIn access token found for user:', user._id);
+      throw new Error('LinkedIn access token not found. Please reconnect your LinkedIn account.');
+    }
+    
+    // Check if token has expired
+    const now = new Date();
+    if (user.linkedinTokenExpiry && user.linkedinTokenExpiry < now) {
+      console.error('LinkedIn token expired:', user.linkedinTokenExpiry);
+      throw new Error('LinkedIn access token has expired. Please reconnect your LinkedIn account.');
+    }
+    
+    const { 
+      postContent, 
+      articleUrl, 
+      articleTitle, 
+      articleDescription,
+      imagePath,
+      imageTitle,
+      imageDescription
+    } = req.body;
+    
+    if (!postContent) {
+      return res.status(400).json({ error: 'Post content is required' });
+    }
+    
+    const userUrn = `urn:li:person:${user.linkedinId}`;
+    console.log('User URN for posting:', userUrn);
+    
+    // Prepare post data
+    let linkedinPostData = {
+      author: userUrn,
+      lifecycleState: "PUBLISHED",
+      specificContent: {
+        "com.linkedin.ugc.ShareContent": {
+          shareCommentary: {
+            text: postContent
+          },
+          shareMediaCategory: "NONE"
+        }
+      },
+      visibility: {
+        "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+      }
+    };
+    
+    // Handle different media types
+    if (imagePath) {
+      // If we have an image, upload it to LinkedIn first
+      console.log('Post includes an image, uploading to LinkedIn...');
+      const imageUploadResult = await uploadImageToLinkedIn(
+        user.linkedinAccessToken, 
+        userUrn, 
+        imagePath
+      );
+      
+      if (!imageUploadResult.success) {
+        throw new Error(`Failed to upload image to LinkedIn: ${JSON.stringify(imageUploadResult.error)}`);
+      }
+      
+      // Add the image to the post
+      linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareMediaCategory = "IMAGE";
+      linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].media = [
+        {
+          status: "READY",
+          description: {
+            text: imageDescription || "Shared image"
+          },
+          media: imageUploadResult.assetUrn,
+          title: {
+            text: imageTitle || "Image"
+          }
+        }
+      ];
+    }
+    // Add article details if provided
+    else if (articleUrl) {
+      linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareMediaCategory = "ARTICLE";
+      linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].media = [
+        {
+          status: "READY",
+          originalUrl: articleUrl,
+          title: {
+            text: articleTitle || articleUrl
+          }
+        }
+      ];
+      
+      if (articleDescription) {
+        linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].media[0].description = {
+          text: articleDescription
+        };
+      }
+    }
+    
+    // Send post request to LinkedIn
+    console.log('Sending post to LinkedIn:', JSON.stringify(linkedinPostData));
+    const response = await axios.post(`${LINKEDIN_API_BASE_URL}/ugcPosts`, linkedinPostData, {
+      headers: {
+        'Authorization': `Bearer ${user.linkedinAccessToken}`,
+        'Content-Type': 'application/json',
+        'X-Restli-Protocol-Version': '2.0.0'
+      }
+    });
+    
+    // Get the post ID from the response headers
+    const postId = response.headers['x-restli-id'];
+    
+    res.status(201).json({
+      success: true,
+      message: 'Post created successfully',
+      postId: postId || 'unknown'
+    });
+  } catch (error) {
+    console.error('Error creating LinkedIn post:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: 'Failed to create LinkedIn post',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+/**
  * Get user's recent posts
  * @route GET /api/linkedin/posts
  * @access Private
@@ -199,137 +426,51 @@ const getUserPosts = asyncHandler(async (req, res) => {
     console.log(`User LinkedIn ID: ${user.linkedinId}`);
     console.log(`Token expiry: ${user.linkedinTokenExpiry}`);
     
+    // Prepare API call parameters
+    const urn = `urn:li:person:${user.linkedinId}`;
+    
     try {
-      // Try to fetch user's posts from LinkedIn
-      // Note: This might not work as we're currently using the basic scopes
-      console.log('Calling LinkedIn posts endpoint...');
-      const postsResponse = await axios.get(`${LINKEDIN_API_BASE_URL}/posts?author=${user.linkedinId}`, {
+      // Make API call to get user's posts
+      const response = await axios.get(`${LINKEDIN_API_BASE_URL}/ugcPosts?q=authors&authors=List(${urn})`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
-          'Content-Type': 'application/json'
+          'X-Restli-Protocol-Version': '2.0.0'
         }
-      }).catch(error => {
-        console.error('LinkedIn posts API error:', error.message);
-        if (error.response) {
-          console.error('Response status:', error.response.status);
-          console.error('Response data:', JSON.stringify(error.response.data));
-        }
-        throw error;
       });
       
-      console.log('LinkedIn API posts response successful');
-      
-      // If we get a successful response, map the data to our format
-      const recentPosts = postsResponse.data.map(post => ({
-        id: post.id,
-        text: post.text || post.content?.text || 'Post content',
-        created_at: post.created || new Date().toISOString(),
-        public_metrics: {
-          shares: post.reshareCount || 0,
-          comments: post.commentCount || 0,
-          likes: post.likeCount || 0,
-          impressions: post.impressionCount || 0
-        }
-      }));
-      
+      console.log('Successfully retrieved posts from LinkedIn API');
       res.status(200).json({
         success: true,
-        data: recentPosts,
-        usingRealData: true
+        data: response.data
       });
     } catch (apiError) {
-      console.error('LinkedIn API Posts Error:', apiError.message);
+      console.error('LinkedIn posts API error:', apiError);
       
-      let errorDetails = apiError.message;
-      let errorType = 'api_error';
-      
-      if (apiError.response) {
-        console.error('Error status:', apiError.response.status);
-        console.error('Error details:', apiError.response?.data || 'No response data');
-        
-        // Determine specific error type
-        if (apiError.response.status === 401) {
-          errorType = 'token_expired';
-          errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
-          
-          // Update user record to mark token as expired
-          if (user) {
-            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
-            await user.save();
-          }
-        } else if (apiError.response.status === 403) {
-          errorType = 'permission_denied';
-          errorDetails = 'LinkedIn API access denied. You may need additional permissions for fetching posts.';
-        } else if (apiError.response.status === 404) {
-          errorType = 'not_found';
-          errorDetails = 'LinkedIn resource not found. The API endpoint may have changed.';
-        } else if (apiError.response.status >= 500) {
-          errorType = 'linkedin_server_error';
-          errorDetails = 'LinkedIn servers are experiencing issues. Please try again later.';
-        }
-      }
-      
-      console.error(`LinkedIn API posts access failed (${errorType}). Falling back to sample data`);
-    
-    // Generate sample posts
-    const recentPosts = [
-      {
-        id: `post-${Date.now()}-1`,
-          text: "Just started using Scripe for my LinkedIn content generation! The AI suggestions are amazing. #ContentCreation #AI",
-        created_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-        public_metrics: {
-          shares: 12,
-          comments: 5,
-          likes: 42,
-          impressions: 1250
-        }
-      },
-      {
-        id: `post-${Date.now()}-2`,
-          text: "How I increased my LinkedIn engagement by 300% using AI content generation. A thread on my journey with @Scripe 🧵",
-        created_at: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        public_metrics: {
-          shares: 24,
-          comments: 18,
-          likes: 89,
-          impressions: 3500
-        }
-      },
-      {
-        id: `post-${Date.now()}-3`,
-          text: "5 ways to improve your LinkedIn content:\n\n1. Consistency\n2. Engage with your audience\n3. Use AI tools like @Scripe\n4. Analyze performance\n5. Join relevant conversations\n\nWhich one are you implementing today?",
-        created_at: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-        public_metrics: {
-          shares: 38,
-          comments: 22,
-          likes: 112,
-          impressions: 5200
-        }
-      }
-    ];
-    
-    res.status(200).json({
-      success: true,
-        data: recentPosts,
+      // Return sample data as fallback
+      res.status(200).json({
+        success: true,
+        data: {
+          elements: [],
+          paging: { count: 0, start: 0, total: 0 }
+        },
         usingRealData: false,
-        error: 'Failed to fetch real data from LinkedIn API. Using sample data instead.',
-        errorType: errorType,
-        errorDetails: errorDetails
+        error: 'Failed to fetch posts from LinkedIn API',
+        errorDetails: apiError.response?.data || apiError.message
       });
     }
   } catch (error) {
     console.error('LinkedIn Posts Error:', error);
     res.status(500);
-    throw new Error(error.message || 'Error fetching posts');
+    throw new Error(error.message || 'Error fetching LinkedIn posts');
   }
 });
 
 /**
- * Get user's LinkedIn analytics
- * @route GET /api/linkedin/analytics
+ * Initialize image upload to LinkedIn
+ * @route POST /api/linkedin/images/initializeUpload
  * @access Private
  */
-const getLinkedInAnalytics = asyncHandler(async (req, res) => {
+const initializeImageUpload = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     
@@ -344,184 +485,49 @@ const getLinkedInAnalytics = asyncHandler(async (req, res) => {
       throw new Error('LinkedIn access token not found. Please reconnect your LinkedIn account.');
     }
     
-    // Check if token has expired
-    const now = new Date();
-    if (user.linkedinTokenExpiry && user.linkedinTokenExpiry < now) {
-      console.error('LinkedIn token expired:', user.linkedinTokenExpiry);
-      throw new Error('LinkedIn access token has expired. Please reconnect your LinkedIn account.');
-    }
+    const userUrn = `urn:li:person:${user.linkedinId}`;
     
-    console.log(`Attempting to fetch real LinkedIn analytics for user ${user._id}`);
-    console.log(`User LinkedIn ID: ${user.linkedinId}`);
-    console.log(`Token expiry: ${user.linkedinTokenExpiry}`);
-    
-    try {
-      // Try to fetch analytics from LinkedIn
-      // Note: This requires specific scopes and Premium LinkedIn developer access
-      console.log('Calling LinkedIn analytics endpoint...');
-      const analyticsResponse = await axios.get(`${LINKEDIN_API_BASE_URL}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=urn:li:organization:${user.linkedinId}`, {
+    // Step 1: Register upload with LinkedIn
+    const registerResponse = await axios.post(
+      `${LINKEDIN_API_BASE_URL}/assets?action=registerUpload`,
+      {
+        registerUploadRequest: {
+          recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
+          owner: userUrn,
+          serviceRelationships: [
+            {
+              relationshipType: "OWNER",
+              identifier: "urn:li:userGeneratedContent"
+            }
+          ]
+        }
+      },
+      {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
-          'Content-Type': 'application/json'
-        }
-      }).catch(error => {
-        console.error('LinkedIn analytics API error:', error.message);
-        if (error.response) {
-          console.error('Response status:', error.response.status);
-          console.error('Response data:', JSON.stringify(error.response.data));
-        }
-        throw error;
-      });
-      
-      console.log('LinkedIn API analytics response successful');
-      
-      // Map real analytics to our format
-      // This is a placeholder as the actual response will be different
-      const analyticsData = {
-        impressions: {
-          data: [2100, 2400, 2800, 3200, 3600, 3900, 4200],
-          labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-          increase: 23,
-          timeframe: "Last 7 days"
-        },
-        engagement: {
-          data: [4.5, 5.2, 5.8, 6.3, 7.1, 7.8, 8.5],
-          labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-          increase: 15,
-          timeframe: "Last 7 days"
-        },
-        followers: {
-          data: [120, 125, 130, 138, 145, 152, 160],
-          labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-          increase: 8,
-          timeframe: "Last 7 days"
-        },
-        summary: {
-          totalImpressions: 22200,
-          averageEngagement: 6.5,
-          followerGrowth: 40,
-          bestPerformingPost: {
-            text: "How I increased my LinkedIn engagement by 300% using AI content generation. A thread on my journey with @Scripe 🧵",
-            impressions: 3500,
-            engagement: 9.3
-          }
-        }
-      };
-      
-      res.status(200).json({
-        success: true,
-        data: analyticsData,
-        usingRealData: true
-      });
-    } catch (apiError) {
-      console.error('LinkedIn API Analytics Error:', apiError.message);
-      
-      let errorDetails = apiError.message;
-      let errorType = 'api_error';
-      
-      if (apiError.response) {
-        console.error('Error status:', apiError.response.status);
-        console.error('Error details:', apiError.response?.data || 'No response data');
-        
-        // Determine specific error type
-        if (apiError.response.status === 401) {
-          errorType = 'token_expired';
-          errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
-          
-          // Update user record to mark token as expired
-          if (user) {
-            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
-            await user.save();
-          }
-        } else if (apiError.response.status === 403) {
-          errorType = 'permission_denied';
-          errorDetails = 'LinkedIn API access denied. Analytics features require a Premium LinkedIn Developer account with additional permissions.';
-        } else if (apiError.response.status === 404) {
-          errorType = 'not_found';
-          errorDetails = 'LinkedIn resource not found. The API endpoint may have changed.';
-        } else if (apiError.response.status >= 500) {
-          errorType = 'linkedin_server_error';
-          errorDetails = 'LinkedIn servers are experiencing issues. Please try again later.';
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0'
         }
       }
-      
-      console.error(`LinkedIn API analytics access failed (${errorType}). Falling back to sample data`);
-    
-    // Generate sample analytics data
-    const now = Date.now();
-    const days = 7;
-    const labels = [];
-    const impressionsData = [];
-    const engagementData = [];
-    const followersData = [];
-    
-    // Generate data for the last 7 days
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(now - (i * 86400000));
-      labels.push(date.toLocaleDateString('en-US', { weekday: 'short' }));
-      
-      // Generate realistic-looking data with some randomness but general upward trend
-      const dayOffset = days - i;
-      
-      // Impressions: 1000-3500 with slight upward trend
-      impressionsData.push(Math.floor(1000 + (dayOffset * 300) + (Math.random() * 500)));
-      
-      // Engagement: 4-10% engagement rate
-      engagementData.push(Number((4 + (dayOffset * 0.6) + (Math.random() * 2)).toFixed(1)));
-      
-      // Followers: 100-200 with growth
-      followersData.push(Math.floor(100 + (dayOffset * 5) + (Math.random() * 10)));
-    }
-    
-    const analyticsData = {
-      impressions: {
-        data: impressionsData,
-        labels: labels,
-        increase: 23,
-        timeframe: "Last 7 days"
-      },
-      engagement: {
-        data: engagementData,
-        labels: labels,
-        increase: 15,
-        timeframe: "Last 7 days"
-      },
-      followers: {
-        data: followersData,
-        labels: labels,
-        increase: 8,
-        timeframe: "Last 7 days"
-      },
-      summary: {
-        totalImpressions: impressionsData.reduce((a, b) => a + b, 0),
-        averageEngagement: Number((engagementData.reduce((a, b) => a + b, 0) / days).toFixed(1)),
-        followerGrowth: followersData[days - 1] - followersData[0],
-        bestPerformingPost: {
-            text: "How I increased my LinkedIn engagement by 300% using AI content generation. A thread on my journey with @Scripe 🧵",
-          impressions: 3500,
-          engagement: 9.3
-        }
-      }
-    };
+    );
     
     res.status(200).json({
       success: true,
-        data: analyticsData,
-        usingRealData: false,
-        error: 'Failed to fetch real data from LinkedIn API. Using sample data instead.',
-        errorType: errorType,
-        errorDetails: errorDetails
-      });
-    }
+      data: registerResponse.data
+    });
   } catch (error) {
-    console.error('LinkedIn Analytics Error:', error);
-    res.status(500);
-    throw new Error(error.message || 'Error fetching analytics');
+    console.error('Error initializing LinkedIn image upload:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: 'Error initializing LinkedIn image upload',
+      details: error.response?.data || error.message
+    });
   }
 });
 
 module.exports = {
   getLinkedInProfile,
   getUserPosts,
-  getLinkedInAnalytics
+  createLinkedInPost,
+  initializeImageUpload
 }; 

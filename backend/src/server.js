@@ -6,6 +6,7 @@ const passport = require('passport');
 const session = require('express-session');
 const { errorHandler } = require('./middleware/errorMiddleware');
 const { checkMongoConnection } = require('./utils/dbCheck');
+const path = require('path');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const onboardingRoutes = require('./routes/onboardingRoutes');
@@ -14,6 +15,7 @@ const linkedinRoutes = require('./routes/linkedinRoutes');
 const twitterRoutes = require('./routes/twitterRoutes');
 const youtubeRoutes = require('./routes/youtubeRoutes');
 const OpenAI = require('openai');
+const fs = require('fs');
 
 // Load environment variables
 dotenv.config();
@@ -29,9 +31,18 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Configure CORS with more options
 app.use(cors({
