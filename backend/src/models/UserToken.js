@@ -9,7 +9,7 @@ const UserTokenSchema = new Schema({
   },
   provider: {
     type: String,
-    enum: ['linkedin', 'twitter', 'facebook', 'instagram', 'youtube'],
+    enum: ['linkedin', 'facebook', 'instagram', 'youtube'],
     required: true
   },
   accessToken: {

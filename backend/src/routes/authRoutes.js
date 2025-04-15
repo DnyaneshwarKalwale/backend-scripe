@@ -89,8 +89,8 @@ router.get('/linkedin-direct', (req, res) => {
     // Use a specific callback URL for direct auth
     const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
     
-    // Using OpenID Connect scopes: openid, profile, email (omitting w_member_social for now)
-    const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=openid%20profile%20email&state=${Math.random().toString(36).substring(2, 15)}`;
+    // Using OpenID Connect scopes: openid, profile, email, and w_member_social for posting
+    const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=openid%20profile%20email%20w_member_social&state=${Math.random().toString(36).substring(2, 15)}`;
     
     console.log('Generated URL:', linkedinAuthUrl);
     res.redirect(linkedinAuthUrl);

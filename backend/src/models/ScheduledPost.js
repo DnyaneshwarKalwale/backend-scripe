@@ -9,7 +9,7 @@ const ScheduledPostSchema = new Schema({
   },
   provider: {
     type: String,
-    enum: ['linkedin', 'twitter', 'facebook', 'instagram'],
+    enum: ['linkedin', 'facebook', 'instagram'],
     default: 'linkedin'
   },
   scheduledTime: {
