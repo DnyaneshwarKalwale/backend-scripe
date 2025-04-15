@@ -45,14 +45,12 @@ const upload = multer({
 router.use('/uploads', express.static(uploadsDir));
 
 // Get current user's LinkedIn profile
-router.get('/profile', protect, (req, res) => {
-  linkedinController.getLinkedInProfile(req, res);
-});
+router.get('/profile', protect, linkedinController.getLinkedInProfile);
 
 // Get user's posts
-router.get('/posts', protect, (req, res) => {
-  linkedinController.getUserPosts(req, res);
-});
+router.get('/posts', protect, linkedinController.getUserPosts);
+
+// Analytics route removed - requires additional API permissions
 
 // Create a post
 router.post('/post', [
@@ -136,5 +134,8 @@ router.post('/schedule', [
     });
   }
 });
+
+// Get LinkedIn basic profile without API calls
+router.get('/basic-profile', protect, linkedinController.getLinkedInBasicProfile);
 
 module.exports = router; 
