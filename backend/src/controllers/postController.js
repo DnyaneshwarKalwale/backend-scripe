@@ -399,6 +399,86 @@ const schedulePost = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Migrate posts from localStorage to database
+// @route   POST /api/posts/migrate-from-local
+// @access  Private
+const migrateFromLocal = asyncHandler(async (req, res) => {
+  const { posts } = req.body;
+  
+  if (!posts || !Array.isArray(posts)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid input: posts array is required'
+    });
+  }
+  
+  const results = [];
+  
+  // Process each post in the array
+  for (const post of posts) {
+    try {
+      // Basic validation
+      if (!post.content) {
+        results.push({
+          id: post.id,
+          success: false,
+          message: 'Post content is required'
+        });
+        continue;
+      }
+      
+      // Prepare post data for database
+      const postData = {
+        user: req.user._id,
+        title: post.title || 'Migrated Post',
+        content: post.content,
+        hashtags: post.hashtags || [],
+        mediaType: post.postImage ? 'image' : post.slides && post.slides.length > 0 ? 'carousel' : 'none',
+        mediaUrls: [],
+        postImage: post.postImage || null,
+        slides: post.slides || [],
+        documentInfo: post.documentInfo || null,
+        articleUrl: post.articleUrl || null,
+        articleTitle: post.articleTitle || null,
+        articleDescription: post.articleDescription || null,
+        isPollActive: post.isPollActive || false,
+        pollOptions: post.pollOptions || [],
+        pollDuration: post.pollDuration || 1,
+        status: post.status || 'draft',
+        platform: post.provider || 'linkedin',
+        visibility: post.visibility || 'PUBLIC',
+        scheduledTime: post.scheduledTime ? new Date(post.scheduledTime) : null
+      };
+      
+      // Create the post in the database
+      const newPost = await Post.create(postData);
+      
+      results.push({
+        id: post.id,
+        dbId: newPost._id.toString(),
+        success: true
+      });
+    } catch (postError) {
+      console.error(`Error migrating post ${post.id}:`, postError);
+      results.push({
+        id: post.id,
+        success: false,
+        message: postError.message
+      });
+    }
+  }
+  
+  // Return results summary
+  const successCount = results.filter(r => r.success).length;
+  const failCount = results.length - successCount;
+  
+  res.status(200).json({
+    success: true,
+    message: `Successfully migrated ${successCount} posts, ${failCount} failed`,
+    results
+  });
+});
+
 module.exports = {
   getPosts,
   getPostById,
@@ -406,5 +486,6 @@ module.exports = {
   updatePost,
   deletePost,
   publishPost,
-  schedulePost
+  schedulePost,
+  migrateFromLocal
 }; 
