@@ -97,6 +97,49 @@ const processScheduledPosts = async () => {
             `\n\n${hashtagString}`;
         }
         
+        // Handle image if post has an image
+        if (post.postImage && post.postImage.secure_url) {
+          try {
+            console.log(`Post ${post._id} has an image, adding to LinkedIn post`);
+            
+            // Import necessary functions
+            const { uploadImageToLinkedIn } = require('../controllers/linkedinController');
+            
+            // Upload the image to LinkedIn (if needed)
+            const imageUploadResult = await uploadImageToLinkedIn(
+              accessToken,
+              userUrn,
+              post.postImage.secure_url,
+              true // Flag indicating this is a Cloudinary URL
+            );
+            
+            if (imageUploadResult && imageUploadResult.success) {
+              // Add the image to the post content
+              linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareMediaCategory = "IMAGE";
+              linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].media = [
+                {
+                  status: "READY",
+                  description: {
+                    text: post.title || "Shared image"
+                  },
+                  media: imageUploadResult.assetUrn,
+                  title: {
+                    text: post.title || "Image"
+                  }
+                }
+              ];
+              
+              console.log(`Successfully added image to post ${post._id}`);
+            } else {
+              console.error(`Failed to upload image to LinkedIn for post ${post._id}:`, 
+                imageUploadResult ? imageUploadResult.error : 'Unknown error');
+            }
+          } catch (imageError) {
+            console.error(`Error processing image for LinkedIn post ${post._id}:`, imageError);
+            // Continue with text-only post if image processing fails
+          }
+        }
+        
         // If this is a carousel post, add slide content to the text
         if (post.mediaType === 'carousel' && post.slides && post.slides.length > 0) {
           const slideContents = post.slides.map((slide, index) => 
@@ -113,6 +156,8 @@ const processScheduledPosts = async () => {
           linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text += 
             `\n\n${documentInfo}`;
         }
+        
+        console.log(`Publishing post ${post._id} to LinkedIn with data:`, JSON.stringify(linkedinPostData, null, 2));
         
         // Send the post request to LinkedIn
         const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
