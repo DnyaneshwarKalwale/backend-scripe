@@ -335,7 +335,8 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
       articleDescription,
       imagePath,
       imageTitle,
-      imageDescription
+      imageDescription,
+      isCloudinaryImage
     } = req.body;
     
     if (!postContent) {
@@ -364,13 +365,60 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
     
     // Handle different media types
     if (imagePath) {
-      // If we have an image, upload it to LinkedIn first
-      console.log('Post includes an image, uploading to LinkedIn...');
-      const imageUploadResult = await uploadImageToLinkedIn(
-        user.linkedinAccessToken, 
-        userUrn, 
-        imagePath
-      );
+      // If we have a Cloudinary image URL, we need to download it first
+      let localImagePath = imagePath;
+      let imageUploadResult;
+      
+      if (isCloudinaryImage) {
+        try {
+          console.log('Detected Cloudinary image URL, attempting to download:', imagePath);
+          
+          // Generate a unique filename based on the current timestamp
+          const timestamp = Date.now();
+          const randomStr = Math.random().toString(36).substring(2, 15);
+          const filename = `cloudinary_${timestamp}_${randomStr}.jpg`;
+          
+          // Create uploads directory if it doesn't exist
+          const uploadsDir = path.join(process.cwd(), 'uploads');
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          
+          // Download the image from Cloudinary
+          const response = await axios({
+            method: 'get',
+            url: imagePath,
+            responseType: 'arraybuffer'
+          });
+          
+          // Save to local file
+          const localImagePath = path.join(uploadsDir, filename);
+          fs.writeFileSync(localImagePath, Buffer.from(response.data));
+          
+          console.log('Successfully downloaded Cloudinary image to:', localImagePath);
+          
+          // Upload the downloaded image to LinkedIn
+          imageUploadResult = await uploadImageToLinkedIn(
+            user.linkedinAccessToken, 
+            userUrn, 
+            filename // Just pass the filename, not the full path
+          );
+        } catch (downloadError) {
+          console.error('Error downloading Cloudinary image:', downloadError);
+          return res.status(422).json({ 
+            success: false, 
+            error: 'Failed to download image from Cloudinary',
+            details: downloadError.message
+          });
+        }
+      } else {
+        // Regular local image upload
+        imageUploadResult = await uploadImageToLinkedIn(
+          user.linkedinAccessToken, 
+          userUrn, 
+          imagePath
+        );
+      }
       
       if (!imageUploadResult.success) {
         throw new Error(`Failed to upload image to LinkedIn: ${JSON.stringify(imageUploadResult.error)}`);
