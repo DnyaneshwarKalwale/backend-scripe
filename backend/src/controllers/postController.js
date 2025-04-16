@@ -227,7 +227,8 @@ const deletePost = asyncHandler(async (req, res) => {
       await post.save();
     } else {
       // Otherwise, actually delete it
-      await post.remove();
+      // Using deleteOne instead of remove which is deprecated
+      await Post.deleteOne({ _id: post._id });
     }
     
     res.status(200).json({

@@ -11,6 +11,7 @@ const {
   migrateFromLocal
 } = require('../controllers/postController');
 const { protect } = require('../middleware/authMiddleware');
+const { processScheduledPosts } = require('../services/schedulerService');
 
 // All routes are protected and require authentication
 router.use(protect);

@@ -25,10 +25,17 @@ const initScheduler = () => {
 
 /**
  * Process all scheduled posts that are due for publishing
+ * @returns {Object} Results of the processing operation
  */
 const processScheduledPosts = async () => {
   try {
     const now = new Date();
+    const results = {
+      total: 0,
+      success: 0,
+      failed: 0,
+      details: []
+    };
     
     // Find all scheduled posts with a scheduledTime in the past
     const scheduledPosts = await Post.find({
@@ -36,20 +43,33 @@ const processScheduledPosts = async () => {
       scheduledTime: { $lte: now }
     }).populate('user', 'linkedinAccessToken linkedinId linkedinTokenExpiry');
     
+    results.total = scheduledPosts.length;
+    
     if (scheduledPosts.length === 0) {
-      return;
+      return results;
     }
     
     console.log(`Found ${scheduledPosts.length} posts to publish`);
     
     // Process each post
     for (const post of scheduledPosts) {
+      const postResult = {
+        id: post._id.toString(),
+        title: post.title || 'Untitled Post',
+        scheduledTime: post.scheduledTime
+      };
+      
       try {
         if (!post.user || !post.user.linkedinAccessToken) {
           console.error(`Cannot publish post ${post._id}: User has no LinkedIn access token`);
           post.status = 'failed';
           post.error = 'User has no LinkedIn access token';
           await post.save();
+          
+          postResult.success = false;
+          postResult.error = 'User has no LinkedIn access token';
+          results.details.push(postResult);
+          results.failed++;
           continue;
         }
         
@@ -58,6 +78,11 @@ const processScheduledPosts = async () => {
           post.status = 'failed';
           post.error = 'LinkedIn user ID not found';
           await post.save();
+          
+          postResult.success = false;
+          postResult.error = 'LinkedIn user ID not found';
+          results.details.push(postResult);
+          results.failed++;
           continue;
         }
         
@@ -67,6 +92,11 @@ const processScheduledPosts = async () => {
           post.status = 'failed';
           post.error = 'LinkedIn access token has expired';
           await post.save();
+          
+          postResult.success = false;
+          postResult.error = 'LinkedIn access token has expired';
+          results.details.push(postResult);
+          results.failed++;
           continue;
         }
         
@@ -130,12 +160,15 @@ const processScheduledPosts = async () => {
               ];
               
               console.log(`Successfully added image to post ${post._id}`);
+              postResult.hasImage = true;
             } else {
               console.error(`Failed to upload image to LinkedIn for post ${post._id}:`, 
                 imageUploadResult ? imageUploadResult.error : 'Unknown error');
+              postResult.imageError = imageUploadResult ? imageUploadResult.error : 'Unknown image upload error';
             }
           } catch (imageError) {
             console.error(`Error processing image for LinkedIn post ${post._id}:`, imageError);
+            postResult.imageError = imageError.message;
             // Continue with text-only post if image processing fails
           }
         }
@@ -184,6 +217,12 @@ const processScheduledPosts = async () => {
         
         await post.save();
         console.log(`Successfully published scheduled post ${post._id}`);
+        
+        postResult.success = true;
+        postResult.linkedinPostId = postId;
+        postResult.publishedAt = post.publishedTime;
+        results.details.push(postResult);
+        results.success++;
       } catch (error) {
         console.error(`Error publishing scheduled post ${post._id}:`, error);
         
@@ -191,10 +230,18 @@ const processScheduledPosts = async () => {
         post.status = 'failed';
         post.error = error.message || 'Failed to publish post';
         await post.save();
+        
+        postResult.success = false;
+        postResult.error = error.message || 'Failed to publish post';
+        results.details.push(postResult);
+        results.failed++;
       }
     }
+    
+    return results;
   } catch (error) {
     console.error('Error processing scheduled posts:', error);
+    throw error;
   }
 };
 

@@ -18,6 +18,7 @@ const postRoutes = require('./routes/postRoutes');
 const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
 const fs = require('fs');
+const cronRoutes = require('./routes/cronRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -212,6 +213,7 @@ app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/cron', cronRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
