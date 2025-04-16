@@ -308,6 +308,46 @@ const publishPost = asyncHandler(async (req, res) => {
       linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text += 
         `\n\n${hashtagString}`;
     }
+
+    // Handle image if post has an image
+    if (post.postImage && post.postImage.secure_url) {
+      try {
+        console.log('Post has an image, adding to LinkedIn post');
+        
+        // Import necessary functions
+        const { uploadImageToLinkedIn } = require('./linkedinController');
+        
+        // Upload the image to LinkedIn (if needed)
+        const imageUploadResult = await uploadImageToLinkedIn(
+          user.linkedinAccessToken,
+          userUrn,
+          post.postImage.secure_url,
+          true // Flag indicating this is a Cloudinary URL
+        );
+        
+        if (imageUploadResult && imageUploadResult.success) {
+          // Add the image to the post content
+          linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareMediaCategory = "IMAGE";
+          linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].media = [
+            {
+              status: "READY",
+              description: {
+                text: post.title || "Shared image"
+              },
+              media: imageUploadResult.assetUrn,
+              title: {
+                text: post.title || "Image"
+              }
+            }
+          ];
+        } else {
+          console.error('Failed to upload image to LinkedIn:', imageUploadResult ? imageUploadResult.error : 'Unknown error');
+        }
+      } catch (imageError) {
+        console.error('Error processing image for LinkedIn post:', imageError);
+        // Continue with text-only post if image processing fails
+      }
+    }
     
     // Send the post request to LinkedIn
     const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
