@@ -2,6 +2,7 @@ const asyncHandler = require('express-async-handler');
 const Post = require('../models/postModel');
 const User = require('../models/userModel');
 const { linkedinController } = require('./linkedinController');
+const axios = require('axios');
 
 /**
  * Get all posts for current user
@@ -269,130 +270,81 @@ const publishPost = asyncHandler(async (req, res) => {
       throw new Error('You need to connect your LinkedIn account first');
     }
     
+    if (!user.linkedinId) {
+      res.status(400);
+      throw new Error('LinkedIn user ID not found. Please reconnect your LinkedIn account.');
+    }
+    
+    // Check if token has expired
+    const now = new Date();
+    if (user.linkedinTokenExpiry && user.linkedinTokenExpiry < now) {
+      res.status(401);
+      throw new Error('LinkedIn access token has expired. Please reconnect your LinkedIn account.');
+    }
+    
+    const userUrn = `urn:li:person:${user.linkedinId}`;
     let platformResponse;
     
-    // Handle different post types
-    if (post.mediaType === 'none') {
-      // Text post
-      const content = post.content + 
-        (post.hashtags && post.hashtags.length > 0 
-          ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-          : '');
-          
-      platformResponse = await linkedinController.createLinkedInPost(
-        user.linkedinAccessToken,
-        content,
-        post.visibility
-      );
-    } 
-    else if (post.mediaType === 'image' && post.postImage) {
-      // Image post
-      platformResponse = await linkedinController.createLinkedInImagePost(
-        user.linkedinAccessToken,
-        post.content,
-        post.postImage.secure_url,
-        post.postImage.original_filename || 'image',
-        post.visibility
-      );
-    }
-    else if (post.mediaType === 'carousel' && post.slides && post.slides.length > 0) {
-      // Carousel post
-      const slidesWithImages = post.slides.filter(
-        slide => slide.cloudinaryImage?.secure_url || slide.imageUrl
-      );
-      
-      if (slidesWithImages.length === 0) {
-        throw new Error('Carousel post requires at least one slide with an image');
+    // Prepare basic post data structure
+    let linkedinPostData = {
+      author: userUrn,
+      lifecycleState: "PUBLISHED",
+      specificContent: {
+        "com.linkedin.ugc.ShareContent": {
+          shareCommentary: {
+            text: post.content
+          },
+          shareMediaCategory: "NONE"
+        }
+      },
+      visibility: {
+        "com.linkedin.ugc.MemberNetworkVisibility": post.visibility || "PUBLIC"
       }
-      
-      // First slide with image
-      const firstSlide = slidesWithImages[0];
-      const imageUrl = firstSlide.cloudinaryImage?.secure_url || firstSlide.imageUrl;
-      
-      // Add all slide content to the post text
-      const slideContents = post.slides.map((slide, index) => 
-        `Slide ${index + 1}: ${slide.content}`
-      ).join('\n\n');
-      
-      // Create content with hashtags
-      const fullContent = post.content + 
-        '\n\n' + slideContents +
-        (post.hashtags && post.hashtags.length > 0 
-          ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-          : '');
-      
-      platformResponse = await linkedinController.createLinkedInImagePost(
-        user.linkedinAccessToken,
-        fullContent,
-        imageUrl,
-        firstSlide.cloudinaryImage?.original_filename || 'Carousel Image',
-        post.visibility
-      );
-    }
-    else if (post.mediaType === 'document' && post.documentInfo) {
-      // Document post - since we can't upload documents directly,
-      // create a text post with document information
-      const documentInfo = `Document: ${post.documentInfo.documentName}`;
-      const fullContent = post.content + 
-        '\n\n' + documentInfo +
-        (post.hashtags && post.hashtags.length > 0 
-          ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-          : '');
-          
-      platformResponse = await linkedinController.createLinkedInPost(
-        user.linkedinAccessToken,
-        fullContent,
-        post.visibility
-      );
-    }
-    else if (post.mediaType === 'article' && post.articleUrl) {
-      // Article post
-      platformResponse = await linkedinController.createLinkedInArticlePost(
-        user.linkedinAccessToken,
-        post.content,
-        post.articleUrl,
-        post.articleTitle || '',
-        post.articleDescription || '',
-        post.visibility
-      );
-    }
-    else if (post.mediaType === 'poll' && post.isPollActive && post.pollOptions.length >= 2) {
-      // Poll post
-      const filteredOptions = post.pollOptions.filter(opt => opt.trim());
-      platformResponse = await linkedinController.createLinkedInPollPost(
-        user.linkedinAccessToken,
-        post.content,
-        filteredOptions,
-        post.pollDuration
-      );
-    }
-    else {
-      // Fallback to text post
-      const content = post.content + 
-        (post.hashtags && post.hashtags.length > 0 
-          ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-          : '');
-          
-      platformResponse = await linkedinController.createLinkedInPost(
-        user.linkedinAccessToken,
-        content,
-        post.visibility
-      );
+    };
+    
+    // Add hashtags to content if present
+    if (post.hashtags && post.hashtags.length > 0) {
+      const hashtagString = post.hashtags.map(tag => `#${tag}`).join(' ');
+      linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text += 
+        `\n\n${hashtagString}`;
     }
     
-    // Update post as published
-    post.status = 'published';
-    post.publishedTime = new Date();
-    post.platformPostId = platformResponse.id || null;
-    post.platformResponse = platformResponse;
+    // Send the post request to LinkedIn
+    const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
     
-    const updatedPost = await post.save();
-    
-    res.status(200).json({
-      success: true,
-      data: updatedPost,
-      message: 'Post published successfully to LinkedIn'
-    });
+    try {
+      const response = await axios.post(`${LINKEDIN_API_BASE_URL}/ugcPosts`, linkedinPostData, {
+        headers: {
+          'Authorization': `Bearer ${user.linkedinAccessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0'
+        }
+      });
+      
+      // Extract post ID from response headers
+      const postId = response.headers['x-restli-id'];
+      
+      // Update post as published
+      post.status = 'published';
+      post.publishedTime = new Date();
+      post.platformPostId = postId || null;
+      post.platformResponse = {
+        id: postId,
+        success: true
+      };
+      
+      const updatedPost = await post.save();
+      
+      res.status(200).json({
+        success: true,
+        data: updatedPost,
+        message: 'Post published successfully to LinkedIn'
+      });
+    } catch (linkedinError) {
+      console.error('LinkedIn API error:', linkedinError.response?.data || linkedinError.message);
+      res.status(500);
+      throw new Error(linkedinError.response?.data?.message || 'Failed to publish to LinkedIn. Please try again.');
+    }
   } catch (error) {
     console.error('Error publishing post:', error);
     res.status(error.message === 'Post not found' ? 404 : 500);

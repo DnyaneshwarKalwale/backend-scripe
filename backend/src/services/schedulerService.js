@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const Post = require('../models/postModel');
 const User = require('../models/userModel');
 const { linkedinController } = require('../controllers/linkedinController');
+const axios = require('axios');
 
 /**
  * Initialize the scheduler
@@ -33,7 +34,7 @@ const processScheduledPosts = async () => {
     const scheduledPosts = await Post.find({
       status: 'scheduled',
       scheduledTime: { $lte: now }
-    }).populate('user', 'linkedinAccessToken');
+    }).populate('user', 'linkedinAccessToken linkedinId linkedinTokenExpiry');
     
     if (scheduledPosts.length === 0) {
       return;
@@ -52,122 +53,89 @@ const processScheduledPosts = async () => {
           continue;
         }
         
-        let platformResponse;
-        const accessToken = post.user.linkedinAccessToken;
-        
-        // Handle different post types
-        if (post.mediaType === 'none') {
-          // Text post
-          const content = post.content + 
-            (post.hashtags && post.hashtags.length > 0 
-              ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-              : '');
-              
-          platformResponse = await linkedinController.createLinkedInPost(
-            accessToken,
-            content,
-            post.visibility
-          );
-        } 
-        else if (post.mediaType === 'image' && post.postImage) {
-          // Image post
-          platformResponse = await linkedinController.createLinkedInImagePost(
-            accessToken,
-            post.content,
-            post.postImage.secure_url,
-            post.postImage.original_filename || 'image',
-            post.visibility
-          );
+        if (!post.user.linkedinId) {
+          console.error(`Cannot publish post ${post._id}: User has no LinkedIn ID`);
+          post.status = 'failed';
+          post.error = 'LinkedIn user ID not found';
+          await post.save();
+          continue;
         }
-        else if (post.mediaType === 'carousel' && post.slides && post.slides.length > 0) {
-          // Carousel post
-          const slidesWithImages = post.slides.filter(
-            slide => slide.cloudinaryImage?.secure_url || slide.imageUrl
-          );
-          
-          if (slidesWithImages.length === 0) {
-            throw new Error('Carousel post requires at least one slide with an image');
+        
+        // Check if token has expired
+        if (post.user.linkedinTokenExpiry && post.user.linkedinTokenExpiry < now) {
+          console.error(`LinkedIn token expired for post ${post._id}`);
+          post.status = 'failed';
+          post.error = 'LinkedIn access token has expired';
+          await post.save();
+          continue;
+        }
+        
+        const accessToken = post.user.linkedinAccessToken;
+        const userUrn = `urn:li:person:${post.user.linkedinId}`;
+        
+        // Prepare basic post data structure
+        let linkedinPostData = {
+          author: userUrn,
+          lifecycleState: "PUBLISHED",
+          specificContent: {
+            "com.linkedin.ugc.ShareContent": {
+              shareCommentary: {
+                text: post.content
+              },
+              shareMediaCategory: "NONE"
+            }
+          },
+          visibility: {
+            "com.linkedin.ugc.MemberNetworkVisibility": post.visibility || "PUBLIC"
           }
-          
-          // First slide with image
-          const firstSlide = slidesWithImages[0];
-          const imageUrl = firstSlide.cloudinaryImage?.secure_url || firstSlide.imageUrl;
-          
-          // Add all slide content to the post text
+        };
+        
+        // Add hashtags to content if present
+        if (post.hashtags && post.hashtags.length > 0) {
+          const hashtagString = post.hashtags.map(tag => `#${tag}`).join(' ');
+          linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text += 
+            `\n\n${hashtagString}`;
+        }
+        
+        // If this is a carousel post, add slide content to the text
+        if (post.mediaType === 'carousel' && post.slides && post.slides.length > 0) {
           const slideContents = post.slides.map((slide, index) => 
             `Slide ${index + 1}: ${slide.content}`
           ).join('\n\n');
           
-          // Create content with hashtags
-          const fullContent = post.content + 
-            '\n\n' + slideContents +
-            (post.hashtags && post.hashtags.length > 0 
-              ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-              : '');
-          
-          platformResponse = await linkedinController.createLinkedInImagePost(
-            accessToken,
-            fullContent,
-            imageUrl,
-            firstSlide.cloudinaryImage?.original_filename || 'Carousel Image',
-            post.visibility
-          );
+          linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text += 
+            `\n\n${slideContents}`;
         }
-        else if (post.mediaType === 'document' && post.documentInfo) {
-          // Document post
+        
+        // If this is a document post, add document info to the text
+        if (post.mediaType === 'document' && post.documentInfo) {
           const documentInfo = `Document: ${post.documentInfo.documentName}`;
-          const fullContent = post.content + 
-            '\n\n' + documentInfo +
-            (post.hashtags && post.hashtags.length > 0 
-              ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-              : '');
-              
-          platformResponse = await linkedinController.createLinkedInPost(
-            accessToken,
-            fullContent,
-            post.visibility
-          );
+          linkedinPostData.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text += 
+            `\n\n${documentInfo}`;
         }
-        else if (post.mediaType === 'article' && post.articleUrl) {
-          // Article post
-          platformResponse = await linkedinController.createLinkedInArticlePost(
-            accessToken,
-            post.content,
-            post.articleUrl,
-            post.articleTitle || '',
-            post.articleDescription || '',
-            post.visibility
-          );
-        }
-        else if (post.mediaType === 'poll' && post.isPollActive && post.pollOptions.length >= 2) {
-          // Poll post
-          const filteredOptions = post.pollOptions.filter(opt => opt.trim());
-          platformResponse = await linkedinController.createLinkedInPollPost(
-            accessToken,
-            post.content,
-            filteredOptions,
-            post.pollDuration
-          );
-        }
-        else {
-          // Fallback to text post
-          const content = post.content + 
-            (post.hashtags && post.hashtags.length > 0 
-              ? '\n\n' + post.hashtags.map(tag => `#${tag}`).join(' ') 
-              : '');
-              
-          platformResponse = await linkedinController.createLinkedInPost(
-            accessToken,
-            content,
-            post.visibility
-          );
-        }
+        
+        // Send the post request to LinkedIn
+        const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
+        
+        const response = await axios.post(`${LINKEDIN_API_BASE_URL}/ugcPosts`, linkedinPostData, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Restli-Protocol-Version': '2.0.0'
+          }
+        });
+        
+        // Extract post ID from response headers
+        const postId = response.headers['x-restli-id'];
         
         // Update post as published
         post.status = 'published';
         post.publishedTime = new Date();
-        post.platformPostId = platformResponse.id || null;
-        post.platformResponse = platformResponse;
+        post.platformPostId = postId || null;
+        post.platformResponse = {
+          id: postId,
+          success: true
+        };
         
         await post.save();
         console.log(`Successfully published scheduled post ${post._id}`);
