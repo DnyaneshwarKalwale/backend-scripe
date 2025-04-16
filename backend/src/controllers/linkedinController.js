@@ -278,23 +278,37 @@ const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath, isCloudina
         throw new Error('Image URL must start with http:// or https://');
       }
       
-      // Download the image directly from Cloudinary
-      console.log('Downloading image from Cloudinary URL:', imageUrl);
-      const response = await axios({
-        method: 'get',
-        url: imageUrl,
-        responseType: 'arraybuffer',
-        timeout: 10000, // 10 second timeout
-        headers: {
-          'Accept': 'image/*'
+      try {
+        // Download the image directly from Cloudinary
+        console.log('Downloading image from Cloudinary URL:', imageUrl);
+        
+        const response = await axios({
+          method: 'get',
+          url: imageUrl,
+          responseType: 'arraybuffer',
+          timeout: 30000, // 30 second timeout
+          maxContentLength: 10 * 1024 * 1024, // 10MB max size
+          headers: {
+            'Accept': 'image/*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+        
+        console.log('Image downloaded successfully:');
+        console.log('Content-Type:', response.headers['content-type']);
+        console.log('Content-Length:', response.headers['content-length']);
+        console.log('Image data size:', response.data.length, 'bytes');
+        
+        // Use the downloaded image data directly
+        imageBuffer = Buffer.from(response.data);
+      } catch (downloadError) {
+        console.error('Error downloading image from Cloudinary:', downloadError);
+        if (downloadError.response) {
+          console.error('Response status:', downloadError.response.status);
+          console.error('Response headers:', downloadError.response.headers);
         }
-      });
-      
-      console.log('Image downloaded, content type:', response.headers['content-type']);
-      console.log('Image size:', response.data.length, 'bytes');
-      
-      // Use the downloaded image data directly
-      imageBuffer = Buffer.from(response.data);
+        throw new Error(`Failed to download image from Cloudinary: ${downloadError.message}`);
+      }
     } else {
       // Handle local file path
       const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -446,34 +460,20 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
           }
           
           console.log('Downloading image from URL:', imageUrl);
-          // Download the image from Cloudinary
-          const response = await axios({
-            method: 'get',
-            url: imageUrl,
-            responseType: 'arraybuffer',
-            timeout: 10000, // 10 second timeout
-            headers: {
-              'Accept': 'image/*'
-            }
-          });
           
-          console.log('Image downloaded, content type:', response.headers['content-type']);
-          console.log('Image size:', response.data.length, 'bytes');
-          
-          // Save to local file
-          const localFilePath = path.join(uploadsDir, filename);
-          fs.writeFileSync(localFilePath, Buffer.from(response.data));
-          
-          console.log('Successfully downloaded Cloudinary image to:', localFilePath);
-          console.log('File exists check:', fs.existsSync(localFilePath) ? 'Yes' : 'No');
-          
-          // Upload the downloaded image to LinkedIn
+          // Use the uploadImageToLinkedIn function directly with the URL
+          // This will handle the download and upload in one step
           imageUploadResult = await uploadImageToLinkedIn(
             user.linkedinAccessToken, 
             userUrn, 
-            filename, // Just pass the filename, not the full path
+            imageUrl, 
             true // Mark as Cloudinary URL
           );
+          
+          if (!imageUploadResult || !imageUploadResult.success) {
+            const errorMsg = imageUploadResult ? imageUploadResult.error : 'Failed to upload image';
+            throw new Error(`LinkedIn image upload failed: ${errorMsg}`);
+          }
         } catch (downloadError) {
           console.error('Error downloading Cloudinary image:', downloadError);
           return res.status(422).json({ 
