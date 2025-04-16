@@ -236,5 +236,13 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   
   // Initialize the scheduler service when the server starts
-  initScheduler();
+  try {
+    initScheduler().then(() => {
+      console.log('Scheduler service initialized successfully');
+    }).catch(err => {
+      console.error('Failed to initialize scheduler service:', err);
+    });
+  } catch (err) {
+    console.error('Error initializing scheduler service:', err);
+  }
 }); 

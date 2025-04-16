@@ -3,24 +3,54 @@ const Post = require('../models/postModel');
 const User = require('../models/userModel');
 const { linkedinController } = require('../controllers/linkedinController');
 const axios = require('axios');
+const mongoose = require('mongoose');
+const connectDB = require('../config/db');
+
+// Tracking variable to avoid duplicate scheduler instances
+let schedulerInitialized = false;
 
 /**
  * Initialize the scheduler
  * This will set up a job that runs every minute to check for posts that need to be published
  */
-const initScheduler = () => {
+const initScheduler = async () => {
+  // Avoid initializing multiple times
+  if (schedulerInitialized) {
+    console.log('Scheduler already initialized, skipping...');
+    return;
+  }
+  
   console.log('Initializing post scheduler service...');
   
-  // Run every minute
-  cron.schedule('* * * * *', async () => {
+  // Make sure DB is connected
+  if (mongoose.connection.readyState !== 1) {
     try {
-      await processScheduledPosts();
+      console.log('Connecting to database for scheduler...');
+      await connectDB();
+      console.log('Database connected for scheduler');
+    } catch (dbError) {
+      console.error('Failed to connect to database for scheduler:', dbError);
+      return;
+    }
+  }
+  
+  // Run every minute
+  const job = cron.schedule('* * * * *', async () => {
+    try {
+      console.log('Running scheduled post check: ' + new Date().toISOString());
+      const results = await processScheduledPosts();
+      
+      if (results.total > 0) {
+        console.log(`Processed ${results.total} posts: ${results.success} successful, ${results.failed} failed`);
+      }
     } catch (error) {
       console.error('Error in scheduler job:', error);
     }
   });
   
-  console.log('Post scheduler initialized successfully');
+  schedulerInitialized = true;
+  console.log('Post scheduler initialized successfully at ' + new Date().toISOString());
+  return job;
 };
 
 /**
@@ -29,7 +59,16 @@ const initScheduler = () => {
  */
 const processScheduledPosts = async () => {
   try {
+    // Ensure we have a database connection
+    if (mongoose.connection.readyState !== 1) {
+      console.log('Database not connected, connecting now...');
+      await connectDB();
+      console.log('Database connected successfully');
+    }
+    
     const now = new Date();
+    console.log(`Checking for posts scheduled for publishing before: ${now.toISOString()}`);
+    
     const results = {
       total: 0,
       success: 0,
@@ -46,6 +85,7 @@ const processScheduledPosts = async () => {
     results.total = scheduledPosts.length;
     
     if (scheduledPosts.length === 0) {
+      console.log('No scheduled posts found for publishing');
       return results;
     }
     
@@ -238,6 +278,7 @@ const processScheduledPosts = async () => {
       }
     }
     
+    console.log(`Completed scheduled post processing. Results: ${JSON.stringify(results, null, 2)}`);
     return results;
   } catch (error) {
     console.error('Error processing scheduled posts:', error);
@@ -245,6 +286,7 @@ const processScheduledPosts = async () => {
   }
 };
 
+// Export functions for use in the server and for testing
 module.exports = {
   initScheduler,
   processScheduledPosts
