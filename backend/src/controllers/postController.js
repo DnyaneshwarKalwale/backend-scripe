@@ -252,8 +252,8 @@ const deletePost = asyncHandler(async (req, res) => {
       }
     }
     
-    // Delete the post from our database
-    await post.remove();
+    // Delete the post from our database - using deleteOne instead of deprecated remove()
+    await Post.deleteOne({ _id: post._id });
     
     res.status(200).json({
       success: true,
