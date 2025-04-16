@@ -211,7 +211,8 @@ const updatePost = asyncHandler(async (req, res) => {
  */
 const deletePost = asyncHandler(async (req, res) => {
   try {
-    const post = await Post.findOne({ 
+    // Find the post by ID and user
+    const post = await Post.findOne({
       _id: req.params.id,
       user: req.user._id
     });
@@ -221,15 +222,38 @@ const deletePost = asyncHandler(async (req, res) => {
       throw new Error('Post not found');
     }
     
-    // If it's published, mark as deleted instead of removing from DB
-    if (post.status === 'published') {
-      post.status = 'deleted';
-      await post.save();
-    } else {
-      // Otherwise, actually delete it
-      // Using deleteOne instead of remove which is deprecated
-      await Post.deleteOne({ _id: post._id });
+    // For published posts, try to delete from LinkedIn if we have a platformPostId
+    if (post.status === 'published' && post.platformPostId) {
+      try {
+        const user = await User.findById(req.user._id);
+        
+        if (user?.linkedinAccessToken) {
+          // Try to delete from LinkedIn
+          const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
+          
+          try {
+            // Call LinkedIn API to delete the post
+            await axios.delete(`${LINKEDIN_API_BASE_URL}/ugcPosts/${post.platformPostId}`, {
+              headers: {
+                'Authorization': `Bearer ${user.linkedinAccessToken}`,
+                'X-Restli-Protocol-Version': '2.0.0'
+              }
+            });
+            
+            console.log(`Successfully deleted LinkedIn post: ${post.platformPostId}`);
+          } catch (linkedinError) {
+            console.error('Error deleting post from LinkedIn:', linkedinError.response?.data || linkedinError.message);
+            // Continue with local deletion even if LinkedIn deletion fails
+          }
+        }
+      } catch (userError) {
+        console.error('Error fetching user for LinkedIn deletion:', userError);
+        // Continue with local deletion
+      }
     }
+    
+    // Delete the post from our database
+    await post.remove();
     
     res.status(200).json({
       success: true,
