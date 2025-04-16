@@ -14,6 +14,8 @@ const teamRoutes = require('./routes/teamRoutes');
 const linkedinRoutes = require('./routes/linkedinRoutes');
 const twitterRoutes = require('./routes/twitterRoutes');
 const youtubeRoutes = require('./routes/youtubeRoutes');
+const postRoutes = require('./routes/postRoutes');
+const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
 const fs = require('fs');
 
@@ -209,6 +211,7 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
+app.use('/api/posts', postRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
@@ -227,4 +230,9 @@ app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  
+  // Initialize the scheduler service when the server starts
+  initScheduler();
+}); 
