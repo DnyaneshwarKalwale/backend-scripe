@@ -690,11 +690,96 @@ const initializeImageUpload = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Delete a post from LinkedIn
+ * @route DELETE /api/linkedin/delete-linkedin-post
+ * @access Private
+ */
+const deleteLinkedInPost = asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.body;
+    
+    if (!postId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Post ID is required'
+      });
+    }
+    
+    const user = await User.findById(req.user._id);
+    
+    if (!user.linkedinAccessToken) {
+      return res.status(401).json({
+        success: false,
+        message: 'LinkedIn access token not found. Please reconnect your account.'
+      });
+    }
+    
+    // Check if token has expired
+    const now = new Date();
+    if (user.linkedinTokenExpiry && user.linkedinTokenExpiry < now) {
+      return res.status(401).json({
+        success: false,
+        message: 'LinkedIn access token has expired. Please reconnect your account.'
+      });
+    }
+    
+    // Ensure the post ID is in the correct format
+    const formattedPostId = postId.includes('urn:li:ugcPost:') ? 
+      postId : 
+      `urn:li:ugcPost:${postId}`;
+    
+    console.log(`Attempting to delete LinkedIn post: ${formattedPostId}`);
+    
+    try {
+      // Make direct call to LinkedIn API
+      await axios.delete(`${LINKEDIN_API_BASE_URL}/ugcPosts/${formattedPostId}`, {
+        headers: {
+          'Authorization': `Bearer ${user.linkedinAccessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0'
+        }
+      });
+      
+      console.log(`Successfully deleted LinkedIn post: ${formattedPostId}`);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'LinkedIn post deleted successfully'
+      });
+    } catch (linkedinError) {
+      console.error('LinkedIn API error deleting post:', linkedinError.response?.data || linkedinError.message);
+      
+      // Special handling for 404 errors - consider it a success since the post doesn't exist on LinkedIn
+      if (linkedinError.response?.status === 404) {
+        return res.status(200).json({
+          success: true,
+          message: 'Post not found on LinkedIn (already deleted or never existed)'
+        });
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete post from LinkedIn',
+        error: linkedinError.response?.data?.message || linkedinError.message
+      });
+    }
+  } catch (error) {
+    console.error('Error in deleteLinkedInPost:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting LinkedIn post',
+      error: error.message
+    });
+  }
+});
+
 module.exports = {
   getLinkedInProfile,
   getUserPosts,
   createLinkedInPost,
   initializeImageUpload,
   getLinkedInBasicProfile,
-  uploadImageToLinkedIn
+  uploadImageToLinkedIn,
+  deleteLinkedInPost
 }; 

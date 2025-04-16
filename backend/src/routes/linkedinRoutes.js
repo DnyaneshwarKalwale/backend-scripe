@@ -105,4 +105,9 @@ router.post('/images/initializeUpload', protect, (req, res) => {
 // Get LinkedIn basic profile without API calls
 router.get('/basic-profile', protect, linkedinController.getLinkedInBasicProfile);
 
+// Delete LinkedIn post
+router.delete('/delete-linkedin-post', protect, (req, res) => {
+  linkedinController.deleteLinkedInPost(req, res);
+});
+
 module.exports = router; 
