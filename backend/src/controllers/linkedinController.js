@@ -223,7 +223,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
  */
 const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath) => {
   try {
-    console.log('Starting LinkedIn image upload process');
+    console.log('Starting LinkedIn image upload process for:', imagePath);
     
     // Step 1: Register upload with LinkedIn
     console.log('Registering image upload with LinkedIn...');
@@ -262,16 +262,28 @@ const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath) => {
     
     // Make sure imagePath has the correct format
     const uploadsDir = path.join(process.cwd(), 'uploads');
-    const absoluteImagePath = path.join(uploadsDir, path.basename(imagePath));
+    const imageFileName = path.basename(imagePath);
+    const absoluteImagePath = path.join(uploadsDir, imageFileName);
     
-    console.log('Absolute image path:', absoluteImagePath);
+    console.log('Looking for image at:', absoluteImagePath);
     
+    // Check if file exists
     if (!fs.existsSync(absoluteImagePath)) {
+      console.error(`Image file not found at path: ${absoluteImagePath}`);
+      console.log('Checking if file exists in uploads directory...');
+      
+      // List files in uploads directory to debug
+      const files = fs.readdirSync(uploadsDir);
+      console.log('Files in uploads directory:', files);
+      
       throw new Error(`Image file not found at path: ${absoluteImagePath}`);
     }
     
+    console.log('Image file found, reading content...');
     const imageBuffer = fs.readFileSync(absoluteImagePath);
+    console.log('Image size:', imageBuffer.length, 'bytes');
     
+    console.log('Uploading image to LinkedIn...');
     await axios.put(
       uploadUrl,
       imageBuffer,
@@ -366,17 +378,28 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
     // Handle different media types
     if (imagePath) {
       // If we have a Cloudinary image URL, we need to download it first
-      let localImagePath = imagePath;
+      let filename;
       let imageUploadResult;
       
       if (isCloudinaryImage) {
         try {
           console.log('Detected Cloudinary image URL, attempting to download:', imagePath);
           
+          // Validate URL
+          if (!imagePath || typeof imagePath !== 'string') {
+            throw new Error('Invalid image URL provided');
+          }
+          
+          // Ensure the URL is properly formatted
+          const imageUrl = imagePath.trim();
+          if (!imageUrl.startsWith('http')) {
+            throw new Error('Image URL must start with http:// or https://');
+          }
+          
           // Generate a unique filename based on the current timestamp
           const timestamp = Date.now();
           const randomStr = Math.random().toString(36).substring(2, 15);
-          const filename = `cloudinary_${timestamp}_${randomStr}.jpg`;
+          filename = `cloudinary_${timestamp}_${randomStr}.jpg`;
           
           // Create uploads directory if it doesn't exist
           const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -384,18 +407,27 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
             fs.mkdirSync(uploadsDir, { recursive: true });
           }
           
+          console.log('Downloading image from URL:', imageUrl);
           // Download the image from Cloudinary
           const response = await axios({
             method: 'get',
-            url: imagePath,
-            responseType: 'arraybuffer'
+            url: imageUrl,
+            responseType: 'arraybuffer',
+            timeout: 10000, // 10 second timeout
+            headers: {
+              'Accept': 'image/*'
+            }
           });
           
-          // Save to local file
-          const localImagePath = path.join(uploadsDir, filename);
-          fs.writeFileSync(localImagePath, Buffer.from(response.data));
+          console.log('Image downloaded, content type:', response.headers['content-type']);
+          console.log('Image size:', response.data.length, 'bytes');
           
-          console.log('Successfully downloaded Cloudinary image to:', localImagePath);
+          // Save to local file
+          const localFilePath = path.join(uploadsDir, filename);
+          fs.writeFileSync(localFilePath, Buffer.from(response.data));
+          
+          console.log('Successfully downloaded Cloudinary image to:', localFilePath);
+          console.log('File exists check:', fs.existsSync(localFilePath) ? 'Yes' : 'No');
           
           // Upload the downloaded image to LinkedIn
           imageUploadResult = await uploadImageToLinkedIn(
@@ -420,8 +452,9 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
         );
       }
       
-      if (!imageUploadResult.success) {
-        throw new Error(`Failed to upload image to LinkedIn: ${JSON.stringify(imageUploadResult.error)}`);
+      if (!imageUploadResult || !imageUploadResult.success) {
+        const errorMsg = imageUploadResult ? JSON.stringify(imageUploadResult.error) : 'No upload result returned';
+        throw new Error(`Failed to upload image to LinkedIn: ${errorMsg}`);
       }
       
       // Add the image to the post
