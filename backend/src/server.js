@@ -227,17 +227,19 @@ app.post('/api/carousels/youtube', async (req, res) => {
       });
     }
     
-    // Create carousel requests from videos
-    const carouselRequests = videos.map(video => {
+    // Create simple video entries with minimal processing
+    const savedVideos = videos.map(video => {
       return {
         userId: userId,
-        title: video.title || 'YouTube Carousel',
+        id: video.id,
+        title: video.title || 'YouTube Video',
         source: 'youtube',
         videoId: video.id,
         videoUrl: video.url,
         thumbnailUrl: video.thumbnail,
-        status: 'pending',
+        status: 'ready', // Mark as ready immediately - no processing needed
         requestDate: new Date(),
+        deliveryDate: new Date(), // Set delivery date to now since we're not processing
         slideCount: 5, // Default number of slides
         createdAt: new Date(),
         updatedAt: new Date()
@@ -245,18 +247,18 @@ app.post('/api/carousels/youtube', async (req, res) => {
     });
     
     // In a real implementation, you would save these to a MongoDB collection
-    // For now, just return success with the count
+    // For now, just return success with the saved videos
     return res.status(200).json({
       success: true,
-      message: `Successfully created ${carouselRequests.length} carousel requests`,
-      count: carouselRequests.length,
-      data: carouselRequests
+      message: `Successfully saved ${savedVideos.length} videos`,
+      count: savedVideos.length,
+      data: savedVideos
     });
   } catch (error) {
-    console.error('Error creating carousel requests:', error);
+    console.error('Error saving videos:', error);
     return res.status(500).json({ 
       success: false, 
-      message: error.message || 'Failed to create carousel requests',
+      message: error.message || 'Failed to save videos',
       error: error.toString()
     });
   }
