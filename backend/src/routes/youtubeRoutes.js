@@ -85,7 +85,10 @@ router.get('/transcript', protect, async (req, res) => {
   try {
     const { url } = req.query;
     
+    console.log(`Transcript request received for URL: ${url}`);
+    
     if (!url) {
+      console.log('No URL provided in request');
       return res.status(400).json({ success: false, message: 'YouTube URL is required' });
     }
     
@@ -93,15 +96,25 @@ router.get('/transcript', protect, async (req, res) => {
     const videoId = extractVideoId(url);
     
     if (!videoId) {
-      return res.status(400).json({ success: false, message: 'Invalid YouTube URL' });
+      console.log('Failed to extract valid video ID from URL');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid YouTube URL or not a video URL. Please provide a direct video URL (e.g., https://www.youtube.com/watch?v=...)' 
+      });
     }
+    
+    console.log(`Processing transcript for video ID: ${videoId}`);
     
     // Construct yt-dlp command to get transcript
     const command = `"${ytDlpPath}" --skip-download --write-auto-sub --sub-lang en --sub-format json3 --convert-subs srt "${url}" -o "temp_${videoId}"`;
+    console.log(`Executing command: ${command}`);
     
     exec(command, async (error, stdout, stderr) => {
       if (error) {
         console.error(`yt-dlp error: ${error.message}`);
+        if (stderr) {
+          console.error(`yt-dlp stderr: ${stderr}`);
+        }
         return res.status(500).json({
           success: false,
           message: 'Failed to fetch transcript',
@@ -110,25 +123,61 @@ router.get('/transcript', protect, async (req, res) => {
       }
 
       try {
+        if (stderr) {
+          console.log(`yt-dlp stderr (may include warnings): ${stderr}`);
+        }
+        
+        if (stdout) {
+          console.log(`yt-dlp stdout: ${stdout.substring(0, 200)}${stdout.length > 200 ? '...' : ''}`);
+        }
+        
         // Read the generated subtitle file
         const subtitleFile = `temp_${videoId}.en.json3`;
+        console.log(`Looking for subtitle file: ${subtitleFile}`);
+        
         if (!fs.existsSync(subtitleFile)) {
+          console.log(`Subtitle file not found: ${subtitleFile}`);
+          
+          // Try to find any subtitle files that might have been created
+          const files = fs.readdirSync('.');
+          const possibleSubtitleFiles = files.filter(file => file.includes(videoId) && file.includes('.en'));
+          
+          console.log(`Found these possible subtitle files: ${possibleSubtitleFiles.join(', ')}`);
+          
           throw new Error('No subtitles available for this video');
         }
 
-        const subtitles = JSON.parse(fs.readFileSync(subtitleFile, 'utf8'));
+        console.log(`Found subtitle file: ${subtitleFile}`);
+        const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+        console.log(`Subtitle file size: ${subtitleContent.length} bytes`);
+        
+        const subtitles = JSON.parse(subtitleContent);
         let transcript = '';
         
         if (subtitles.events && subtitles.events.length > 0) {
+          console.log(`Found ${subtitles.events.length} subtitle events`);
           transcript = subtitles.events
             .filter(event => event.segs && event.segs.length > 0)
             .map(event => event.segs.map(seg => seg.utf8).join(' '))
             .join(' ');
+        } else {
+          console.log('No events found in subtitle file');
         }
 
         // Clean up the temporary file
         fs.unlinkSync(subtitleFile);
-
+        console.log(`Deleted subtitle file: ${subtitleFile}`);
+        
+        // Check if we actually got a transcript
+        if (!transcript || transcript.trim().length === 0) {
+          console.log('Empty transcript after processing');
+          return res.status(404).json({
+            success: false,
+            message: 'No transcript content available for this video'
+          });
+        }
+        
+        console.log(`Transcript extracted successfully (${transcript.length} characters)`);
         return res.status(200).json({
           success: true,
           data: {
@@ -303,21 +352,117 @@ router.post('/save', protect, async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/youtube/search?query=:searchQuery
+ * @desc    Search for YouTube videos by keyword
+ * @access  Private
+ */
+router.get('/search', protect, async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query) {
+      return res.status(400).json({ success: false, message: 'Search query is required' });
+    }
+    
+    // Construct yt-dlp command to search for videos
+    const command = `"${ytDlpPath}" "ytsearch10:${query}" --dump-json --flat-playlist --skip-download`;
+    
+    exec(command, async (error, stdout, stderr) => {
+      if (error) {
+        console.error(`yt-dlp error: ${error.message}`);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to search videos',
+          error: error.message
+        });
+      }
+
+      try {
+        // Parse the JSON output
+        const searchResults = stdout
+          .trim()
+          .split('\n')
+          .map(line => JSON.parse(line))
+          .filter(video => video.id);
+        
+        // Extract relevant data for each video
+        const videos = searchResults.map(video => ({
+          videoId: video.id,
+          title: video.title,
+          thumbnail: video.thumbnail,
+          channelName: video.channel,
+          channelId: video.channel_id,
+          duration: video.duration,
+          viewCount: video.view_count || 0
+        }));
+        
+        return res.status(200).json({
+          success: true,
+          data: videos
+        });
+      } catch (parseError) {
+        console.error('Error parsing search results:', parseError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error parsing search results',
+          error: parseError.message
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error searching YouTube videos:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to search videos',
+      error: error.toString()
+    });
+  }
+});
+
 // Helper function to extract YouTube video ID from URL
 function extractVideoId(url) {
   try {
+    console.log(`Attempting to extract video ID from URL: ${url}`);
+    
+    // Early validation to ensure it's a video URL
+    if (!url) {
+      console.log('URL is empty');
+      return null;
+    }
+    
+    // Check if this is a channel URL
+    if ((url.includes('youtube.com/@') || url.includes('youtube.com/c/') || url.includes('youtube.com/channel/')) 
+        && !url.includes('watch?v=')) {
+      console.log('This appears to be a channel URL, not a video URL');
+      return null;
+    }
+    
     let videoId = null;
     
     // Handle different URL formats
     if (url.includes('youtube.com/watch')) {
       const urlObj = new URL(url);
       videoId = urlObj.searchParams.get('v');
+      console.log(`Extracted video ID from youtube.com/watch URL: ${videoId}`);
     } else if (url.includes('youtu.be/')) {
       const urlParts = url.split('/');
       videoId = urlParts[urlParts.length - 1].split('?')[0];
+      console.log(`Extracted video ID from youtu.be URL: ${videoId}`);
     } else if (url.includes('youtube.com/embed/')) {
       const urlParts = url.split('/');
       videoId = urlParts[urlParts.length - 1].split('?')[0];
+      console.log(`Extracted video ID from youtube.com/embed URL: ${videoId}`);
+    } else if (url.includes('youtube.com/v/')) {
+      const urlParts = url.split('/');
+      videoId = urlParts[urlParts.length - 1].split('?')[0];
+      console.log(`Extracted video ID from youtube.com/v URL: ${videoId}`);
+    }
+    
+    // Validate the video ID format (typically 11 characters)
+    if (!videoId || typeof videoId !== 'string' || videoId.length < 10) {
+      console.log(`Invalid video ID format: ${videoId}`);
+      return null;
     }
     
     return videoId;
