@@ -420,6 +420,112 @@ router.get('/search', protect, async (req, res) => {
   }
 });
 
+/**
+ * @route   POST /api/youtube/channel-videos
+ * @desc    Fetch a YouTube channel's videos using yt-dlp
+ * @access  Private
+ */
+router.post('/channel-videos', protect, async (req, res) => {
+  try {
+    const { channelName } = req.body;
+    
+    if (!channelName) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Channel name is required' 
+      });
+    }
+
+    // Support both full links and @handle formats
+    const channelUrl = channelName.startsWith("http")
+      ? channelName
+      : `https://www.youtube.com/@${channelName}/videos`;
+
+    const command = `"${ytDlpPath}" --dump-json --flat-playlist "${channelUrl}" --playlist-items 1-50`;
+
+    console.log("Running yt-dlp command:", command);
+
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`yt-dlp error: ${error.message}`);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to fetch channel info',
+          error: error.message
+        });
+      }
+
+      try {
+        if (!stdout || stdout.trim() === '') {
+          console.log('Empty response from yt-dlp, might be no videos or channel not found');
+          return res.status(404).json({
+            success: false,
+            message: 'No videos found or channel does not exist',
+          });
+        }
+        
+        // Split by lines and filter out empty lines
+        const lines = stdout.trim().split("\n").filter(line => line.trim() !== '');
+        
+        if (lines.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No videos found in channel',
+          });
+        }
+        
+        // Try to parse each line as JSON
+        const videos = [];
+        for (const line of lines) {
+          try {
+            const video = JSON.parse(line);
+            videos.push({
+              videoId: video.id,
+              title: video.title,
+              thumbnail: video.thumbnail || `https://img.youtube.com/vi/${video.id}/maxresdefault.jpg`,
+              channelName: video.channel,
+              channelId: video.channel_id,
+              duration: video.duration,
+              uploadDate: video.upload_date,
+              url: `https://www.youtube.com/watch?v=${video.id}`
+            });
+          } catch (lineParseError) {
+            console.warn(`Could not parse line as JSON: ${line.substring(0, 50)}...`);
+            // Continue with other lines
+          }
+        }
+        
+        if (videos.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'Could not parse any videos from channel',
+          });
+        }
+        
+        res.status(200).json({ 
+          success: true,
+          data: videos
+        });
+      } catch (parseError) {
+        console.error("Error parsing yt-dlp output:", parseError);
+        console.error("stdout sample:", stdout ? stdout.substring(0, 200) : 'Empty output');
+        res.status(500).json({
+          success: false,
+          message: 'Error parsing channel data',
+          error: parseError.message
+        });
+      }
+    });
+  } catch (err) {
+    console.error("Server error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error', 
+      error: err.message 
+    });
+  }
+});
+
 // Helper function to extract YouTube video ID from URL
 function extractVideoId(url) {
   try {
