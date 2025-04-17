@@ -311,25 +311,25 @@ const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath, isCloudina
       }
     } else {
       // Handle local file path
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      const imageFileName = path.basename(imagePath);
-      const absoluteImagePath = path.join(uploadsDir, imageFileName);
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const imageFileName = path.basename(imagePath);
+    const absoluteImagePath = path.join(uploadsDir, imageFileName);
+    
+    console.log('Looking for image at:', absoluteImagePath);
+    
+    // Check if file exists
+    if (!fs.existsSync(absoluteImagePath)) {
+      console.error(`Image file not found at path: ${absoluteImagePath}`);
+      console.log('Checking if file exists in uploads directory...');
       
-      console.log('Looking for image at:', absoluteImagePath);
+      // List files in uploads directory to debug
+      const files = fs.readdirSync(uploadsDir);
+      console.log('Files in uploads directory:', files);
       
-      // Check if file exists
-      if (!fs.existsSync(absoluteImagePath)) {
-        console.error(`Image file not found at path: ${absoluteImagePath}`);
-        console.log('Checking if file exists in uploads directory...');
-        
-        // List files in uploads directory to debug
-        const files = fs.readdirSync(uploadsDir);
-        console.log('Files in uploads directory:', files);
-        
-        throw new Error(`Image file not found at path: ${absoluteImagePath}`);
-      }
-      
-      console.log('Image file found, reading content...');
+      throw new Error(`Image file not found at path: ${absoluteImagePath}`);
+    }
+    
+    console.log('Image file found, reading content...');
       imageBuffer = fs.readFileSync(absoluteImagePath);
     }
     
