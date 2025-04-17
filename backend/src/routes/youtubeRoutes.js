@@ -17,9 +17,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Path to yt-dlp executable
-const ytDlpPath = path.join(__dirname, '..', 'bin', 'yt-dlp.exe');
-
 /**
  * @route   POST /api/youtube/channel
  * @desc    Fetch YouTube channel videos
@@ -33,51 +30,99 @@ router.post('/channel', protect, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Channel name or URL is required' });
     }
 
-    // Handle both URLs and channel names
-    const channelUrl = channelName.startsWith('http') 
-      ? channelName 
-      : `https://www.youtube.com/@${channelName}/videos`;
+    // Extract channel handle/name from input
+    let channelHandle = channelName;
+    if (channelName.includes('youtube.com/')) {
+      // Extract handle from URL
+      const parts = channelName.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].startsWith('@')) {
+          channelHandle = parts[i];
+          break;
+        }
+      }
+    }
+    
+    if (!channelHandle.startsWith('@') && !channelName.includes('youtube.com/')) {
+      channelHandle = '@' + channelHandle;
+    }
 
-    const command = `"${ytDlpPath}" --dump-json --flat-playlist "${channelUrl}" --playlist-items 1-30`;
-
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error('yt-dlp error:', error);
-        return res.status(500).json({ 
+    try {
+      // First fetch the channel page to get channel ID
+      const channelUrl = `https://www.youtube.com/${channelHandle}`;
+      const response = await axios.get(channelUrl);
+      
+      // Extract channel ID
+      const channelIdMatch = response.data.match(/"channelId":"([^"]+)"/);
+      if (!channelIdMatch || !channelIdMatch[1]) {
+        return res.status(404).json({ 
           success: false, 
-          message: 'Failed to fetch channel videos',
-          error: error.message 
+          message: 'Channel not found or could not extract channel ID' 
         });
       }
-
-      try {
-        const videos = stdout
-          .trim()
-          .split('\n')
-          .filter(line => line.trim() !== '')
-          .map(line => JSON.parse(line));
-
+      
+      const channelId = channelIdMatch[1];
+      
+      // Now fetch videos using RSS feed (no API key needed)
+      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+      const rssResponse = await axios.get(rssUrl);
+      
+      // Parse the XML
+      const parser = new xml2js.Parser({ explicitArray: false });
+      const feed = await new Promise((resolve, reject) => {
+        parser.parseString(rssResponse.data, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+      
+      if (!feed || !feed.feed || !feed.feed.entry) {
         return res.status(200).json({
           success: true,
-          data: videos.map(video => ({
-            id: video.id,
-            title: video.title,
-            thumbnail: video.thumbnail,
-            url: video.url || `https://youtube.com/watch?v=${video.id}`,
-            duration: video.duration_string,
-            view_count: video.view_count,
-            upload_date: video.upload_date
-          }))
-        });
-      } catch (parseError) {
-        console.error('Error parsing yt-dlp output:', parseError);
-        return res.status(500).json({
-          success: false,
-          message: 'Error parsing channel data',
-          error: parseError.message
+          data: []
         });
       }
-    });
+      
+      // Ensure entries is an array even if there's only one video
+      const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
+      
+      // Extract video information
+      const videos = entries.map(entry => {
+        // Extract video ID from the yt:videoId field
+        const videoId = entry['yt:videoId'];
+        
+        // Extract thumbnail URL
+        const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        
+        // Extract view count if available
+        let viewCount = 0;
+        if (entry['media:group'] && entry['media:group']['media:community']) {
+          viewCount = parseInt(entry['media:group']['media:community']['media:statistics'].$.views, 10) || 0;
+        }
+        
+        return {
+          id: videoId,
+          title: entry.title,
+          thumbnail: thumbnailUrl,
+          url: `https://youtube.com/watch?v=${videoId}`,
+          duration: "N/A", // Duration not available from RSS feed
+          view_count: viewCount,
+          upload_date: entry.published
+        };
+      });
+      
+      return res.status(200).json({
+        success: true,
+        data: videos
+      });
+    } catch (fetchError) {
+      console.error('Error fetching channel data:', fetchError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to fetch channel data',
+        error: fetchError.message
+      });
+    }
   } catch (error) {
     console.error('Error fetching YouTube channel:', error);
     return res.status(500).json({ 
