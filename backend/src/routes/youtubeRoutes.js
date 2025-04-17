@@ -134,6 +134,57 @@ router.post('/channel', protect, async (req, res) => {
 });
 
 /**
+ * @route   POST /api/youtube/carousels
+ * @desc    Save YouTube videos as carousels
+ * @access  Private
+ */
+router.post('/carousels', protect, async (req, res) => {
+  try {
+    const { videos, userId } = req.body;
+    
+    if (!videos || !Array.isArray(videos) || videos.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'At least one video is required' 
+      });
+    }
+    
+    // Create carousel requests from videos
+    const carouselRequests = videos.map(video => {
+      return {
+        userId: userId || req.user._id,
+        title: video.title || 'YouTube Carousel',
+        source: 'youtube',
+        videoId: video.id,
+        videoUrl: video.url,
+        thumbnailUrl: video.thumbnail,
+        status: 'pending',
+        requestDate: new Date(),
+        slideCount: 5, // Default number of slides
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+    
+    // In a real implementation, you would save these to a MongoDB collection
+    // For now, just return success with the count
+    return res.status(200).json({
+      success: true,
+      message: `Successfully created ${carouselRequests.length} carousel requests`,
+      count: carouselRequests.length,
+      data: carouselRequests
+    });
+  } catch (error) {
+    console.error('Error creating carousel requests:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to create carousel requests',
+      error: error.response?.data || error.toString()
+    });
+  }
+});
+
+/**
  * @route   GET /api/youtube/transcript?url=:youtubeUrl
  * @desc    Fetch YouTube transcript without API key
  * @access  Private

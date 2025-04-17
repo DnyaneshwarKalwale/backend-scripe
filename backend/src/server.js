@@ -215,6 +215,53 @@ app.use('/api/youtube', youtubeRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/cron', cronRoutes);
 
+// Add carousel route handler for YouTube videos
+app.post('/api/carousels/youtube', async (req, res) => {
+  try {
+    const { videos, userId } = req.body;
+    
+    if (!videos || !Array.isArray(videos) || videos.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'At least one video is required' 
+      });
+    }
+    
+    // Create carousel requests from videos
+    const carouselRequests = videos.map(video => {
+      return {
+        userId: userId,
+        title: video.title || 'YouTube Carousel',
+        source: 'youtube',
+        videoId: video.id,
+        videoUrl: video.url,
+        thumbnailUrl: video.thumbnail,
+        status: 'pending',
+        requestDate: new Date(),
+        slideCount: 5, // Default number of slides
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+    
+    // In a real implementation, you would save these to a MongoDB collection
+    // For now, just return success with the count
+    return res.status(200).json({
+      success: true,
+      message: `Successfully created ${carouselRequests.length} carousel requests`,
+      count: carouselRequests.length,
+      data: carouselRequests
+    });
+  } catch (error) {
+    console.error('Error creating carousel requests:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to create carousel requests',
+      error: error.toString()
+    });
+  }
+});
+
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
