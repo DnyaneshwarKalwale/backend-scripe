@@ -56,10 +56,42 @@ router.post('/channel', protect, async (req, res) => {
       }
 
       try {
-        const videos = stdout
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line));
+        if (!stdout || stdout.trim() === '') {
+          console.log('Empty response from yt-dlp, might be no videos or channel not found');
+          return res.status(404).json({
+            success: false,
+            message: 'No videos found or channel does not exist',
+          });
+        }
+        
+        // Split by lines and filter out empty lines
+        const lines = stdout.trim().split("\n").filter(line => line.trim() !== '');
+        
+        if (lines.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No videos found in channel',
+          });
+        }
+        
+        // Try to parse each line as JSON
+        const videos = [];
+        for (const line of lines) {
+          try {
+            const video = JSON.parse(line);
+            videos.push(video);
+          } catch (lineParseError) {
+            console.warn(`Could not parse line as JSON: ${line.substring(0, 50)}...`);
+            // Continue with other lines
+          }
+        }
+        
+        if (videos.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'Could not parse any videos from channel',
+          });
+        }
         
         res.status(200).json({ 
           success: true, 
@@ -67,11 +99,12 @@ router.post('/channel', protect, async (req, res) => {
         });
       } catch (parseError) {
         console.error("Error parsing yt-dlp output:", parseError);
+        console.error("stdout sample:", stdout ? stdout.substring(0, 200) : 'Empty output');
         res.status(500).json({
           success: false,
           message: 'Error parsing channel data',
           error: parseError.message,
-          rawOutput: stdout
+          rawOutput: stdout ? stdout.substring(0, 1000) : 'Empty output'
         });
       }
     });
@@ -101,6 +134,8 @@ router.get('/transcript', protect, async (req, res) => {
       });
     }
     
+    console.log(`Fetching transcript for URL: ${url}`);
+    
     // Extract video ID from URL
     const videoId = extractVideoId(url);
     
@@ -111,16 +146,43 @@ router.get('/transcript', protect, async (req, res) => {
       });
     }
     
+    console.log(`Extracted video ID: ${videoId}`);
+    
+    // Create a safe filename for temporary files
+    const tempFileBase = path.join(process.cwd(), `temp_${videoId.replace(/[^a-zA-Z0-9]/g, '_')}`);
+    
     // First try using yt-dlp to get subtitles in English if available
-    const subtitlesCommand = `"${ytDlpPath}" --write-sub --sub-lang en --skip-download -o "temp" "${url}"`;
+    const subtitlesCommand = `"${ytDlpPath}" --write-sub --sub-lang en --skip-download -o "${tempFileBase}" "${url}"`;
+    
+    console.log(`Running subtitles command: ${subtitlesCommand}`);
     
     exec(subtitlesCommand, async (error, stdout, stderr) => {
       try {
-        if (!error) {
-          // Check if the subtitle file was created
-          const subtitleFile = path.join(process.cwd(), 'temp.en.vtt');
+        if (stderr) {
+          console.log('yt-dlp stderr:', stderr);
+        }
+        
+        if (stdout) {
+          console.log('yt-dlp stdout:', stdout);
+        }
+        
+        // Check all possible subtitle file extensions
+        const possibleExtensions = ['.en.vtt', '.en.srt', '.vtt', '.srt'];
+        let subtitleFile = null;
+        
+        for (const ext of possibleExtensions) {
+          const filePath = `${tempFileBase}${ext}`;
+          console.log(`Checking for subtitle file: ${filePath}`);
+          if (fs.existsSync(filePath)) {
+            subtitleFile = filePath;
+            break;
+          }
+        }
+        
+        if (subtitleFile) {
+          console.log(`Found subtitle file: ${subtitleFile}`);
           
-          if (fs.existsSync(subtitleFile)) {
+          try {
             // Read the subtitle file
             const subtitleData = fs.readFileSync(subtitleFile, 'utf8');
             
@@ -128,41 +190,70 @@ router.get('/transcript', protect, async (req, res) => {
             const transcript = processVttToText(subtitleData);
             
             // Delete the temp file
-            fs.unlinkSync(subtitleFile);
+            try {
+              fs.unlinkSync(subtitleFile);
+              console.log(`Deleted subtitle file: ${subtitleFile}`);
+            } catch (unlinkError) {
+              console.error(`Error deleting subtitle file: ${unlinkError.message}`);
+              // Continue even if file deletion fails
+            }
             
-            // Return the transcript
-            return res.status(200).json({
-              success: true,
-              data: {
-                videoId,
-                transcript,
-                language: 'en',
-                isAutoGenerated: true // Assume auto-generated
-              }
-            });
+            if (transcript && transcript.trim().length > 0) {
+              console.log(`Successfully extracted transcript, length: ${transcript.length}`);
+              
+              // Return the transcript
+              return res.status(200).json({
+                success: true,
+                data: {
+                  videoId,
+                  transcript,
+                  language: 'en',
+                  isAutoGenerated: true // Assume auto-generated
+                }
+              });
+            } else {
+              console.log('Extracted transcript was empty, trying fallback methods');
+            }
+          } catch (fileReadError) {
+            console.error(`Error reading subtitle file: ${fileReadError.message}`);
+            // Continue to fallback methods
           }
+        } else {
+          console.log('No subtitle file found, trying fallback methods');
         }
         
         // If yt-dlp method fails, fall back to the alternative method
         try {
+          console.log('Trying to fetch transcript using YouTube page method');
           const transcriptData = await fetchYouTubeTranscript(videoId);
           
-          return res.status(200).json({
-            success: true,
-            data: {
-              videoId,
-              transcript: transcriptData.transcript,
-              language: transcriptData.language,
-              isAutoGenerated: transcriptData.isAutoGenerated
-            }
-          });
+          if (transcriptData && transcriptData.transcript && transcriptData.transcript.trim().length > 0) {
+            console.log('Successfully fetched transcript using YouTube page method');
+            
+            return res.status(200).json({
+              success: true,
+              data: {
+                videoId,
+                transcript: transcriptData.transcript,
+                language: transcriptData.language,
+                isAutoGenerated: transcriptData.isAutoGenerated
+              }
+            });
+          } else {
+            console.log('Transcript from YouTube page was empty, trying Google timedtext API');
+            throw new Error('Empty transcript from YouTube page method');
+          }
         } catch (transcriptError) {
+          console.error(`Error using YouTube page method: ${transcriptError.message}`);
+          
           // If both methods fail, try the Google timedtext API
           try {
+            console.log('Trying Google timedtext API');
             const timedTextUrl = `https://video.google.com/timedtext?lang=en&v=${videoId}`;
             const response = await axios.get(timedTextUrl);
             
             if (!response.data || response.data.trim() === "") {
+              console.log('No data from timedtext API');
               throw new Error('No transcript available from timedtext API');
             }
             
@@ -186,11 +277,13 @@ router.get('/transcript', protect, async (req, res) => {
               }
             }
             
-            if (!transcript) {
+            if (!transcript || transcript.trim().length === 0) {
+              console.log('Transcript from timedtext API was empty');
               throw new Error('Transcript data is empty');
             }
             
             transcript = decodeHtmlEntities(transcript);
+            console.log('Successfully fetched transcript using timedtext API');
             
             return res.status(200).json({
               success: true,
@@ -202,6 +295,7 @@ router.get('/transcript', protect, async (req, res) => {
               }
             });
           } catch (timedTextError) {
+            console.error(`Error using timedtext API: ${timedTextError.message}`);
             throw new Error('Failed to fetch transcript: ' + timedTextError.message);
           }
         }
@@ -354,26 +448,43 @@ async function fetchYouTubeTranscript(videoId) {
 
 // Function to process VTT file to plain text
 function processVttToText(vttContent) {
-  // Remove header (first few lines)
-  const lines = vttContent.split('\n').slice(3);
+  console.log('Processing subtitle file, length:', vttContent.length);
+  
+  // Check if it's VTT or SRT format
+  const isVtt = vttContent.includes('WEBVTT');
+  
+  // For VTT format, skip the header
+  // For SRT, start from beginning
+  const lines = isVtt 
+    ? vttContent.split('\n').slice(3) 
+    : vttContent.split('\n');
   
   let transcript = '';
   let currentText = '';
+  const timeRegex = /\d+:\d+:\d+/; // Pattern to match timestamps
   
   for (const line of lines) {
-    // Skip timestamp lines and empty lines
-    if (line.includes('-->') || line.trim() === '') {
+    const trimmedLine = line.trim();
+    
+    // Skip timestamp lines, empty lines, and numeric indices (for SRT)
+    if (timeRegex.test(trimmedLine) || 
+        trimmedLine === '' || 
+        trimmedLine.includes('-->') || 
+        /^\d+$/.test(trimmedLine)) {
       continue;
     }
     
     // Add non-empty, non-timestamp lines to the transcript
-    currentText = line.trim();
-    if (currentText) {
+    if (trimmedLine) {
+      // Remove HTML-like tags that might be in the subtitles
+      currentText = trimmedLine.replace(/<[^>]*>/g, '');
       transcript += currentText + ' ';
     }
   }
   
-  return transcript.trim();
+  const result = transcript.trim();
+  console.log('Processed transcript length:', result.length);
+  return result;
 }
 
 // Helper to clean up HTML entities
