@@ -60,6 +60,7 @@ async function testTranscript(videoId) {
 
 // Test video IDs (popular videos with transcripts)
 const testVideoIds = [
+  'Cqh-TObfV0U', // Requested test video
   'jNQXAC9IVRw', // Me at the zoo (first YouTube video)
   'dQw4w9WgXcQ', // Rick Astley - Never Gonna Give You Up
   'EwTZ2xpQwpA', // Chocolate Rain
