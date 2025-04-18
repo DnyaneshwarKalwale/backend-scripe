@@ -13,6 +13,9 @@ const {
 const { protect } = require('../middleware/authMiddleware');
 const { processScheduledPosts } = require('../services/schedulerService');
 
+// Import Python transcript controller wrapper
+const transcriptController = require('../controllers/transcriptControllerWrapper');
+
 // All routes are protected and require authentication
 router.use(protect);
 
@@ -39,5 +42,9 @@ router.post('/:id/schedule', schedulePost);
 
 // Migration route
 router.post('/migrate-from-local', migrateFromLocal);
+
+// Transcript routes - get_transcript doesn't need authentication
+router.post('/get-transcript', transcriptController.getTranscript);
+router.post('/save-transcript', transcriptController.saveVideoTranscript);
 
 module.exports = router; 
