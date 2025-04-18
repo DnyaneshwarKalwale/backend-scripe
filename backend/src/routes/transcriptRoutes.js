@@ -3,8 +3,7 @@ const router = express.Router();
 const { getTranscript } = require('../controllers/transcriptController');
 const { protect } = require('../middleware/authMiddleware');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
 
 // Enable CORS for transcript endpoint
 const transcriptCors = cors({
@@ -35,31 +34,53 @@ router.get('/fallback', transcriptCors, (req, res) => {
     });
   }
   
+  // Return error without dummy data
+  return res.status(500).json({
+    success: false,
+    error: 'Fallback transcript disabled - showing real error',
+    videoId: id
+  });
+});
+
+// Direct transcript endpoint that attempts to fetch from YouTube directly
+router.get('/direct', transcriptCors, async (req, res) => {
+  const { id } = req.query;
+  
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      error: 'Video ID is required'
+    });
+  }
+  
   try {
-    // First try reading dummy transcript as fallback
-    const dummyPath = path.join(__dirname, '..', '..', 'dummy_transcript.json');
+    // Try direct fetch from a public API
+    const response = await axios.get(`https://yt-transcript-api.vercel.app/api/transcript?id=${id}`, {
+      timeout: 10000 // 10 second timeout
+    });
     
-    if (fs.existsSync(dummyPath)) {
-      const dummyData = JSON.parse(fs.readFileSync(dummyPath, 'utf8'));
-      console.log(`Serving dummy transcript for video ID: ${id} (fallback mode)`);
-      
-      // Personalize the dummy transcript with the video ID
-      dummyData.videoId = id;
-      dummyData.message = `This is a fallback transcript for video ID: ${id}`;
-      
-      return res.status(200).json(dummyData);
+    if (response.data && response.data.transcript) {
+      return res.status(200).json({
+        success: true,
+        transcript: response.data.transcript,
+        language: response.data.language || 'en',
+        is_generated: true,
+        source: 'direct_api'
+      });
     } else {
       return res.status(404).json({
         success: false,
-        error: 'Fallback transcript not found'
+        error: 'No transcript found via direct API',
+        videoId: id
       });
     }
   } catch (error) {
-    console.error('Error in fallback endpoint:', error);
+    console.error('Error in direct transcript endpoint:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to serve fallback transcript',
-      details: error.message
+      error: `Failed to get transcript: ${error.message}`,
+      videoId: id,
+      details: error.response?.data || error.toString()
     });
   }
 });

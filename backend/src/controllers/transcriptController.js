@@ -8,8 +8,8 @@ const axios = require('axios');
  */
 async function getTranscriptFromPublicAPI(videoId) {
   try {
-    // Use the correct backend URL
-    const response = await axios.get(`https://backend-scripe.onrender.com/api/transcript/fallback?id=${videoId}`);
+    // Use the correct backend URL but with no dummy fallback
+    const response = await axios.get(`https://backend-scripe.onrender.com/api/transcript/direct?id=${videoId}`);
     
     if (response.data && response.data.transcript) {
       return {
@@ -19,22 +19,8 @@ async function getTranscriptFromPublicAPI(videoId) {
         is_generated: true
       };
     } else {
-      // If that fails, try reading from dummy file
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const dummyPath = path.join(__dirname, '..', '..', 'dummy_transcript.json');
-        
-        if (fs.existsSync(dummyPath)) {
-          const dummyData = JSON.parse(fs.readFileSync(dummyPath, 'utf8'));
-          console.log('Using dummy transcript as last resort fallback');
-          return dummyData;
-        }
-      } catch (dummyError) {
-        console.error('Error reading dummy transcript:', dummyError);
-      }
-      
-      throw new Error('Failed to get transcript from all fallback methods');
+      // Return actual error from API
+      throw new Error(response.data?.error || 'Failed to get transcript from API');
     }
   } catch (error) {
     console.error('Error fetching from fallback API:', error);
