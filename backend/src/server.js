@@ -1,3 +1,66 @@
+// Install Python dependencies at startup
+const { execSync, spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+try {
+  console.log('Checking Python installation...');
+  // Try both 'python' and 'python3' commands
+  let pythonCommand = 'python3';
+  try {
+    execSync(`${pythonCommand} --version`, { encoding: 'utf8' });
+    console.log(`Using ${pythonCommand}`);
+  } catch (err) {
+    console.log('python3 not found, trying python...');
+    pythonCommand = 'python';
+    try {
+      execSync(`${pythonCommand} --version`, { encoding: 'utf8' });
+      console.log(`Using ${pythonCommand}`);
+    } catch (err) {
+      console.error('No Python installation found. Please install Python 3.x');
+    }
+  }
+
+  console.log('Installing Python dependencies...');
+  // Check if requirements.txt exists
+  const requirementsPath = path.join(__dirname, '..', 'requirements.txt');
+  if (fs.existsSync(requirementsPath)) {
+    // Execute pip install
+    const output = execSync(`${pythonCommand} -m pip install -r ${requirementsPath}`, { encoding: 'utf8' });
+    console.log('Python dependencies installed successfully:');
+    console.log(output);
+
+    // Verify youtube-transcript-api is installed
+    try {
+      const checkScript = `${pythonCommand} -c "import youtube_transcript_api; print('youtube_transcript_api is installed')"`;
+      const checkOutput = execSync(checkScript, { encoding: 'utf8' });
+      console.log(checkOutput);
+    } catch (err) {
+      console.error('Failed to import youtube_transcript_api:', err.message);
+      // Try installing directly
+      try {
+        console.log('Attempting direct installation...');
+        execSync(`${pythonCommand} -m pip install youtube_transcript_api==1.0.3`, { encoding: 'utf8' });
+        console.log('Direct installation successful');
+      } catch (directErr) {
+        console.error('Direct installation failed:', directErr.message);
+      }
+    }
+  } else {
+    console.log('requirements.txt not found at:', requirementsPath);
+    // If requirements.txt is missing, install directly
+    try {
+      console.log('Attempting direct installation of youtube_transcript_api...');
+      execSync(`${pythonCommand} -m pip install youtube_transcript_api==1.0.3`, { encoding: 'utf8' });
+      console.log('Direct installation successful');
+    } catch (directErr) {
+      console.error('Direct installation failed:', directErr.message);
+    }
+  }
+} catch (error) {
+  console.error('Error installing Python dependencies:', error.message);
+}
+
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
