@@ -37,44 +37,55 @@ def get_transcript():
                 'message': 'Invalid YouTube URL'
             }), 400
         
-        # Initialize the API
-        ytt_api = YouTubeTranscriptApi()
-        
-        # Try to get transcript list
         try:
-            transcript_list = ytt_api.list(video_id)
+            # Create YouTubeTranscriptApi instance
+            ytt_api = YouTubeTranscriptApi()
             
-            # Try to find English transcript first, then fall back to other languages
-            try:
-                transcript = transcript_list.find_transcript(['en'])
-            except:
-                # If English not available, get the first available transcript
-                available_transcripts = list(transcript_list)
-                if not available_transcripts:
-                    return jsonify({
-                        'success': False,
-                        'message': 'No transcripts available for this video'
-                    }), 404
-                transcript = available_transcripts[0]
+            # Fetch transcript directly (new API method)
+            fetched_transcript = ytt_api.fetch(video_id)
             
-            # Fetch the transcript data
-            transcript_data = transcript.fetch()
-            
-            # Format the transcript as text
+            # Format transcript to text
             formatter = TextFormatter()
-            formatted_transcript = formatter.format_transcript(transcript_data)
+            formatted_transcript = formatter.format_transcript(fetched_transcript)
             
             return jsonify({
                 'success': True,
                 'videoId': video_id,
-                'transcript': formatted_transcript
+                'transcript': formatted_transcript,
+                'language': fetched_transcript.language,
+                'isGenerated': fetched_transcript.is_generated
             }), 200
-        
+            
         except Exception as e:
-            return jsonify({
-                'success': False,
-                'message': f'Error retrieving transcript: {str(e)}'
-            }), 404
+            error_type = type(e).__name__
+            error_msg = str(e)
+            print(f"Error type: {error_type}, Message: {error_msg}")
+            
+            if "NoTranscriptFound" in error_type:
+                return jsonify({
+                    'success': False,
+                    'message': 'No transcript available for this video'
+                }), 404
+            elif "TranscriptDisabled" in error_type:
+                return jsonify({
+                    'success': False,
+                    'message': 'Transcripts are disabled for this video'
+                }), 404
+            elif "NoTranscriptAvailable" in error_type:
+                return jsonify({
+                    'success': False,
+                    'message': 'No transcript available in the requested language'
+                }), 404
+            elif "RequestBlocked" in error_type or "IpBlocked" in error_type:
+                return jsonify({
+                    'success': False,
+                    'message': 'YouTube is blocking our request. Try again later or contact support.'
+                }), 429
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'Error retrieving transcript: {error_msg}'
+                }), 404
         
     except Exception as e:
         print(f"Error getting transcript: {str(e)}")
