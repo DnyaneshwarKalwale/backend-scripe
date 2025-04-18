@@ -1,7 +1,6 @@
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const asyncHandler = require('express-async-handler');
-const fs = require('fs');
 
 /**
  * @desc    Get transcript for a YouTube video
@@ -27,26 +26,6 @@ const getTranscript = asyncHandler(async (req, res) => {
     
     console.log(`Using Python command: ${pythonCommand} for platform: ${process.platform}`);
     
-    // Check if the transcript_fetcher.py file exists
-    if (!fs.existsSync(pythonScript)) {
-      console.error(`Python script not found at: ${pythonScript}`);
-      return res.status(500).json({
-        success: false,
-        error: 'Transcript fetcher script not found',
-        details: `File not found: ${pythonScript}`
-      });
-    } else {
-      console.log(`Found Python script at: ${pythonScript}`);
-      // Show the file content for debugging
-      try {
-        const scriptContent = fs.readFileSync(pythonScript, 'utf8');
-        console.log('Script content:');
-        console.log(scriptContent.substring(0, 300) + '...'); // Show first 300 chars
-      } catch (err) {
-        console.error('Error reading script file:', err);
-      }
-    }
-    
     // Execute the Python script and pass the videoId as an argument
     const pythonProcess = spawn(pythonCommand, [pythonScript, videoId]);
     
@@ -62,54 +41,6 @@ const getTranscript = asyncHandler(async (req, res) => {
     pythonProcess.stderr.on('data', (data) => {
       errorData += data.toString();
       console.error(`Python stderr: ${data}`);
-      
-      // Check if the error is about missing youtube_transcript_api
-      if (data.toString().includes("No module named 'youtube_transcript_api'")) {
-        try {
-          console.log('Attempting to install youtube_transcript_api...');
-          // Try to install the package
-          const installOutput = execSync(`${pythonCommand} -m pip install youtube_transcript_api==1.0.3`, { encoding: 'utf8' });
-          console.log('Installation output:', installOutput);
-          
-          // Try running the script again after installation
-          console.log('Retrying transcript fetch after installing package...');
-          const retryProcess = spawn(pythonCommand, [pythonScript, videoId]);
-          
-          let retryData = '';
-          let retryError = '';
-          
-          retryProcess.stdout.on('data', (retryOut) => {
-            retryData += retryOut.toString();
-          });
-          
-          retryProcess.stderr.on('data', (retryErr) => {
-            retryError += retryErr.toString();
-            console.error('Retry stderr:', retryErr.toString());
-          });
-          
-          retryProcess.on('close', (retryCode) => {
-            if (retryCode !== 0) {
-              console.error(`Retry Python process exited with code ${retryCode}`);
-              console.error(`Retry error output: ${retryError}`);
-              // Continue with original error handling
-            } else {
-              try {
-                const retryResult = JSON.parse(retryData);
-                if (!retryResult.success) {
-                  return res.status(404).json(retryResult);
-                }
-                return res.status(200).json(retryResult);
-              } catch (parseError) {
-                console.error('Error parsing retry data:', parseError);
-                // Continue with original error handling
-              }
-            }
-          });
-        } catch (installError) {
-          console.error('Failed to install youtube_transcript_api:', installError);
-          // Continue with original error handling
-        }
-      }
     });
 
     // When the process completes
