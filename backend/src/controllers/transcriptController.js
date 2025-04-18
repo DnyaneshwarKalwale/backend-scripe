@@ -18,8 +18,16 @@ const getTranscript = asyncHandler(async (req, res) => {
   try {
     const pythonScript = path.join(__dirname, '..', 'transcript_fetcher.py');
     
+    // Use platform-specific Python command
+    const isWindows = process.platform === "win32";
+    const pythonCommand = isWindows
+      ? 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe' // Local Windows
+      : 'python3'; // Render/Linux
+    
+    console.log(`Using Python command: ${pythonCommand} for platform: ${process.platform}`);
+    
     // Execute the Python script and pass the videoId as an argument
-    const pythonProcess = spawn('python', [pythonScript, videoId]);
+    const pythonProcess = spawn(pythonCommand, [pythonScript, videoId]);
     
     let transcriptData = '';
     let errorData = '';
@@ -32,6 +40,7 @@ const getTranscript = asyncHandler(async (req, res) => {
     // Collect any error output
     pythonProcess.stderr.on('data', (data) => {
       errorData += data.toString();
+      console.error(`Python stderr: ${data}`);
     });
 
     // When the process completes
@@ -62,6 +71,16 @@ const getTranscript = asyncHandler(async (req, res) => {
           details: error.message
         });
       }
+    });
+    
+    // Handle process errors (e.g. if Python executable not found)
+    pythonProcess.on('error', (err) => {
+      console.error('Failed to start Python process:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to start Python process',
+        details: err.message
+      });
     });
   } catch (error) {
     console.error('Error executing Python script:', error);

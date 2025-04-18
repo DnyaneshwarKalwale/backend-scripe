@@ -215,6 +215,10 @@ app.use('/api/youtube', youtubeRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/cron', cronRoutes);
 
+// Add transcript routes
+const transcriptRoutes = require('./routes/transcriptRoutes');
+app.use('/api/transcript', transcriptRoutes);
+
 // Add carousel route handler for YouTube videos
 app.post('/api/carousels/youtube', async (req, res) => {
   try {
