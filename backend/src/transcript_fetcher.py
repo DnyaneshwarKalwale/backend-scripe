@@ -18,7 +18,8 @@ def get_transcript(video_id):
         transcript_data = transcript.fetch()
         
         # Convert to string format
-        transcript_text = ' '.join([item['text'] for item in transcript_data])
+        transcript_text = ' '.join([item.text for item in transcript_data])
+
         
         result = {
             'success': True,
