@@ -188,9 +188,9 @@ router.post('/carousels', protect, async (req, res) => {
 /**
  * @route   GET /api/youtube/transcript?url=:youtubeUrl
  * @desc    Fetch YouTube transcript without API key
- * @access  Private
+ * @access  Public
  */
-router.get('/transcript', protect, async (req, res) => {
+router.get('/transcript', async (req, res) => {
   try {
     const { url } = req.query;
     if (!url) {

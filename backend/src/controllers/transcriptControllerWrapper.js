@@ -21,22 +21,18 @@ async function getYouTubeTranscript(videoUrl) {
 
     console.log(`Attempting to get transcript for video ID: ${videoId}`);
     
-    // Try with Python script first (preferred method)
+    // Try with Python script method
     try {
       const pythonResult = await getTranscriptWithPython(videoId);
-      if (pythonResult.success) {
-        console.log(`Successfully retrieved transcript using Python for video ID: ${videoId}`);
-        return pythonResult;
-      }
-      console.log(`Python method failed, trying direct API for video ID: ${videoId}`);
-    } catch (pythonError) {
-      console.error(`Python transcript retrieval failed: ${pythonError.message}`);
+      return pythonResult;
+    } catch (error) {
+      console.error(`Failed to get transcript: ${error.message}`);
+      return {
+        success: false,
+        error: `Failed to get transcript: ${error.message}`,
+        videoId
+      };
     }
-    
-    // Fallback to direct API method
-    const directResult = await getTranscriptDirect(videoId);
-    
-    return directResult;
   } catch (error) {
     console.error(`Error getting YouTube transcript: ${error.message}`);
     return {
@@ -53,159 +49,54 @@ async function getYouTubeTranscript(videoUrl) {
  * @returns {Promise<object>} - Transcript data
  */
 async function getTranscriptWithPython(videoId) {
-  const scriptPath = path.join(__dirname, 'transcriptController.py');
+  // Check for script in the root directory
+  const scriptPath = path.join(__dirname, '..', '..', 'transcript_fetcher.py');
   
-  // Check if script exists
   if (!fs.existsSync(scriptPath)) {
     throw new Error(`Python script not found at ${scriptPath}`);
   }
-
-  // Try different Python commands in case of different environments
-  const pythonCommands = ['python3', 'python', 'py', 'py -3'];
+  
+  const pythonExe = 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
   
   return new Promise((resolve, reject) => {
-    tryPythonCommands(pythonCommands, 0, scriptPath, videoId, resolve, reject);
-  });
-}
-
-/**
- * Try different Python commands recursively
- */
-function tryPythonCommands(commands, index, scriptPath, videoId, resolve, reject) {
-  if (index >= commands.length) {
-    reject(new Error('All Python commands failed. Make sure Python is installed with youtube-transcript-api package.'));
-    return;
-  }
-
-  const command = commands[index];
-  console.log(`Trying to execute transcript script with command: ${command}`);
-  
-  const pythonProcess = spawn(command, [scriptPath, videoId]);
-  let dataString = '';
-  let errorString = '';
-  
-  pythonProcess.stdout.on('data', (data) => {
-    dataString += data.toString();
-  });
-  
-  pythonProcess.stderr.on('data', (data) => {
-    errorString += data.toString();
-  });
-  
-  pythonProcess.on('close', (code) => {
-    if (code !== 0 || errorString) {
-      console.log(`Python process exited with code ${code}, trying next command.`);
-      console.log(`Python error: ${errorString}`);
-      // Try next command
-      tryPythonCommands(commands, index + 1, scriptPath, videoId, resolve, reject);
-      return;
-    }
+    console.log(`Executing: ${pythonExe} ${scriptPath} ${videoId}`);
     
-    try {
-      const result = JSON.parse(dataString);
-      resolve(result);
-    } catch (error) {
-      console.error(`Error parsing Python output: ${error.message}`);
-      console.error(`Raw output: ${dataString}`);
-      // Try next command
-      tryPythonCommands(commands, index + 1, scriptPath, videoId, resolve, reject);
-    }
-  });
-}
-
-/**
- * Get transcript directly using API methods
- * @param {string} videoId - YouTube video ID
- * @returns {Promise<object>} - Transcript data
- */
-async function getTranscriptDirect(videoId) {
-  try {
-    console.log(`Attempting direct API transcript fetch for video ID: ${videoId}`);
+    const pythonProcess = spawn(pythonExe, [scriptPath, videoId]);
+    let outputData = '';
+    let errorData = '';
     
-    // Try fetching with different language options
-    const languageOptions = ['en', 'en-US', 'en-GB', ''];
-    let transcript = null;
-    let error = null;
+    pythonProcess.stdout.on('data', (data) => {
+      outputData += data.toString();
+    });
     
-    for (const lang of languageOptions) {
-      try {
-        // Use the YouTube oEmbed API to get video details
-        const videoResponse = await axios.get(
-          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
-        );
-        
-        // Fetch the video page to get transcript data
-        const response = await axios.get(`https://www.youtube.com/watch?v=${videoId}&hl=${lang}`);
-        const html = response.data;
-        
-        // Extract caption data using regex
-        const captionRegex = /"captionTracks":\[(.*?)\]/;
-        const match = html.match(captionRegex);
-        
-        if (match && match[1]) {
-          const captionData = JSON.parse(`[${match[1]}]`);
-          if (captionData.length > 0) {
-            const captionUrl = captionData[0].baseUrl;
-            
-            // Fetch transcript XML
-            const transcriptResponse = await axios.get(captionUrl);
-            const transcriptXml = transcriptResponse.data;
-            
-            // Parse XML to extract transcript text
-            const textRegex = /<text[^>]*>(.*?)<\/text>/g;
-            let textMatch;
-            let transcriptText = '';
-            
-            while ((textMatch = textRegex.exec(transcriptXml)) !== null) {
-              const text = textMatch[1]
-                .replace(/&amp;/g, '&')
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'");
-              
-              transcriptText += text + ' ';
-            }
-            
-            if (transcriptText.trim()) {
-              transcript = {
-                success: true,
-                transcript: transcriptText.trim(),
-                language: captionData[0].languageName || 'Unknown',
-                language_code: captionData[0].languageCode || lang || 'unknown',
-                is_generated: captionData[0].kind === 'asr',
-                videoId: videoId,
-                title: videoResponse.data.title || 'Unknown'
-              };
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        error = e;
-        console.log(`Failed with language ${lang}: ${e.message}`);
+    pythonProcess.stderr.on('data', (data) => {
+      errorData += data.toString();
+      console.error(`Python stderr: ${data}`);
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`Python script exited with code ${code}`);
+        console.error(`Error output: ${errorData}`);
+        reject(new Error(`Python process exited with code ${code}: ${errorData}`));
+        return;
       }
-    }
+      
+      try {
+        const result = JSON.parse(outputData);
+        resolve(result);
+      } catch (error) {
+        console.error('Error parsing Python output:', error);
+        console.error('Raw output:', outputData);
+        reject(new Error(`Error parsing Python output: ${error.message}`));
+      }
+    });
     
-    if (transcript) {
-      return transcript;
-    }
-    
-    return {
-      success: false,
-      error: 'No transcript found using direct API method',
-      details: error ? error.message : 'Unknown error',
-      videoId
-    };
-    
-  } catch (error) {
-    console.error(`Direct API transcript fetch failed: ${error.message}`);
-    return {
-      success: false,
-      error: `Direct API method failed: ${error.message}`,
-      videoId
-    };
-  }
+    pythonProcess.on('error', (error) => {
+      console.error('Failed to start Python process:', error);
+      reject(error);
+    });
+  });
 }
 
 /**
