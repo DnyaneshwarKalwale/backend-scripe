@@ -1,9 +1,18 @@
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
-import re
+#!/usr/bin/env python3
+import sys
 import json
-from flask import jsonify, request
-from datetime import datetime
+import traceback
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api.formatters import TextFormatter
+    # Additional imports if needed
+except ImportError:
+    print(json.dumps({
+        "success": False,
+        "error": "Required libraries not installed. Please install with: pip install youtube-transcript-api"
+    }))
+    sys.exit(1)
 
 # Import your models and DB connection
 from models.postModel import Post
@@ -16,83 +25,67 @@ def extract_video_id(url):
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
-# Get transcript from YouTube video
-def get_transcript():
-    """Fetch transcript from a YouTube video URL"""
+def get_transcript(video_id):
+    """Get transcript for a YouTube video."""
     try:
-        data = request.get_json()
-        video_url = data.get('videoUrl')
+        # Get available transcripts
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         
-        if not video_url:
-            return jsonify({
-                'success': False,
-                'message': 'Video URL is required'
-            }), 400
-        
-        video_id = extract_video_id(video_url)
-        
-        if not video_id:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid YouTube URL'
-            }), 400
-        
+        # Try to get English transcript first
         try:
-            # Create YouTubeTranscriptApi instance
-            ytt_api = YouTubeTranscriptApi()
-            
-            # Fetch transcript directly (new API method)
-            fetched_transcript = ytt_api.fetch(video_id)
-            
-            # Format transcript to text
-            formatter = TextFormatter()
-            formatted_transcript = formatter.format_transcript(fetched_transcript)
-            
-            return jsonify({
-                'success': True,
-                'videoId': video_id,
-                'transcript': formatted_transcript,
-                'language': fetched_transcript.language,
-                'isGenerated': fetched_transcript.is_generated
-            }), 200
-            
-        except Exception as e:
-            error_type = type(e).__name__
-            error_msg = str(e)
-            print(f"Error type: {error_type}, Message: {error_msg}")
-            
-            if "NoTranscriptFound" in error_type:
-                return jsonify({
-                    'success': False,
-                    'message': 'No transcript available for this video'
-                }), 404
-            elif "TranscriptDisabled" in error_type:
-                return jsonify({
-                    'success': False,
-                    'message': 'Transcripts are disabled for this video'
-                }), 404
-            elif "NoTranscriptAvailable" in error_type:
-                return jsonify({
-                    'success': False,
-                    'message': 'No transcript available in the requested language'
-                }), 404
-            elif "RequestBlocked" in error_type or "IpBlocked" in error_type:
-                return jsonify({
-                    'success': False,
-                    'message': 'YouTube is blocking our request. Try again later or contact support.'
-                }), 429
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': f'Error retrieving transcript: {error_msg}'
-                }), 404
+            transcript = transcript_list.find_transcript(['en'])
+        except:
+            # If English not available, get the first available transcript
+            transcript = transcript_list.find_generated_transcript(['en'])
+            if not transcript:
+                # Get any transcript (auto-generated if needed)
+                transcript = list(transcript_list)[0]
+        
+        # Get transcript data
+        transcript_data = transcript.fetch()
+        
+        # Format transcript as plain text
+        formatter = TextFormatter()
+        plain_text = formatter.format_transcript(transcript_data)
+        
+        # Get transcript info
+        language = transcript.language
+        language_code = transcript.language_code
+        is_generated = transcript.is_generated
+        
+        return {
+            "success": True,
+            "transcript": plain_text,
+            "language": language,
+            "language_code": language_code,
+            "is_generated": is_generated,
+            "videoId": video_id
+        }
         
     except Exception as e:
-        print(f"Error getting transcript: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Failed to get transcript: {str(e)}'
-        }), 500
+        error_details = traceback.format_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "details": error_details,
+            "videoId": video_id
+        }
+
+def main():
+    """Main function to handle command line arguments."""
+    if len(sys.argv) < 2:
+        print(json.dumps({
+            "success": False,
+            "error": "Video ID is required"
+        }))
+        sys.exit(1)
+    
+    video_id = sys.argv[1]
+    result = get_transcript(video_id)
+    print(json.dumps(result))
+
+if __name__ == "__main__":
+    main()
 
 # Save video with transcript
 def save_video_transcript():
