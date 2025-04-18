@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: backend-scripe
+    env: node
+    buildCommand: cd backend && chmod +x build.sh && ./build.sh && npm install
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PORT
+        value: 8080 
