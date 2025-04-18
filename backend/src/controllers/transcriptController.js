@@ -5,7 +5,7 @@ const asyncHandler = require('express-async-handler');
 /**
  * @desc    Get transcript for a YouTube video
  * @route   POST /api/transcript
- * @access  Private
+ * @access  Public
  */
 const getTranscript = asyncHandler(async (req, res) => {
   const { videoId } = req.body;
@@ -25,6 +25,7 @@ const getTranscript = asyncHandler(async (req, res) => {
       : 'python3'; // Render/Linux
     
     console.log(`Using Python command: ${pythonCommand} for platform: ${process.platform}`);
+    console.log(`Fetching transcript for video ID: ${videoId}`);
     
     // Execute the Python script and pass the videoId as an argument
     const pythonProcess = spawn(pythonCommand, [pythonScript, videoId]);
@@ -59,16 +60,20 @@ const getTranscript = asyncHandler(async (req, res) => {
         const result = JSON.parse(transcriptData);
         
         if (!result.success) {
+          console.log(`Transcript fetch failed: ${result.error}`);
           return res.status(404).json(result);
         }
         
+        console.log(`Successfully fetched transcript for video ID: ${videoId} (${result.language})`);
         return res.status(200).json(result);
       } catch (error) {
         console.error('Error parsing transcript data:', error);
+        console.error('Raw transcript data:', transcriptData);
         return res.status(500).json({ 
           success: false, 
           error: 'Failed to parse transcript data',
-          details: error.message
+          details: error.message,
+          raw: transcriptData.substring(0, 200) // Include first 200 chars of raw data for debugging
         });
       }
     });
