@@ -1,6 +1,32 @@
-from youtube_transcript_api import YouTubeTranscriptApi
+#!/usr/bin/env python3
 import sys
 import json
+import traceback
+
+# Debug information about Python environment
+def get_debug_info():
+    debug_info = {
+        "python_version": sys.version,
+        "python_path": sys.executable,
+        "sys_path": sys.path
+    }
+    return debug_info
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    debug_info = get_debug_info()
+    debug_info["youtube_transcript_api_imported"] = True
+except ImportError as e:
+    debug_info = get_debug_info()
+    debug_info["youtube_transcript_api_imported"] = False
+    debug_info["import_error"] = str(e)
+    debug_info["traceback"] = traceback.format_exc()
+    print(json.dumps({
+        "success": False,
+        "error": "Failed to import youtube_transcript_api",
+        "debug_info": debug_info
+    }))
+    sys.exit(1)
 
 def get_transcript(video_id):
     try:
@@ -39,7 +65,8 @@ def get_transcript(video_id):
     except Exception as e:
         error_result = {
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'traceback': traceback.format_exc()
         }
         return json.dumps(error_result)
 
@@ -64,18 +91,32 @@ def get_transcript_direct(video_id):
         except:
             error_result = {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'traceback': traceback.format_exc()
             }
             return json.dumps(error_result)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
+    if len(sys.argv) == 1:
+        # No arguments - return debug info
+        print(json.dumps({
+            'success': False, 
+            'error': 'No video ID provided',
+            'debug_info': debug_info
+        }))
+    else:
         video_id = sys.argv[1]
         try:
             # Try the direct method first
             print(get_transcript_direct(video_id))
-        except:
-            # Fall back to the list approach
-            print(get_transcript(video_id))
-    else:
-        print(json.dumps({'success': False, 'error': 'No video ID provided'})) 
+        except Exception as e:
+            # Fall back to the list approach with error details
+            try:
+                print(get_transcript(video_id))
+            except Exception as inner_e:
+                print(json.dumps({
+                    'success': False, 
+                    'error': str(inner_e),
+                    'outer_error': str(e),
+                    'traceback': traceback.format_exc()
+                })) 
