@@ -215,59 +215,6 @@ app.use('/api/youtube', youtubeRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/cron', cronRoutes);
 
-// Add transcript routes
-const transcriptRoutes = require('./routes/transcriptRoutes');
-app.use('/api/transcript', transcriptRoutes);
-
-// Add carousel route handler for YouTube videos
-app.post('/api/carousels/youtube', async (req, res) => {
-  try {
-    const { videos, userId } = req.body;
-    
-    if (!videos || !Array.isArray(videos) || videos.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'At least one video is required' 
-      });
-    }
-    
-    // Create simple video entries with minimal processing
-    const savedVideos = videos.map(video => {
-      return {
-        userId: userId,
-        id: video.id,
-        title: video.title || 'YouTube Video',
-        source: 'youtube',
-        videoId: video.id,
-        videoUrl: video.url,
-        thumbnailUrl: video.thumbnail,
-        status: 'ready', // Mark as ready immediately - no processing needed
-        requestDate: new Date(),
-        deliveryDate: new Date(), // Set delivery date to now since we're not processing
-        slideCount: 5, // Default number of slides
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-    });
-    
-    // In a real implementation, you would save these to a MongoDB collection
-    // For now, just return success with the saved videos
-    return res.status(200).json({
-      success: true,
-      message: `Successfully saved ${savedVideos.length} videos`,
-      count: savedVideos.length,
-      data: savedVideos
-    });
-  } catch (error) {
-    console.error('Error saving videos:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to save videos',
-      error: error.toString()
-    });
-  }
-});
-
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
