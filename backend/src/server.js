@@ -279,6 +279,13 @@ app.get('/health', async (req, res) => {
 // Error handler middleware
 app.use(errorHandler);
 
+app._router.stack
+  .filter(r => r.route)
+  .forEach(r => {
+    console.log('✅ Registered route:', r.route.path, Object.keys(r.route.methods));
+  });
+
+
 // Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
