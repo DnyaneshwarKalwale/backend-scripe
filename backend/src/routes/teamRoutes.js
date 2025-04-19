@@ -23,18 +23,23 @@ router.post('/invitations/decline-by-token', declineInvitationByToken);
 router.use(protect);
 router.use(checkEmailVerified);
 
+// Get user invitations - must be before the :id route to not be treated as an ID
+router.get('/invitations', getUserInvitations);
+
 // Team routes
 router.route('/')
   .post(createTeam)
   .get(getTeams);
 
+// Team invitation routes for accepting/declining - must be before the :id route
+router.post('/invitations/:id/accept', acceptInvitation);
+router.post('/invitations/:id/decline', declineInvitation);
+
+// Get team by ID and team-specific operations
 router.route('/:id')
   .get(getTeamById);
 
-// Team invitation routes
+// Send invitations to a specific team
 router.post('/:id/invitations', sendInvitations);
-router.get('/invitations', getUserInvitations);
-router.post('/invitations/:id/accept', acceptInvitation);
-router.post('/invitations/:id/decline', declineInvitation);
 
 module.exports = router; 
