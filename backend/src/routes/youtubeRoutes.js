@@ -58,6 +58,16 @@ const transcriptCache = {
  */
 router.post('/channel', async (req, res) => {
   try {
+    // Add CORS headers explicitly for this route
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+      return res.status(204).send('');
+    }
+    
     const { channelName } = req.body;
 
     if (!channelName) {
