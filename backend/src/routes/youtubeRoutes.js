@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const { protect } = require('../middleware/authMiddleware');
 const axios = require('axios');
 const { OpenAI } = require('openai');
 const dotenv = require('dotenv');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec } = require('child_process');
 const fs = require('fs');
 const xml2js = require('xml2js');
 
@@ -16,12 +17,15 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Path to yt-dlp executable
+const ytDlpPath = path.join(__dirname, '..', 'bin', 'yt-dlp.exe');
+
 /**
  * @route   POST /api/youtube/channel
  * @desc    Fetch YouTube channel videos
- * @access  Public
+ * @access  Private
  */
-router.post('/channel', async (req, res) => {
+router.post('/channel', protect, async (req, res) => {
   try {
     const { channelName } = req.body;
 
@@ -29,99 +33,51 @@ router.post('/channel', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Channel name or URL is required' });
     }
 
-    // Extract channel handle/name from input
-    let channelHandle = channelName;
-    if (channelName.includes('youtube.com/')) {
-      // Extract handle from URL
-      const parts = channelName.split('/');
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i].startsWith('@')) {
-          channelHandle = parts[i];
-          break;
-        }
-      }
-    }
-    
-    if (!channelHandle.startsWith('@') && !channelName.includes('youtube.com/')) {
-      channelHandle = '@' + channelHandle;
-    }
+    // Handle both URLs and channel names
+    const channelUrl = channelName.startsWith('http') 
+      ? channelName 
+      : `https://www.youtube.com/@${channelName}/videos`;
 
-    try {
-      // First fetch the channel page to get channel ID
-      const channelUrl = `https://www.youtube.com/${channelHandle}`;
-      const response = await axios.get(channelUrl);
-      
-      // Extract channel ID
-      const channelIdMatch = response.data.match(/"channelId":"([^"]+)"/);
-      if (!channelIdMatch || !channelIdMatch[1]) {
-        return res.status(404).json({ 
+    const command = `"${ytDlpPath}" --dump-json --flat-playlist "${channelUrl}" --playlist-items 1-30`;
+
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error('yt-dlp error:', error);
+        return res.status(500).json({ 
           success: false, 
-          message: 'Channel not found or could not extract channel ID' 
+          message: 'Failed to fetch channel videos',
+          error: error.message 
         });
       }
-      
-      const channelId = channelIdMatch[1];
-      
-      // Now fetch videos using RSS feed (no API key needed)
-      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
-      const rssResponse = await axios.get(rssUrl);
-      
-      // Parse the XML
-      const parser = new xml2js.Parser({ explicitArray: false });
-      const feed = await new Promise((resolve, reject) => {
-        parser.parseString(rssResponse.data, (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
-        });
-      });
-      
-      if (!feed || !feed.feed || !feed.feed.entry) {
+
+      try {
+        const videos = stdout
+          .trim()
+          .split('\n')
+          .filter(line => line.trim() !== '')
+          .map(line => JSON.parse(line));
+
         return res.status(200).json({
           success: true,
-          data: []
+          data: videos.map(video => ({
+            id: video.id,
+            title: video.title,
+            thumbnail: video.thumbnail,
+            url: video.url || `https://youtube.com/watch?v=${video.id}`,
+            duration: video.duration_string,
+            view_count: video.view_count,
+            upload_date: video.upload_date
+          }))
+        });
+      } catch (parseError) {
+        console.error('Error parsing yt-dlp output:', parseError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error parsing channel data',
+          error: parseError.message
         });
       }
-      
-      // Ensure entries is an array even if there's only one video
-      const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
-      
-      // Extract video information
-      const videos = entries.map(entry => {
-        // Extract video ID from the yt:videoId field
-        const videoId = entry['yt:videoId'];
-        
-        // Extract thumbnail URL
-        const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-        
-        // Extract view count if available
-        let viewCount = 0;
-        if (entry['media:group'] && entry['media:group']['media:community']) {
-          viewCount = parseInt(entry['media:group']['media:community']['media:statistics'].$.views, 10) || 0;
-        }
-        
-        return {
-          id: videoId,
-          title: entry.title,
-          thumbnail: thumbnailUrl,
-          url: `https://youtube.com/watch?v=${videoId}`,
-          duration: "N/A", // Duration not available from RSS feed
-          view_count: viewCount,
-          upload_date: entry.published
-        };
-      });
-      
-      return res.status(200).json({
-        success: true,
-        data: videos
-      });
-    } catch (fetchError) {
-      console.error('Error fetching channel data:', fetchError);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Failed to fetch channel data',
-        error: fetchError.message
-      });
-    }
+    });
   } catch (error) {
     console.error('Error fetching YouTube channel:', error);
     return res.status(500).json({ 
@@ -133,140 +89,11 @@ router.post('/channel', async (req, res) => {
 });
 
 /**
- * @route   POST /api/youtube/transcript
- * @desc    Fetch YouTube transcript using youtube-transcript-api
- * @access  Public
- */
-router.post('/transcript', async (req, res) => {
-  try {
-    const { videoId } = req.body;
-    
-    if (!videoId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'YouTube video ID is required' 
-      });
-    }
-    
-    console.log(`Fetching transcript for video ID: ${videoId}`);
-    
-    // Path to the Python script (relative to the project root)
-    const scriptPath = path.join(__dirname, '../../../transcript_fetcher.py');
-    
-    // Determine the Python executable to use
-    // For render.com or similar hosts, just use 'python' or 'python3'
-    // For local development, you might need to specify the full path
-    const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
-    
-    const pythonProcess = spawn(pythonExecutable, [scriptPath, videoId]);
-    
-    let transcriptData = '';
-    let errorData = '';
-    
-    pythonProcess.stdout.on('data', (data) => {
-      transcriptData += data.toString();
-    });
-    
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-      console.error(`Python stderr: ${data}`);
-    });
-    
-    pythonProcess.on('close', (code) => {
-      if (code !== 0 || errorData) {
-        console.error('Python script error:', errorData);
-        // Try backup method if Python script fails
-        fetchBackupTranscript(videoId, res);
-        return;
-      }
-      
-      try {
-        const result = JSON.parse(transcriptData);
-        
-        if (result.success) {
-          return res.status(200).json(result);
-        } else {
-          console.log('Python method returned error, trying backup method');
-          fetchBackupTranscript(videoId, res);
-        }
-      } catch (parseError) {
-        console.error('Error parsing transcript data:', parseError);
-        fetchBackupTranscript(videoId, res);
-      }
-    });
-    
-    pythonProcess.on('error', (err) => {
-      console.error('Failed to start Python process:', err);
-      fetchBackupTranscript(videoId, res);
-    });
-    
-  } catch (error) {
-    console.error('Error in transcript endpoint:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to fetch transcript',
-      error: error.toString()
-    });
-  }
-});
-
-/**
- * @route   POST /api/youtube/carousels
- * @desc    Save YouTube videos as carousels
- * @access  Public
- */
-router.post('/carousels', async (req, res) => {
-  try {
-    const { videos, userId } = req.body;
-    
-    if (!videos || !Array.isArray(videos) || videos.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'At least one video is required' 
-      });
-    }
-    
-    // Create carousel requests from videos
-    const carouselRequests = videos.map(video => {
-      return {
-        userId: userId || 'anonymous',
-        title: video.title || 'YouTube Carousel',
-        source: 'youtube',
-        videoId: video.id,
-        videoUrl: video.url,
-        thumbnailUrl: video.thumbnail,
-        status: 'pending',
-        requestDate: new Date(),
-        slideCount: 5, // Default number of slides
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-    });
-    
-    // In a real implementation, you would save these to a MongoDB collection
-    // For now, just return success with the count
-    return res.status(200).json({
-      success: true,
-      message: `Successfully created ${carouselRequests.length} carousel requests`,
-      count: carouselRequests.length,
-      data: carouselRequests
-    });
-  } catch (error) {
-    console.error('Error creating carousel requests:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to create carousel requests',
-      error: error.response?.data || error.toString()
-    });
-  }
-});
-
-/**
  * @route   GET /api/youtube/transcript?url=:youtubeUrl
  * @desc    Fetch YouTube transcript without API key
- * @access  Public
+ * @access  Private
  */
-router.get('/transcript', async (req, res) => {
+router.get('/transcript', protect, async (req, res) => {
   try {
     const { url } = req.query;
     
@@ -304,11 +131,52 @@ router.get('/transcript', async (req, res) => {
 });
 
 /**
+ * @route   POST /api/youtube/whisper
+ * @desc    Process YouTube audio with Whisper API
+ * @access  Private
+ */
+router.post('/whisper', protect, async (req, res) => {
+  try {
+    const { videoId, preferLanguage } = req.body;
+    
+    if (!videoId) {
+      return res.status(400).json({ success: false, message: 'YouTube video ID is required' });
+    }
+    
+    // Get audio URL from YouTube
+    const audioUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Process with Whisper API (this would require downloading the audio first)
+    // For this example, we'll show the API call pattern
+    const transcriptionResponse = await openai.audio.transcriptions.create({
+      file: audioUrl, // In a real implementation, you'd need to download and convert the audio first
+      model: "whisper-1",
+      language: preferLanguage || "en",
+    });
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        videoId,
+        transcript: transcriptionResponse.text
+      }
+    });
+  } catch (error) {
+    console.error('Error transcribing with Whisper:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to transcribe with Whisper',
+      error: error.response?.data || error.toString()
+    });
+  }
+});
+
+/**
  * @route   POST /api/youtube/analyze
  * @desc    Analyze transcript for LinkedIn content
- * @access  Public
+ * @access  Private
  */
-router.post('/analyze', async (req, res) => {
+router.post('/analyze', protect, async (req, res) => {
   try {
     const { transcript, preferences } = req.body;
     
@@ -379,7 +247,7 @@ function extractVideoId(url) {
   }
 }
 
-// Function to fetch YouTube transcript without API key (backup method)
+// Function to fetch YouTube transcript without API key
 async function fetchYouTubeTranscript(videoId) {
   try {
     // Fetch the video page to get timedtext URL
@@ -430,29 +298,6 @@ async function fetchYouTubeTranscript(videoId) {
   } catch (error) {
     console.error('Error in fetchYouTubeTranscript:', error);
     throw error;
-  }
-}
-
-// Backup method for when Python method fails
-async function fetchBackupTranscript(videoId, res) {
-  try {
-    console.log('Using backup transcript method for video ID:', videoId);
-    const transcriptData = await fetchYouTubeTranscript(videoId);
-    
-    return res.status(200).json({
-      success: true,
-      transcript: transcriptData.transcript,
-      language: 'Unknown',
-      language_code: transcriptData.language || 'en',
-      is_generated: true
-    });
-  } catch (error) {
-    console.error('Error in backup transcript method:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch transcript with all available methods',
-      error: error.toString()
-    });
   }
 }
 
