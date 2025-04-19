@@ -40,20 +40,6 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Middleware for handling CORS pre-flight requests
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  
-  next();
-});
-
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -63,21 +49,18 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Configure CORS with more options
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow all origins - this is suitable for development
-    // For production, you might want to restrict this
-    return callback(null, true);
-  },
+  origin: [
+    'http://localhost:8080', 
+    'https://brandout.vercel.app', 
+    'https://ea50-43-224-158-115.ngrok-free.app',
+    'https://18cd-43-224-158-115.ngrok-free.app',
+    'https://deluxe-cassata-51d628.netlify.app'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'Origin', 'X-Requested-With'],
-  exposedHeaders: ['Set-Cookie'],
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
+  exposedHeaders: ['Set-Cookie']
 }));
-
-// Add OPTIONS handling for preflight requests
-app.options('*', cors());
 
 // Configure session middleware (required for Twitter OAuth)
 app.use(session({
