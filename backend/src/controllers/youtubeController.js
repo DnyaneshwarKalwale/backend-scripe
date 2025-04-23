@@ -1,5 +1,26 @@
 const axios = require('axios');
 const xml2js = require('xml2js');
+const User = require('../models/userModel');
+const SavedVideo = require('../models/savedVideo');
+
+/**
+ * Helper function to validate YouTube channel IDs
+ * Most YouTube channel IDs start with UC and are 24 characters long
+ */
+const isValidYoutubeChannelId = (id) => {
+  if (!id || typeof id !== 'string') return false;
+  // Most channel IDs start with UC and are 24 characters long
+  if (id.startsWith('UC') && id.length === 24) return true;
+  // Some other valid channels might not follow this pattern exactly, but should:
+  // 1. Be at least 12 characters long
+  // 2. Not be a common word like 'client', 'channel', 'videos', etc.
+  // 3. Contain both letters and numbers
+  const commonInvalidIds = ['client', 'channel', 'videos', 'user', 'watch', 'feed'];
+  return id.length >= 12 && 
+         !commonInvalidIds.includes(id.toLowerCase()) &&
+         /[a-zA-Z]/.test(id) && 
+         /[0-9]/.test(id);
+};
 
 /**
  * @desc    Fetch YouTube channel information and videos
@@ -77,8 +98,33 @@ const getChannelVideos = async (req, res) => {
           // Alternative method - try a different regex pattern
           const altMatch = response.data.match(/channel\/([^"]+)"/);
           if (altMatch && altMatch[1]) {
-            channelId = altMatch[1];
-            console.log(`Found channel ID using alt method: ${channelId}`);
+            // Verify the extracted ID is not 'client' and has a proper channel ID format
+            const extractedId = altMatch[1];
+            if (extractedId !== 'client' && extractedId.length > 10) {
+              channelId = extractedId;
+              console.log(`Found channel ID using alt method: ${channelId}`);
+            } else {
+              console.log(`Invalid channel ID found: ${extractedId}, trying other methods`);
+              // Try third alternative - look for externalId
+              const externalIdMatch = response.data.match(/"externalId":"([^"]+)"/);
+              if (externalIdMatch && externalIdMatch[1]) {
+                channelId = externalIdMatch[1];
+                console.log(`Found channel ID using externalId: ${channelId}`);
+              } else {
+                // Meta tag method as final fallback
+                const metaMatch = response.data.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
+                if (metaMatch && metaMatch[1]) {
+                  channelId = metaMatch[1];
+                  console.log(`Found channel ID using meta tag: ${channelId}`);
+                } else {
+                  console.error('Could not extract valid channel ID from page');
+                  return res.status(404).json({ 
+                    success: false, 
+                    message: 'Channel not found or could not extract valid channel ID' 
+                  });
+                }
+              }
+            }
           } else {
             // Second alternative - meta tags
             const metaMatch = response.data.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
@@ -117,6 +163,16 @@ const getChannelVideos = async (req, res) => {
       
     // Now fetch videos using RSS feed (no API key needed)
     try {
+      // Validate the channel ID before proceeding
+      if (!isValidYoutubeChannelId(channelId)) {
+        console.error(`Invalid channel ID: ${channelId}`);
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid YouTube channel ID',
+          error: `The detected channel ID (${channelId}) appears to be invalid`
+        });
+      }
+      
       const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
       console.log(`Fetching RSS feed from: ${rssUrl}`);
       
@@ -251,7 +307,215 @@ const createCarousels = async (req, res) => {
   }
 };
 
+// Save YouTube videos to user's saved videos list
+const saveYoutubeVideo = async (req, res) => {
+  try {
+    const { userId, videoId, title, thumbnailUrl, channelTitle, publishedAt } = req.body;
+
+    if (!userId || !videoId || !title || !thumbnailUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, videoId, title, and thumbnailUrl are required'
+      });
+    }
+
+    // Check if the user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Create or update saved video
+    const savedVideo = await SavedVideo.findOneAndUpdate(
+      { userId, videoId },
+      {
+        userId,
+        videoId,
+        title,
+        thumbnailUrl,
+        channelTitle: channelTitle || 'Unknown Channel',
+        publishedAt: publishedAt || new Date(),
+        savedAt: new Date()
+      },
+      { new: true, upsert: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Video saved successfully',
+      savedVideo
+    });
+  } catch (error) {
+    console.error('Error saving YouTube video:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to save video',
+      error: error.toString()
+    });
+  }
+};
+
+// Get saved YouTube videos for a user
+const getUserSavedVideos = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Check if the user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get all saved videos for the user, sorted by savedAt in descending order
+    const savedVideos = await SavedVideo.find({ userId })
+      .sort({ savedAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: savedVideos.length,
+      savedVideos
+    });
+  } catch (error) {
+    console.error('Error retrieving saved YouTube videos:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve saved videos',
+      error: error.toString()
+    });
+  }
+};
+
+// Delete a saved YouTube video
+const deleteSavedVideo = async (req, res) => {
+  try {
+    const { userId, videoId } = req.params;
+
+    if (!userId || !videoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID and Video ID are required'
+      });
+    }
+
+    // Check if the saved video exists
+    const savedVideo = await SavedVideo.findOne({ userId, videoId });
+    if (!savedVideo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Saved video not found'
+      });
+    }
+
+    // Delete the saved video
+    await SavedVideo.findOneAndDelete({ userId, videoId });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Saved video deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting saved YouTube video:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to delete saved video',
+      error: error.toString()
+    });
+  }
+};
+
+/**
+ * @desc    Save transcript for a YouTube video
+ * @route   POST /api/youtube/save-transcript
+ * @access  Public
+ */
+const saveVideoTranscript = async (req, res) => {
+  try {
+    const { videoId, transcript, formattedTranscript, language, is_generated, userId } = req.body;
+    
+    if (!videoId || (!transcript && !formattedTranscript)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Video ID and at least one transcript format are required'
+      });
+    }
+    
+    // Find the existing saved video
+    let savedVideo;
+    
+    try {
+      savedVideo = await SavedVideo.findOne({ videoId, userId: userId || 'anonymous' });
+    } catch (dbError) {
+      console.error('Database error when finding video:', dbError);
+      // If there's an error with the database, we'll still allow saving to a new document
+    }
+    
+    const transcriptData = {
+      transcript: transcript || '',
+      formattedTranscript: formattedTranscript || [],
+      language: language || 'Unknown',
+      is_generated: is_generated || false,
+      updatedAt: new Date()
+    };
+    
+    let result;
+    
+    if (savedVideo) {
+      // Update existing video with transcript
+      result = await SavedVideo.findOneAndUpdate(
+        { videoId, userId: userId || 'anonymous' },
+        { $set: transcriptData },
+        { new: true }
+      );
+      
+      console.log(`Updated existing video (${videoId}) with transcript`);
+    } else {
+      // No existing video found, create a minimal entry with just the transcript
+      result = await SavedVideo.create({
+        userId: userId || 'anonymous',
+        videoId,
+        title: 'Untitled Video',
+        thumbnailUrl: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        ...transcriptData
+      });
+      
+      console.log(`Created new video entry (${videoId}) with transcript`);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Transcript saved successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Error saving transcript:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to save transcript',
+      error: error.toString()
+    });
+  }
+};
+
 module.exports = {
+  isValidYoutubeChannelId,
   getChannelVideos,
-  createCarousels
+  createCarousels,
+  saveYoutubeVideo,
+  getUserSavedVideos,
+  deleteSavedVideo,
+  saveVideoTranscript
 }; 

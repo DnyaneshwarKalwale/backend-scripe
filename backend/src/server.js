@@ -15,6 +15,7 @@ const linkedinRoutes = require('./routes/linkedinRoutes');
 const twitterRoutes = require('./routes/twitterRoutes');
 const youtubeRoutes = require('./routes/youtubeRoutes');
 const postRoutes = require('./routes/postRoutes');
+const carouselRoutes = require('./routes/carouselRoutes');
 const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
 const fs = require('fs');
@@ -213,6 +214,7 @@ app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/carousels', carouselRoutes);
 app.use('/api/cron', cronRoutes);
 
 // Add carousel route handler for YouTube videos
