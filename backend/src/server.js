@@ -384,8 +384,16 @@ app.post('/api/youtube-carousels', async (req, res) => {
       });
     }
     
-    // Create simple video entries with minimal processing
+    // Create video entries with transcript validation
     const savedVideos = videos.map(video => {
+      // Check if the video has a valid transcript
+      const hasTranscript = (
+        (video.transcript && typeof video.transcript === 'string' && video.transcript.trim().length > 10) ||
+        (video.formattedTranscript && Array.isArray(video.formattedTranscript) && 
+          video.formattedTranscript.length > 0 && 
+          video.formattedTranscript.some(point => point && point.trim().length > 10))
+      );
+      
       return {
         userId: userId || 'anonymous',
         id: video.id || video.videoId,
@@ -394,21 +402,29 @@ app.post('/api/youtube-carousels', async (req, res) => {
         videoId: video.id || video.videoId,
         videoUrl: video.url || video.videoUrl || `https://youtube.com/watch?v=${video.id || video.videoId}`,
         thumbnailUrl: video.thumbnail || video.thumbnailUrl,
-        status: 'ready', // Mark as ready immediately - no processing needed
+        // Only mark as ready if there's a valid transcript
+        status: hasTranscript ? 'ready' : 'needs_transcript',
+        transcript: video.transcript || null,
+        formattedTranscript: video.formattedTranscript || null,
+        hasTranscript: hasTranscript,
         requestDate: new Date(),
-        deliveryDate: new Date(), // Set delivery date to now since we're not processing
-        slideCount: 5, // Default number of slides
+        deliveryDate: hasTranscript ? new Date() : null, // Only set delivery date if transcript exists
+        slideCount: hasTranscript ? 5 : 0, // Default number of slides if transcript exists
         createdAt: new Date(),
         updatedAt: new Date()
       };
     });
     
+    // Filter videos that have transcripts for carousel creation
+    const readyVideos = savedVideos.filter(video => video.hasTranscript);
+    
     // In a real implementation, you would save these to a MongoDB collection
     // For now, just return success with the saved videos
     return res.status(200).json({
       success: true,
-      message: `Successfully saved ${savedVideos.length} videos`,
+      message: `Successfully saved ${savedVideos.length} videos (${readyVideos.length} ready for carousel creation)`,
       count: savedVideos.length,
+      readyCount: readyVideos.length,
       data: savedVideos
     });
   } catch (error) {
