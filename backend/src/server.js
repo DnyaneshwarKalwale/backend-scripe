@@ -286,24 +286,24 @@ Follow all the rules below exactly:
 
 // Helper function to handle OpenAI errors
 function handleOpenAIError(openaiError, res) {
-  console.error('Error from OpenAI API:', openaiError);
-  
-  // Check for quota exceeded error
-  if (openaiError.status === 429 || (openaiError.error && openaiError.error.type === 'insufficient_quota')) {
-    return res.status(402).json({ 
-      error: 'OpenAI API quota exceeded. Please check your billing details.',
+      console.error('Error from OpenAI API:', openaiError);
+      
+      // Check for quota exceeded error
+      if (openaiError.status === 429 || (openaiError.error && openaiError.error.type === 'insufficient_quota')) {
+        return res.status(402).json({ 
+          error: 'OpenAI API quota exceeded. Please check your billing details.',
       message: 'The API key has run out of credits. Please update your OpenAI API key or check your billing status.',
       success: false
-    });
-  }
-  
-  // For other OpenAI errors
-  res.status(503).json({ 
-    error: 'OpenAI service temporarily unavailable', 
+        });
+      }
+      
+      // For other OpenAI errors
+      res.status(503).json({ 
+        error: 'OpenAI service temporarily unavailable', 
     message: openaiError.message || 'Failed to generate content',
     success: false
-  });
-}
+      });
+    }
 
 app.post('/api/generate-image', async (req, res) => {
   try {
@@ -437,6 +437,182 @@ app.post('/api/youtube-carousels', async (req, res) => {
   }
 });
 
+// Add a new endpoint for yt-dlp transcript extraction
+app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
+  try {
+    const { videoId } = req.body;
+    
+    if (!videoId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Video ID is required' 
+      });
+    }
+    
+    const fs = require('fs');
+    const { exec } = require('child_process');
+    const path = require('path');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    // Create directory for transcripts if it doesn't exist
+    const transcriptsDir = path.join(process.cwd(), 'transcripts');
+    if (!fs.existsSync(transcriptsDir)) {
+      fs.mkdirSync(transcriptsDir, { recursive: true });
+    }
+    
+    const outputFileName = path.join(transcriptsDir, `${videoId}.json`);
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    console.log(`Extracting transcript for video ${videoId} using yt-dlp`);
+    
+    // First check if we already have this transcript saved
+    if (fs.existsSync(outputFileName)) {
+      try {
+        const savedTranscript = JSON.parse(fs.readFileSync(outputFileName, 'utf8'));
+        if (savedTranscript && savedTranscript.transcript) {
+          console.log(`Found existing transcript for ${videoId}`);
+          return res.json({
+            success: true,
+            message: 'Transcript loaded from cache',
+            transcript: savedTranscript.transcript,
+            language: savedTranscript.language || 'en',
+            is_generated: savedTranscript.is_generated || false
+          });
+        }
+      } catch (readError) {
+        console.error('Error reading existing transcript:', readError);
+      }
+    }
+    
+    // Command for yt-dlp to extract subtitles
+    // We try auto-generated first, then manual if available
+    const command = `yt-dlp --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    
+    try {
+      const { stdout, stderr } = await execPromise(command);
+      console.log('yt-dlp output:', stdout);
+      
+      if (stderr) {
+        console.error('yt-dlp stderr:', stderr);
+      }
+      
+      // Look for the generated subtitle file
+      const files = fs.readdirSync(process.cwd());
+      const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
+      
+      if (!subtitleFile) {
+        throw new Error('No subtitle file generated');
+      }
+      
+      // Read and parse the subtitle content
+      const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+      let transcriptText = '';
+      let is_generated = false;
+      
+      if (subtitleFile.endsWith('.json3')) {
+        // Parse JSON format
+        const subtitleJson = JSON.parse(subtitleContent);
+        transcriptText = subtitleJson.events
+          .filter(event => event.segs && event.segs.length > 0)
+          .map(event => event.segs.map(seg => seg.utf8).join(' '))
+          .join(' ');
+        is_generated = subtitleFile.includes('auto');
+      } else if (subtitleFile.endsWith('.vtt')) {
+        // Parse VTT format - simple approach
+        transcriptText = subtitleContent
+          .split('\n')
+          .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
+          .join(' ')
+          .replace(/<[^>]*>/g, ''); // Remove HTML tags
+        is_generated = subtitleFile.includes('auto');
+      }
+      
+      // Clean up the extracted files
+      fs.unlinkSync(subtitleFile);
+      
+      // Save the transcript to our JSON file for future use
+      const transcriptData = {
+        transcript: transcriptText,
+        language: 'en',
+        is_generated: is_generated,
+        extractedAt: new Date().toISOString()
+      };
+      
+      fs.writeFileSync(outputFileName, JSON.stringify(transcriptData, null, 2));
+      
+      // Format the transcript into bullet points for carousel use
+      const formattedTranscript = formatTranscriptToBulletPoints(transcriptText);
+      
+      return res.json({
+        success: true,
+        message: 'Transcript extracted successfully',
+        transcript: transcriptText,
+        formattedTranscript: formattedTranscript,
+        language: 'en',
+        is_generated: is_generated
+      });
+    } catch (error) {
+      console.error('Error extracting transcript with yt-dlp:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to extract transcript with yt-dlp',
+        error: error.message
+      });
+    }
+  } catch (error) {
+    console.error('Error in transcript-yt-dlp endpoint:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error processing transcript request',
+      error: error.message
+    });
+  }
+});
+
+// Helper function to format transcript into bullet points
+function formatTranscriptToBulletPoints(text) {
+  if (!text || text.length < 10) return [];
+  
+  // Split by sentences and create meaningful bullet points
+  const sentences = text.replace(/([.?!])\s+/g, "$1|").split("|");
+  const bulletPoints = [];
+  
+  // Process sentences to create meaningful bullet points
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i].trim();
+    
+    // Only include meaningful sentences with proper length
+    if (sentence.length > 15 && sentence.length < 200) {
+      // Filter out timestamps, speaker identification, and other non-content
+      if (!sentence.match(/^\d+:\d+/) && !sentence.match(/^speaker\s\d+:/i)) {
+        bulletPoints.push(sentence);
+        
+        // Limit to 8 bullet points for carousel use
+        if (bulletPoints.length >= 8) break;
+      }
+    }
+  }
+  
+  // If we couldn't extract meaningful bullets, create some based on the text length
+  if (bulletPoints.length === 0) {
+    const words = text.split(' ');
+    const chunkSize = Math.floor(words.length / 8);
+    
+    for (let i = 0; i < 8; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, words.length);
+      const chunk = words.slice(start, end).join(' ');
+      
+      if (chunk.length > 10) {
+        bulletPoints.push(chunk);
+      }
+    }
+  }
+  
+  return bulletPoints.length > 0 ? bulletPoints : ["No meaningful transcript content available"];
+}
+
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
@@ -458,6 +634,38 @@ app._router.stack
     console.log('✅ Registered route:', r.route.path, Object.keys(r.route.methods));
   });
 
+// Add a delete video endpoint
+app.post('/api/youtube/delete-video', async (req, res) => {
+  try {
+    const { videoId, userId } = req.body;
+    
+    if (!videoId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Video ID is required' 
+      });
+    }
+    
+    // In a real application, you would delete from your database
+    // For example: await Video.findOneAndDelete({ videoId, userId });
+    console.log(`Deleting video ${videoId} for user ${userId || 'anonymous'}`);
+    
+    // For our simple implementation, we'll just return success
+    // since the actual deletion happens on the client side in localStorage
+    return res.status(200).json({
+      success: true,
+      message: 'Video deleted successfully',
+      videoId: videoId
+    });
+  } catch (error) {
+    console.error('Error deleting video:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to delete video',
+      error: error.toString()
+    });
+  }
+});
 
 // Start server
 const PORT = process.env.PORT || 5000;
