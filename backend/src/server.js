@@ -100,10 +100,152 @@ require('./config/passport')(passport);
 // OpenAI content generation routes
 app.post('/api/generate-content', async (req, res) => {
   try {
-    const { prompt, contentType, tone = 'professional' } = req.body;
+    // Accept either direct prompt or messages array
+    const { prompt, contentType, tone = 'professional', messages, model = "gpt-4o-mini", type, transcript } = req.body;
     
+    // Define secure prompts for YouTube content generation
+    const SECURE_PROMPTS = {
+      'post-short': `Use this YouTube transcript to write a LinkedIn short-form written post: "${transcript || ''}"
+
+Apply the following rules **strictly**:
+
+1. **Completely rephrase** everything — including headings, examples, analogies, and figures.
+2. **Do not use this symbol: "-"**
+3. **Change every number, example, and order of pointers** to ensure it's 100 percent untraceable.
+4. **Create a fresh, original headline** that is attention-grabbing and not similar to the video title.
+5. **Restructure the flow** — don't just summarize sequentially. Rearrange points for originality.
+6. Use **short paragraphs** and leave **one line of space between each point**.
+7. Keep the entire post **under 1000 characters**.
+8. **Remove all bold text**, emojis, links, names, tool references, or brand mentions.
+9. Use a **casual, founder-style tone** that feels like expert advice being shared.
+10. Avoid storytelling. Focus on **insights, learnings, and takeaways**.
+11. **No hashtags**, no promotional CTAs. Just a clean, high-value post.
+12. Make sure the Hook/introduction line is not completely out of place, it should be an opener to the whole content to follow.`,
+
+      'post-long': `Use this YouTube transcript to write a LinkedIn long-form written post: "${transcript || ''}"
+
+Apply the following rules **strictly**:
+
+1. **Completely rephrase** everything — including headings, examples, analogies, and figures.
+2. **Do not use this symbol: "-"**
+3. **Change every number, example, and order of pointers** to ensure it's 100 percent untraceable.
+4. **Create a fresh, original headline** that is attention-grabbing and not similar to the video title.
+5. **Restructure the flow** — don't just summarize sequentially. Rearrange points for originality.
+6. Use **short paragraphs** and leave **one line of space between each point**.
+7. Keep the entire post **under 2000 characters**.
+8. **Remove all bold text**, emojis, links, names, tool references, or brand mentions.
+9. Use a **casual, founder-style tone** that feels like expert advice being shared.
+10. Avoid storytelling. Focus on **insights, learnings, and takeaways**.
+11. **No hashtags**, no promotional CTAs. Just a clean, high-value post.
+12. Make sure the Hook/introduction line is not completely out of place, it should be an opener to the whole content to follow.`,
+
+      'carousel': `Use this YouTube transcript to turn the content into a LinkedIn carousel post: "${transcript || ''}"
+
+Follow all the rules below exactly:
+
+1. Create a **new, scroll-stopping hook** for Slide 1 — do not use the YouTube title.
+2. **Do not use this symbol: "-" "--**
+3. Every slide should contain a **short heading integrated into the paragraph**, not on a separate line.
+4. Each slide must be **fully rephrased** — change examples, numbers, order of points, and structure.
+5. Use **short sentences or bullets**, with clear spacing for readability.
+6. **No names, no brands, no tools**, no external mentions.
+7. Remove all **bold text**, unnecessary line breaks, and symbols.
+8. The tone should be **easy to understand**, like a founder breaking down a playbook.
+9. Include **takeaways or a conclusion slide**, but without CTAs or promotions.
+10. The flow should feel **logical and punchy**, not robotic or templated.
+11. Avoid fluff. Every slide should add **clear value or insight**.
+12. Separate each slide with "\n\n" to indicate a new slide.
+13. Make sure the Hook/introduction line is not completely out of place, it should be an opener to the whole content to follow.
+14. Make sure the carousel is not too long, it should be 8-10 slides max.`
+    };
+    
+    // Check if this is a YouTube transcript content generation request
+    if (type && transcript && SECURE_PROMPTS[type]) {
+      try {
+        console.log(`Generating ${type} content from YouTube transcript with model: ${model}`);
+        
+        // Use the secure prompts stored on the server
+        const completion = await openai.chat.completions.create({
+          model: model,
+          messages: [
+            { 
+              role: "system", 
+              content: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts." 
+            },
+            { 
+              role: "user", 
+              content: SECURE_PROMPTS[type]
+            }
+          ],
+          max_tokens: 2000
+        });
+        
+        // If it's a carousel, clean up slide prefixes and any standalone "Slide X" occurrences
+        let generatedContent = completion.choices[0].message.content;
+        if (type === 'carousel') {
+          // Split by double newlines to get individual slides
+          const carouselSlides = generatedContent.split('\n\n').filter(s => s.trim());
+          
+          // Process slides to remove "Slide X" prefix slides and clean remaining slide content
+          const cleanedSlides = [];
+          for (let i = 0; i < carouselSlides.length; i++) {
+            const current = carouselSlides[i].trim();
+            
+            // Skip slides that only contain "Slide X" and nothing else
+            if (/^Slide\s*\d+\s*$/.test(current)) {
+              continue;
+            }
+            
+            // Remove "Slide X:" prefix if it exists
+            cleanedSlides.push(current.replace(/^Slide\s*\d+[\s:.]+/i, '').trim());
+          }
+          
+          generatedContent = cleanedSlides.join('\n\n');
+          console.log(`Generated carousel with ${cleanedSlides.length} cleaned slides`);
+        }
+        
+        return res.json({ 
+          content: generatedContent,
+          model: completion.model,
+          usage: completion.usage,
+          type: type,
+          success: true
+        });
+      } catch (openaiError) {
+        console.error('Error from OpenAI API (YouTube content):', openaiError);
+        handleOpenAIError(openaiError, res);
+        return;
+      }
+    }
+    
+    // Check if we have direct messages to use (from frontend with OpenAI format)
+    if (messages && Array.isArray(messages)) {
+      try {
+        console.log(`Generating content with model: ${model}, using messages array`);
+        
+        const completion = await openai.chat.completions.create({
+          model: model,
+          messages: messages,
+          max_tokens: 2000
+        });
+        
+        return res.json({ 
+          content: completion.choices[0].message.content,
+          model: completion.model,
+          usage: completion.usage,
+          choices: completion.choices,
+          success: true
+        });
+      } catch (openaiError) {
+        console.error('Error from OpenAI API (messages format):', openaiError);
+        handleOpenAIError(openaiError, res);
+        return;
+      }
+    }
+    
+    // If no messages array, use prompt-based approach
     if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
+      return res.status(400).json({ error: 'Either prompt, transcript, or messages array is required', success: false });
     }
 
     // Enhanced prompt for LinkedIn content
@@ -113,12 +255,12 @@ app.post('/api/generate-content', async (req, res) => {
     
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini", // or "gpt-3.5-turbo" if you prefer
+        model: model, // Use requested model or default
         messages: [
           { role: "system", content: "You are a professional LinkedIn content creator. Create engaging, professional content that would perform well on LinkedIn." },
           { role: "user", content: enhancedPrompt }
         ],
-        max_tokens: 500
+        max_tokens: 2000
       });
       
       // Extract hashtags
@@ -127,30 +269,41 @@ app.post('/api/generate-content', async (req, res) => {
       
       res.json({ 
         content: content,
-        suggestedHashtags: hashtags
+        suggestedHashtags: hashtags,
+        model: completion.model,
+        usage: completion.usage,
+        choices: completion.choices,
+        success: true
       });
     } catch (openaiError) {
-      console.error('Error from OpenAI API:', openaiError);
-      
-      // Check for quota exceeded error
-      if (openaiError.status === 429 || (openaiError.error && openaiError.error.type === 'insufficient_quota')) {
-        return res.status(402).json({ 
-          error: 'OpenAI API quota exceeded. Please check your billing details.',
-          message: 'The API key has run out of credits. Please update your OpenAI API key or check your billing status.'
-        });
-      }
-      
-      // For other OpenAI errors
-      res.status(503).json({ 
-        error: 'OpenAI service temporarily unavailable', 
-        message: openaiError.message || 'Failed to generate content'
-      });
+      handleOpenAIError(openaiError, res);
     }
   } catch (error) {
     console.error('Error generating content:', error);
-    res.status(500).json({ error: 'Failed to generate content', message: error.message });
+    res.status(500).json({ error: 'Failed to generate content', message: error.message, success: false });
   }
 });
+
+// Helper function to handle OpenAI errors
+function handleOpenAIError(openaiError, res) {
+  console.error('Error from OpenAI API:', openaiError);
+  
+  // Check for quota exceeded error
+  if (openaiError.status === 429 || (openaiError.error && openaiError.error.type === 'insufficient_quota')) {
+    return res.status(402).json({ 
+      error: 'OpenAI API quota exceeded. Please check your billing details.',
+      message: 'The API key has run out of credits. Please update your OpenAI API key or check your billing status.',
+      success: false
+    });
+  }
+  
+  // For other OpenAI errors
+  res.status(503).json({ 
+    error: 'OpenAI service temporarily unavailable', 
+    message: openaiError.message || 'Failed to generate content',
+    success: false
+  });
+}
 
 app.post('/api/generate-image', async (req, res) => {
   try {
@@ -220,7 +373,7 @@ app.use('/api/cron', cronRoutes);
 app.use('/api/fonts', fontRoutes);
 
 // Add carousel route handler for YouTube videos
-app.post('/api/carousels/youtube', async (req, res) => {
+app.post('/api/youtube-carousels', async (req, res) => {
   try {
     const { videos, userId } = req.body;
     
@@ -234,13 +387,13 @@ app.post('/api/carousels/youtube', async (req, res) => {
     // Create simple video entries with minimal processing
     const savedVideos = videos.map(video => {
       return {
-        userId: userId,
-        id: video.id,
+        userId: userId || 'anonymous',
+        id: video.id || video.videoId,
         title: video.title || 'YouTube Video',
         source: 'youtube',
-        videoId: video.id,
-        videoUrl: video.url,
-        thumbnailUrl: video.thumbnail,
+        videoId: video.id || video.videoId,
+        videoUrl: video.url || video.videoUrl || `https://youtube.com/watch?v=${video.id || video.videoId}`,
+        thumbnailUrl: video.thumbnail || video.thumbnailUrl,
         status: 'ready', // Mark as ready immediately - no processing needed
         requestDate: new Date(),
         deliveryDate: new Date(), // Set delivery date to now since we're not processing

@@ -7,7 +7,7 @@ const path = require('path');
 const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const xml2js = require('xml2js');
-const { getChannelVideos, createCarousels, saveYoutubeVideo, getUserSavedVideos, deleteSavedVideo, saveVideoTranscript } = require('../controllers/youtubeController');
+const { getChannelVideos, createCarousels, saveYoutubeVideo, getUserSavedVideos, deleteSavedVideo, saveVideoTranscript, saveMultipleVideos } = require('../controllers/youtubeController');
 const SavedVideo = require('../models/savedVideo');
 
 // Load environment variables
@@ -202,11 +202,25 @@ router.post('/carousels', createCarousels);
 router.post('/save', saveYoutubeVideo);
 
 /**
+ * @route   POST /api/youtube/save-videos
+ * @desc    Save multiple YouTube videos at once
+ * @access  Public
+ */
+router.post('/save-videos', saveMultipleVideos);
+
+/**
  * @route   POST /api/youtube/save-transcript
  * @desc    Save a transcript for a YouTube video
  * @access  Private
  */
 router.post('/save-transcript', saveVideoTranscript);
+
+/**
+ * @route   POST /api/youtube/save-video-transcript
+ * @desc    Save a video with its transcript all at once
+ * @access  Public
+ */
+router.post('/save-video-transcript', saveVideoTranscript);
 
 /**
  * @route   GET /api/youtube/saved/:userId
@@ -398,94 +412,6 @@ router.post('/analyze', async (req, res) => {
       success: false, 
       message: error.message || 'Failed to analyze transcript',
       error: error.response?.data || error.toString()
-    });
-  }
-});
-
-/**
- * @route   POST /api/youtube/save-videos
- * @desc    Save multiple YouTube videos at once
- * @access  Private
- */
-router.post('/save-videos', async (req, res) => {
-  try {
-    const { videos, userId } = req.body;
-    
-    if (!videos || !Array.isArray(videos) || videos.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Videos array is required and must not be empty'
-      });
-    }
-    
-    const savedVideos = [];
-    const errors = [];
-    
-    // Process each video
-    for (const video of videos) {
-      try {
-        // Extract required fields
-        const { id, videoId, title, thumbnail, thumbnailUrl } = video;
-        
-        if (!id && !videoId) {
-          errors.push({ video, error: 'Missing video ID' });
-          continue;
-        }
-        
-        if (!title) {
-          errors.push({ video, error: 'Missing title' });
-          continue;
-        }
-        
-        // Use the appropriate thumbnail field
-        const finalThumbnailUrl = thumbnailUrl || thumbnail;
-        if (!finalThumbnailUrl) {
-          errors.push({ video, error: 'Missing thumbnail URL' });
-          continue;
-        }
-        
-        // Prepare data for saving
-        const videoData = {
-          userId: userId || 'anonymous',
-          videoId: videoId || id,
-          title,
-          thumbnailUrl: finalThumbnailUrl,
-          channelTitle: video.channelName || video.channelTitle || 'Unknown Channel',
-          publishedAt: video.upload_date || video.publishedAt || new Date(),
-          savedAt: new Date(),
-          transcript: video.transcript || '',
-          formattedTranscript: video.formattedTranscript || [],
-          language: video.language || 'Unknown',
-          is_generated: video.is_generated || false
-        };
-        
-        // Save or update the video in database
-        const savedVideo = await SavedVideo.findOneAndUpdate(
-          { userId: videoData.userId, videoId: videoData.videoId },
-          videoData,
-          { new: true, upsert: true }
-        );
-        
-        savedVideos.push(savedVideo);
-      } catch (videoError) {
-        console.error('Error saving individual video:', videoError);
-        errors.push({ video, error: videoError.message });
-      }
-    }
-    
-    return res.status(200).json({
-      success: true,
-      message: `Saved ${savedVideos.length} videos successfully`,
-      count: savedVideos.length,
-      savedVideos,
-      errors: errors.length > 0 ? errors : undefined
-    });
-  } catch (error) {
-    console.error('Error saving multiple videos:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to save videos',
-      error: error.toString()
     });
   }
 });

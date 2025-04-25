@@ -307,32 +307,39 @@ const createCarousels = async (req, res) => {
   }
 };
 
-// Save YouTube videos to user's saved videos list
+/**
+ * @desc    Save a YouTube video for a user
+ * @route   POST /api/youtube/save
+ * @access  Public
+ */
 const saveYoutubeVideo = async (req, res) => {
   try {
-    const { userId, videoId, title, thumbnailUrl, channelTitle, publishedAt } = req.body;
+    const { videoId, title, thumbnailUrl, channelTitle, publishedAt, userId } = req.body;
 
-    if (!userId || !videoId || !title || !thumbnailUrl) {
+    if (!videoId || !title || !thumbnailUrl) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: userId, videoId, title, and thumbnailUrl are required'
+        message: 'Video ID, title, and thumbnail URL are required'
       });
     }
 
-    // Check if the user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+    // Check if the user exists if userId is provided
+    if (userId && userId !== 'anonymous') {
+      try {
+        const user = await User.findById(userId);
+        if (!user) {
+          console.warn(`User ${userId} not found, but continuing with save operation`);
+        }
+      } catch (userErr) {
+        console.warn(`Error checking user ${userId}, but continuing:`, userErr.message);
+      }
     }
 
     // Create or update saved video
     const savedVideo = await SavedVideo.findOneAndUpdate(
-      { userId, videoId },
+      { userId: userId || 'anonymous', videoId },
       {
-        userId,
+        userId: userId || 'anonymous',
         videoId,
         title,
         thumbnailUrl,
@@ -358,6 +365,96 @@ const saveYoutubeVideo = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Save multiple YouTube videos for a user
+ * @route   POST /api/youtube/save-videos
+ * @access  Public
+ */
+const saveMultipleVideos = async (req, res) => {
+  try {
+    const { videos, userId } = req.body;
+
+    if (!videos || !Array.isArray(videos) || videos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one video is required'
+      });
+    }
+
+    // Check if the user exists if userId is provided and not anonymous
+    if (userId && userId !== 'anonymous') {
+      try {
+        const user = await User.findById(userId);
+        if (!user) {
+          console.warn(`User ${userId} not found, but continuing with save operation`);
+        }
+      } catch (userErr) {
+        console.warn(`Error checking user ${userId}, but continuing:`, userErr.message);
+      }
+    }
+
+    const savedVideos = [];
+    const errors = [];
+
+    // Process each video in the array
+    for (const video of videos) {
+      const { id, videoId, title, thumbnail, thumbnailUrl, transcript, formattedTranscript, language, is_generated } = video;
+      
+      const actualVideoId = videoId || id;
+      
+      if (!actualVideoId || !title) {
+        errors.push(`Video ID and title required for video: ${JSON.stringify(video)}`);
+        continue;
+      }
+
+      try {
+        // Create the video object with available data
+        const videoData = {
+          userId: userId || 'anonymous',
+          videoId: actualVideoId,
+          title,
+          thumbnailUrl: thumbnailUrl || thumbnail || `https://img.youtube.com/vi/${actualVideoId}/mqdefault.jpg`,
+          channelTitle: video.channelName || video.channelTitle || 'Unknown Channel',
+          publishedAt: video.publishedAt || video.upload_date || new Date(),
+          savedAt: video.savedAt || new Date(),
+          // Include transcript data if available
+          ...(transcript && { transcript }),
+          ...(formattedTranscript && { formattedTranscript }),
+          ...(language && { language }),
+          ...(typeof is_generated !== 'undefined' && { is_generated })
+        };
+
+        // Create or update the video in the database
+        const savedVideo = await SavedVideo.findOneAndUpdate(
+          { userId: userId || 'anonymous', videoId: actualVideoId },
+          videoData,
+          { new: true, upsert: true }
+        );
+
+        savedVideos.push(savedVideo);
+      } catch (videoError) {
+        console.error(`Error saving video ${actualVideoId}:`, videoError);
+        errors.push(`Failed to save video ${actualVideoId}: ${videoError.message}`);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Saved ${savedVideos.length} video(s) successfully${errors.length > 0 ? ` with ${errors.length} error(s)` : ''}`,
+      count: savedVideos.length,
+      savedVideos,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error) {
+    console.error('Error saving multiple YouTube videos:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to save videos',
+      error: error.toString()
+    });
+  }
+};
+
 // Get saved YouTube videos for a user
 const getUserSavedVideos = async (req, res) => {
   try {
@@ -370,13 +467,17 @@ const getUserSavedVideos = async (req, res) => {
       });
     }
 
-    // Check if the user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+    // Skip user check for anonymous users
+    if (userId !== 'anonymous') {
+      try {
+        // Check if the user exists
+        const user = await User.findById(userId);
+        if (!user) {
+          console.warn(`User ${userId} not found in database, but will continue searching for videos`);
+        }
+      } catch (userError) {
+        console.warn(`Error finding user ${userId}, but will continue searching for videos:`, userError.message);
+      }
     }
 
     // Get all saved videos for the user, sorted by savedAt in descending order
@@ -444,9 +545,16 @@ const deleteSavedVideo = async (req, res) => {
  */
 const saveVideoTranscript = async (req, res) => {
   try {
-    const { videoId, transcript, formattedTranscript, language, is_generated, userId } = req.body;
+    const { video, videoId, transcript, formattedTranscript, language, is_generated, userId } = req.body;
     
-    if (!videoId || (!transcript && !formattedTranscript)) {
+    // Handle both direct parameters and nested video object
+    const actualVideoId = video?.id || video?.videoId || videoId;
+    const actualTranscript = video?.transcript || transcript;
+    const actualFormattedTranscript = video?.formattedTranscript || formattedTranscript;
+    const actualLanguage = video?.language || language || 'Unknown';
+    const actualIsGenerated = typeof (video?.is_generated) !== 'undefined' ? video.is_generated : (typeof is_generated !== 'undefined' ? is_generated : false);
+    
+    if (!actualVideoId || (!actualTranscript && !actualFormattedTranscript)) {
       return res.status(400).json({
         success: false,
         message: 'Video ID and at least one transcript format are required'
@@ -457,17 +565,17 @@ const saveVideoTranscript = async (req, res) => {
     let savedVideo;
     
     try {
-      savedVideo = await SavedVideo.findOne({ videoId, userId: userId || 'anonymous' });
+      savedVideo = await SavedVideo.findOne({ videoId: actualVideoId, userId: userId || 'anonymous' });
     } catch (dbError) {
       console.error('Database error when finding video:', dbError);
       // If there's an error with the database, we'll still allow saving to a new document
     }
     
     const transcriptData = {
-      transcript: transcript || '',
-      formattedTranscript: formattedTranscript || [],
-      language: language || 'Unknown',
-      is_generated: is_generated || false,
+      transcript: actualTranscript || '',
+      formattedTranscript: actualFormattedTranscript || [],
+      language: actualLanguage,
+      is_generated: actualIsGenerated,
       updatedAt: new Date()
     };
     
@@ -476,23 +584,35 @@ const saveVideoTranscript = async (req, res) => {
     if (savedVideo) {
       // Update existing video with transcript
       result = await SavedVideo.findOneAndUpdate(
-        { videoId, userId: userId || 'anonymous' },
+        { videoId: actualVideoId, userId: userId || 'anonymous' },
         { $set: transcriptData },
         { new: true }
       );
       
-      console.log(`Updated existing video (${videoId}) with transcript`);
+      console.log(`Updated existing video (${actualVideoId}) with transcript`);
     } else {
       // No existing video found, create a minimal entry with just the transcript
-      result = await SavedVideo.create({
+      // Use video data if provided
+      const videoData = video ? {
         userId: userId || 'anonymous',
-        videoId,
-        title: 'Untitled Video',
-        thumbnailUrl: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        videoId: actualVideoId,
+        title: video.title || 'Untitled Video',
+        thumbnailUrl: video.thumbnailUrl || video.thumbnail || `https://img.youtube.com/vi/${actualVideoId}/mqdefault.jpg`,
+        channelTitle: video.channelName || video.channelTitle || 'Unknown Channel',
+        publishedAt: video.publishedAt || video.upload_date || new Date(),
+        savedAt: video.savedAt || new Date(),
         ...transcriptData
-      });
+      } : {
+        userId: userId || 'anonymous',
+        videoId: actualVideoId,
+        title: 'Untitled Video',
+        thumbnailUrl: `https://img.youtube.com/vi/${actualVideoId}/mqdefault.jpg`,
+        ...transcriptData
+      };
       
-      console.log(`Created new video entry (${videoId}) with transcript`);
+      result = await SavedVideo.create(videoData);
+      
+      console.log(`Created new video entry (${actualVideoId}) with transcript`);
     }
     
     return res.status(200).json({
@@ -515,6 +635,7 @@ module.exports = {
   getChannelVideos,
   createCarousels,
   saveYoutubeVideo,
+  saveMultipleVideos,
   getUserSavedVideos,
   deleteSavedVideo,
   saveVideoTranscript
