@@ -667,6 +667,125 @@ app.post('/api/youtube/delete-video', async (req, res) => {
   }
 });
 
+// Add carousel contents endpoints
+// In-memory storage for carousel content (replace with database in production)
+let carouselContents = [];
+
+// POST endpoint to save carousel content
+app.post('/api/carousel-contents', async (req, res) => {
+  try {
+    const { content, userId } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Content object is required' 
+      });
+    }
+    
+    // Store user ID with the content
+    const contentWithUser = {
+      ...content,
+      userId: userId || 'anonymous',
+      savedAt: new Date().toISOString()
+    };
+    
+    // In a real application, you would save to your database
+    // For our simple implementation, we'll store in memory
+    carouselContents.push(contentWithUser);
+    
+    console.log(`Saved carousel content ${content.id} for user ${userId || 'anonymous'}`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Content saved successfully',
+      data: contentWithUser
+    });
+  } catch (error) {
+    console.error('Error saving carousel content:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to save content',
+      error: error.toString()
+    });
+  }
+});
+
+// GET endpoint to retrieve carousel contents for a user
+app.get('/api/carousel-contents', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'User ID is required' 
+      });
+    }
+    
+    // Filter contents by user ID
+    const userContents = carouselContents.filter(content => content.userId === userId);
+    
+    return res.status(200).json({
+      success: true,
+      message: `Found ${userContents.length} saved contents for user`,
+      data: userContents
+    });
+  } catch (error) {
+    console.error('Error retrieving carousel contents:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to retrieve contents',
+      error: error.toString()
+    });
+  }
+});
+
+// DELETE endpoint to remove a carousel content
+app.delete('/api/carousel-contents/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.query;
+    
+    if (!id) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Content ID is required' 
+      });
+    }
+    
+    // Find the index of the content to delete
+    const contentIndex = carouselContents.findIndex(content => 
+      content.id === id && content.userId === userId
+    );
+    
+    if (contentIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Content not found'
+      });
+    }
+    
+    // Remove the content from the array
+    carouselContents.splice(contentIndex, 1);
+    
+    console.log(`Deleted carousel content ${id} for user ${userId || 'anonymous'}`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Content deleted successfully',
+      contentId: id
+    });
+  } catch (error) {
+    console.error('Error deleting carousel content:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to delete content',
+      error: error.toString()
+    });
+  }
+});
+
 // Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
