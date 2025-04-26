@@ -317,6 +317,7 @@ const loginUser = asyncHandler(async (req, res) => {
       onboardingCompleted: user.onboardingCompleted,
       profilePicture: user.profilePicture,
       authMethod: user.authMethod,
+      role: user.role,
     },
   });
 });

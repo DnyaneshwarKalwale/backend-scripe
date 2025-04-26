@@ -44,4 +44,5 @@ module.exports = {
   checkOnboarding,
   checkEmailVerified,
   checkAdmin,
+  admin: checkAdmin
 }; 

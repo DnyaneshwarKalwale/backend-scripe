@@ -1,5 +1,6 @@
 const express = require('express');
 const dotenv = require('dotenv');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const passport = require('passport');
@@ -21,9 +22,19 @@ const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
 const fs = require('fs');
 const cronRoutes = require('./routes/cronRoutes');
+const CarouselContent = require('./models/carouselContentModel');
+const cloudinary = require('cloudinary').v2;
 
 // Load environment variables
 dotenv.config();
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dexlsqpbv',
+  api_key: process.env.CLOUDINARY_API_KEY || '',
+  api_secret: process.env.CLOUDINARY_API_SECRET || '',
+  secure: true
+});
 
 // Connect to database
 connectDB();
@@ -371,6 +382,8 @@ app.use('/api/posts', postRoutes);
 app.use('/api/carousels', carouselRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/fonts', fontRoutes);
+// Admin routes
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Add carousel route handler for YouTube videos
 app.post('/api/youtube-carousels', async (req, res) => {
@@ -477,7 +490,16 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
             message: 'Transcript loaded from cache',
             transcript: savedTranscript.transcript,
             language: savedTranscript.language || 'en',
-            is_generated: savedTranscript.is_generated || false
+            is_generated: savedTranscript.is_generated || false,
+            // Include metadata if available in the saved file
+            duration: savedTranscript.duration || 'N/A',
+            thumbnail: savedTranscript.thumbnail || '',
+            title: savedTranscript.title || '',
+            channelName: savedTranscript.channelName || '',
+            viewCount: savedTranscript.viewCount || 0,
+            uploadDate: savedTranscript.uploadDate || '',
+            formattedTranscript: savedTranscript.formattedTranscript || 
+              formatTranscriptToBulletPoints(savedTranscript.transcript)
           });
         }
       } catch (readError) {
@@ -489,7 +511,37 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     // We try auto-generated first, then manual if available
     const command = `yt-dlp --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
+    // Add a separate command to fetch video metadata including duration
+    const metadataCommand = `yt-dlp -J "${videoUrl}"`;
+    
     try {
+      // First fetch video metadata to get duration
+      let duration = "N/A";
+      let thumbnail = "";
+      let title = "";
+      let channelName = "";
+      let viewCount = 0;
+      let uploadDate = "";
+      
+      try {
+        const { stdout: metadataOutput } = await execPromise(metadataCommand);
+        const metadata = JSON.parse(metadataOutput);
+        
+        // Extract relevant metadata
+        duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
+        thumbnail = metadata.thumbnail || "";
+        title = metadata.title || "";
+        channelName = metadata.channel || metadata.uploader || "";
+        viewCount = metadata.view_count || 0;
+        uploadDate = metadata.upload_date || "";
+        
+        console.log(`Video metadata fetched successfully for ${videoId}, duration: ${duration}`);
+      } catch (metadataError) {
+        console.error('Error fetching video metadata:', metadataError);
+        // Continue with transcript extraction even if metadata fails
+      }
+      
+      // Then proceed with transcript extraction
       const { stdout, stderr } = await execPromise(command);
       console.log('yt-dlp output:', stdout);
       
@@ -536,7 +588,13 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         transcript: transcriptText,
         language: 'en',
         is_generated: is_generated,
-        extractedAt: new Date().toISOString()
+        extractedAt: new Date().toISOString(),
+        duration: duration,
+        thumbnail: thumbnail,
+        title: title,
+        channelName: channelName,
+        viewCount: viewCount,
+        uploadDate: uploadDate
       };
       
       fs.writeFileSync(outputFileName, JSON.stringify(transcriptData, null, 2));
@@ -550,7 +608,14 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         transcript: transcriptText,
         formattedTranscript: formattedTranscript,
         language: 'en',
-        is_generated: is_generated
+        is_generated: is_generated,
+        // Include video metadata in the response
+        duration: duration,
+        thumbnail: thumbnail,
+        title: title,
+        channelName: channelName,
+        viewCount: viewCount,
+        uploadDate: uploadDate
       });
     } catch (error) {
       console.error('Error extracting transcript with yt-dlp:', error);
@@ -613,6 +678,26 @@ function formatTranscriptToBulletPoints(text) {
   return bulletPoints.length > 0 ? bulletPoints : ["No meaningful transcript content available"];
 }
 
+// Helper function to format seconds into a human-readable duration (MM:SS)
+function formatDuration(seconds) {
+  if (!seconds || isNaN(seconds)) return "N/A";
+  
+  // Convert to integer
+  const totalSeconds = Math.floor(seconds);
+  
+  // Calculate hours, minutes, seconds
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  
+  // Format as HH:MM:SS or MM:SS
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  } else {
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+}
+
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
@@ -627,6 +712,17 @@ app.get('/health', async (req, res) => {
 
 // Error handler middleware
 app.use(errorHandler);
+
+// Add detailed error logging middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Server error',
+    error: err.message,
+    stack: process.env.NODE_ENV === 'production' ? '🥞' : err.stack
+  });
+});
 
 app._router.stack
   .filter(r => r.route)
@@ -683,23 +779,49 @@ app.post('/api/carousel-contents', async (req, res) => {
       });
     }
     
-    // Store user ID with the content
-    const contentWithUser = {
-      ...content,
+    console.log(`Saving carousel content for user ${userId || 'anonymous'}:`, content.id);
+    
+    // Check if this content already exists (using the ID)
+    const existingContent = await CarouselContent.findOne({ id: content.id });
+    
+    if (existingContent) {
+      // Update the existing content
+      existingContent.title = content.title;
+      existingContent.content = content.content;
+      existingContent.type = content.type;
+      existingContent.videoId = content.videoId || null;
+      existingContent.videoTitle = content.videoTitle || null;
+      existingContent.updatedAt = new Date();
+      
+      await existingContent.save();
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Content updated successfully',
+        data: existingContent
+      });
+    }
+    
+    // Create a new content document
+    const newContent = new CarouselContent({
+      id: content.id,
       userId: userId || 'anonymous',
-      savedAt: new Date().toISOString()
-    };
+      title: content.title,
+      content: content.content,
+      type: content.type,
+      videoId: content.videoId || null,
+      videoTitle: content.videoTitle || null,
+      createdAt: content.createdAt || new Date(),
+      updatedAt: new Date()
+    });
     
-    // In a real application, you would save to your database
-    // For our simple implementation, we'll store in memory
-    carouselContents.push(contentWithUser);
+    // Save to MongoDB
+    await newContent.save();
     
-    console.log(`Saved carousel content ${content.id} for user ${userId || 'anonymous'}`);
-    
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
       message: 'Content saved successfully',
-      data: contentWithUser
+      data: newContent
     });
   } catch (error) {
     console.error('Error saving carousel content:', error);
@@ -723,8 +845,9 @@ app.get('/api/carousel-contents', async (req, res) => {
       });
     }
     
-    // Filter contents by user ID
-    const userContents = carouselContents.filter(content => content.userId === userId);
+    // Find all content for this user, sorted by createdAt (newest first)
+    const userContents = await CarouselContent.find({ userId })
+      .sort({ createdAt: -1 });
     
     return res.status(200).json({
       success: true,
@@ -754,20 +877,18 @@ app.delete('/api/carousel-contents/:id', async (req, res) => {
       });
     }
     
-    // Find the index of the content to delete
-    const contentIndex = carouselContents.findIndex(content => 
-      content.id === id && content.userId === userId
-    );
+    // Find and delete the content
+    const deletedContent = await CarouselContent.findOneAndDelete({ 
+      id: id,
+      userId: userId || 'anonymous'
+    });
     
-    if (contentIndex === -1) {
+    if (!deletedContent) {
       return res.status(404).json({
         success: false,
         message: 'Content not found'
       });
     }
-    
-    // Remove the content from the array
-    carouselContents.splice(contentIndex, 1);
     
     console.log(`Deleted carousel content ${id} for user ${userId || 'anonymous'}`);
     

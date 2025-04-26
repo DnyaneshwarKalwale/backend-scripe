@@ -1,24 +1,63 @@
 const express = require('express');
 const router = express.Router();
 const { 
+  createCarousel, 
   getCarousels, 
   getCarousel, 
-  createCarousel,
   updateCarousel,
   deleteCarousel,
-  downloadCarouselPdf
+  downloadCarouselPdf,
+  completeCarouselRequest
 } = require('../controllers/carouselController');
-const { protect } = require('../middleware/authMiddleware');
+const {
+  submitCarouselRequest,
+  getAdminRequests,
+  getRequestById,
+  updateRequestStatus,
+  getUserRequests
+} = require('../controllers/carouselRequestController');
+const { protect, admin } = require('../middleware/authMiddleware');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Configure local storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.join(process.cwd(), 'uploads');
+    // Ensure directory exists
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// Configure upload limits
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
+
+// Middleware to log file uploads
+const fileUploadLogger = (req, res, next) => {
+  console.log('File upload request received');
+  console.log('Files:', req.files);
+  console.log('Body:', req.body);
+  next();
+};
 
 // All routes are protected with authentication
 router.use(protect);
 
-// Base routes
+// Regular carousel routes
 router.route('/')
-  .get(getCarousels)
-  .post(createCarousel);
+  .post(createCarousel)
+  .get(getCarousels);
 
-// Specific carousel routes
+// Individual carousel routes
 router.route('/:id')
   .get(getCarousel)
   .put(updateCarousel)
@@ -26,5 +65,15 @@ router.route('/:id')
 
 // Download route
 router.get('/:id/download', downloadCarouselPdf);
+
+// Carousel request routes
+router.post('/submit-request', upload.array('files', 5), submitCarouselRequest);
+router.get('/user/requests', getUserRequests);
+router.get('/requests/:id', getRequestById);
+
+// Admin routes
+router.get('/admin/requests', admin, getAdminRequests);
+router.patch('/requests/:id/status', admin, updateRequestStatus);
+router.post('/requests/:id/complete', admin, upload.array('files', 5), fileUploadLogger, completeCarouselRequest);
 
 module.exports = router; 

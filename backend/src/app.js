@@ -1,0 +1,43 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const { errorHandler } = require('./middleware/errorMiddleware');
+const userRoutes = require('./routes/userRoutes');
+const carouselRoutes = require('./routes/carouselRoutes');
+const { connectDB } = require('./config/db');
+
+// Set up Express app
+const app = express();
+
+// Connect to database
+connectDB();
+
+// Middleware
+app.use(cors({
+  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://localhost:5173'],
+  credentials: true
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Ensure uploads directory exists
+const fs = require('fs');
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(uploadsDir));
+
+// Routes
+app.use('/api/users', userRoutes);
+app.use('/api/carousels', carouselRoutes);
+
+// Default route
+app.get('/', (req, res) => {
+  res.json({ message: 'API is running' });
+});
+
+// Error handler middleware
+app.use(errorHandler); 
