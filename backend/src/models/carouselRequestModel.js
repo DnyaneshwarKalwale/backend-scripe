@@ -30,6 +30,14 @@ const carouselRequestSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  userName: {
+    type: String,
+    default: 'Unknown User'
+  },
+  userEmail: {
+    type: String,
+    default: ''
+  },
   id: {
     type: String,
     default: () => uuidv4(),

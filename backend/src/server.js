@@ -24,6 +24,7 @@ const fs = require('fs');
 const cronRoutes = require('./routes/cronRoutes');
 const CarouselContent = require('./models/carouselContentModel');
 const cloudinary = require('cloudinary').v2;
+const userLimitRoutes = require('./routes/userLimitRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -380,8 +381,9 @@ app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/carousels', carouselRoutes);
-app.use('/api/cron', cronRoutes);
 app.use('/api/fonts', fontRoutes);
+app.use('/api/cron', cronRoutes);
+app.use('/api/user-limits', userLimitRoutes);
 // Admin routes
 app.use('/api/admin', require('./routes/adminRoutes'));
 
@@ -906,6 +908,9 @@ app.delete('/api/carousel-contents/:id', async (req, res) => {
     });
   }
 });
+
+// Register routes
+app.use('/api/user-limits', userLimitRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

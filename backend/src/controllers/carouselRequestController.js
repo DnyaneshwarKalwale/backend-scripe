@@ -18,7 +18,9 @@ const submitCarouselRequest = asyncHandler(async (req, res) => {
       videoId, 
       videoTitle,
       youtubeUrl,
-      fileUrls = [] 
+      fileUrls = [],
+      userName,
+      userEmail
     } = req.body;
 
     // Validate required fields
@@ -36,15 +38,24 @@ const submitCarouselRequest = asyncHandler(async (req, res) => {
       videoTitle,
       youtubeUrl,
       files: fileUrls.map(url => ({ url })),
-      status: 'pending'
+      status: 'pending',
+      userName: userName || req.user.firstName || req.user.name || 'Unknown User',
+      userEmail: userEmail || req.user.email || ''
     });
 
     if (request) {
+      // Increment user's request count
+      const userLimit = req.userLimit;
+      userLimit.count += 1;
+      await userLimit.save();
+
       res.status(201).json({
         _id: request._id,
         title: request.title,
         status: request.status,
-        createdAt: request.createdAt
+        createdAt: request.createdAt,
+        currentCount: userLimit.count,
+        limit: userLimit.limit
       });
     } else {
       res.status(400).json({ message: 'Invalid request data' });

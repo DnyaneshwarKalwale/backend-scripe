@@ -16,7 +16,7 @@ const {
   updateRequestStatus,
   getUserRequests
 } = require('../controllers/carouselRequestController');
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect, admin, checkUserLimit } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -49,31 +49,22 @@ const fileUploadLogger = (req, res, next) => {
   next();
 };
 
-// All routes are protected with authentication
-router.use(protect);
-
 // Regular carousel routes
-router.route('/')
-  .post(createCarousel)
-  .get(getCarousels);
-
-// Individual carousel routes
-router.route('/:id')
-  .get(getCarousel)
-  .put(updateCarousel)
-  .delete(deleteCarousel);
-
-// Download route
-router.get('/:id/download', downloadCarouselPdf);
+router.get('/', protect, getCarousels);
+router.get('/:id', protect, getCarousel);
+router.post('/', protect, createCarousel);
+router.put('/:id', protect, updateCarousel);
+router.delete('/:id', protect, deleteCarousel);
+router.get('/:id/download', protect, downloadCarouselPdf);
 
 // Carousel request routes
-router.post('/submit-request', upload.array('files', 5), submitCarouselRequest);
-router.get('/user/requests', getUserRequests);
-router.get('/requests/:id', getRequestById);
+router.post('/submit-request', protect, checkUserLimit, upload.array('files', 5), submitCarouselRequest);
+router.get('/user/requests', protect, getUserRequests);
+router.get('/requests/:id', protect, getRequestById);
 
 // Admin routes
-router.get('/admin/requests', admin, getAdminRequests);
-router.patch('/requests/:id/status', admin, updateRequestStatus);
-router.post('/requests/:id/complete', admin, upload.array('files', 5), fileUploadLogger, completeCarouselRequest);
+router.get('/admin/requests', protect, admin, getAdminRequests);
+router.patch('/requests/:id/status', protect, admin, updateRequestStatus);
+router.post('/requests/:id/complete', protect, admin, upload.array('files', 5), fileUploadLogger, completeCarouselRequest);
 
 module.exports = router; 
