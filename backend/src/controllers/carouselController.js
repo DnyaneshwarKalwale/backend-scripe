@@ -438,7 +438,8 @@ const deleteCarouselRequest = asyncHandler(async (req, res) => {
       throw new Error('Not authorized to delete this carousel request');
     }
     
-    await request.remove();
+    // Use deleteOne instead of remove (which is deprecated)
+    await CarouselRequest.deleteOne({ _id: request._id });
     
     res.status(200).json({
       success: true,

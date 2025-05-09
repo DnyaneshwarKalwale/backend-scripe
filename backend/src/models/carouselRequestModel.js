@@ -92,6 +92,17 @@ const carouselRequestSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
+  },
+  resendCount: {
+    type: Number,
+    default: 0
+  },
+  isModified: {
+    type: Boolean,
+    default: false
+  },
+  originalContent: {
+    type: mongoose.Schema.Types.Mixed
   }
 });
 

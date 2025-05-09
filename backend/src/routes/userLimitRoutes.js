@@ -15,6 +15,9 @@ router.get('/:userId', protect, userLimitController.getUserLimit);
 // Increment user's count
 router.post('/:userId/increment', protect, userLimitController.incrementUserCount);
 
+// Reset user limit
+router.post('/:userId/reset', protect, userLimitController.resetUserLimit);
+
 // Admin routes
 router.put('/:userId', protect, checkAdmin, userLimitController.updateUserLimit);
 router.put('/multiple', protect, checkAdmin, userLimitController.updateMultipleUserLimits);

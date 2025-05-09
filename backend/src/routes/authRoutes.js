@@ -164,6 +164,12 @@ router.get('/linkedin-direct/callback', async (req, res) => {
       if (user) {
         // Update user with LinkedIn ID if found by email
         user.linkedinId = linkedinId;
+        // Clear any previous LinkedIn tokens before setting new ones
+        user.linkedinAccessToken = null;
+        user.linkedinRefreshToken = null;
+        user.linkedinTokenExpiry = null;
+
+        // Set new tokens
         user.linkedinAccessToken = access_token;
         user.linkedinRefreshToken = refresh_token;
         user.linkedinTokenExpiry = tokenExpiryTime;
@@ -171,16 +177,31 @@ router.get('/linkedin-direct/callback', async (req, res) => {
         if (!user.profilePicture && picture) {
           user.profilePicture = picture;
         }
+        
         await user.save();
+        console.log(`Updated existing user ${user._id} with fresh LinkedIn credentials`);
       }
+    } else if (user) {
+      // User found by LinkedIn ID - update tokens
+      console.log(`Found existing user ${user._id} with LinkedIn ID ${linkedinId}, updating tokens`);
+      
+      // Clear old tokens and set new ones
+      user.linkedinAccessToken = access_token;
+      user.linkedinRefreshToken = refresh_token;
+      user.linkedinTokenExpiry = tokenExpiryTime;
+      await user.save();
+      
+      console.log(`LinkedIn tokens updated for user ${user._id}, new expiry: ${tokenExpiryTime}`);
     }
     
     // If user still not found, create a new one
     if (!user) {
       if (!email) {
+        console.error('LinkedIn did not provide an email address');
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=email_required`);
       }
       
+      console.log('Creating new user with LinkedIn credentials');
       user = await User.create({
         linkedinId,
         firstName: firstName || 'LinkedIn',
@@ -194,6 +215,8 @@ router.get('/linkedin-direct/callback', async (req, res) => {
         linkedinRefreshToken: refresh_token,
         linkedinTokenExpiry: tokenExpiryTime
       });
+      
+      console.log(`New user created with LinkedIn ID ${linkedinId} and ID ${user._id}`);
     }
     
     // Generate token

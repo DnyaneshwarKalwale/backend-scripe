@@ -162,10 +162,23 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
           errorType = 'token_expired';
           errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
           
-          // Update user record to mark token as expired
+          // Update user record to clear LinkedIn tokens
           if (user) {
+            console.log(`Token expired or revoked for user ${user._id}. Clearing all LinkedIn tokens.`);
+            user.linkedinAccessToken = null;
+            user.linkedinRefreshToken = null;
             user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
             await user.save();
+            
+            // Check for specific LinkedIn revocation error
+            const errorData = apiError.response.data;
+            if (errorData && (
+                (errorData.serviceErrorCode === 65601) || 
+                (errorData.code === 'REVOKED_ACCESS_TOKEN')
+              )) {
+              errorType = 'token_revoked';
+              errorDetails = 'Your LinkedIn access token has been revoked. Please reconnect your account.';
+            }
           }
         } else if (apiError.response.status === 403) {
           errorType = 'permission_denied';
@@ -552,6 +565,51 @@ const createLinkedInPost = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating LinkedIn post:', error.response?.data || error.message);
+    
+    // Check for token expiration or revocation
+    if (error.response) {
+      console.error('LinkedIn API error details:', {
+        status: error.response.status,
+        data: error.response.data
+      });
+      
+      // Handle token expiration or revocation errors
+      if (error.response.status === 401) {
+        try {
+          // Attempt to get the user ID from the request
+          const user = await User.findById(req.user._id);
+          
+          if (user) {
+            console.log(`Token revoked or expired for user ${user._id}. Clearing LinkedIn tokens from database.`);
+            
+            // Clear the LinkedIn tokens from database
+            user.linkedinAccessToken = null;
+            user.linkedinRefreshToken = null;
+            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
+            await user.save();
+          }
+          
+          // Check for specific LinkedIn revocation
+          const errorData = error.response.data;
+          if (errorData && (
+              (errorData.serviceErrorCode === 65601) || 
+              (errorData.code === 'REVOKED_ACCESS_TOKEN')
+            )) {
+            return res.status(401).json({
+              success: false,
+              error: 'LinkedIn token has been revoked',
+              details: {
+                code: 'REVOKED_ACCESS_TOKEN',
+                message: 'The token used in the request has been revoked by the user. Please reconnect your LinkedIn account.'
+              }
+            });
+          }
+        } catch (dbError) {
+          console.error('Error updating user LinkedIn token status:', dbError);
+        }
+      }
+    }
+    
     res.status(error.response?.status || 500).json({
       success: false,
       error: 'Failed to create LinkedIn post',
