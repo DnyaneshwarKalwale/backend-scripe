@@ -29,6 +29,9 @@ const userLimitRoutes = require('./routes/userLimitRoutes');
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
 
+// Import the transcript API setup script
+const setupTranscriptApi = require('../setup_transcript_api');
+
 // Load environment variables
 dotenv.config();
 
@@ -1025,6 +1028,19 @@ app.listen(PORT, () => {
     });
   } catch (error) {
     console.error('Failed to setup yt-dlp:', error);
+  }
+  
+  // Setup youtube-transcript-api for Python extraction
+  try {
+    console.log('Setting up youtube-transcript-api...');
+    setupTranscriptApi().then(() => {
+      console.log('youtube-transcript-api setup completed successfully');
+    }).catch(err => {
+      console.error('Error setting up youtube-transcript-api:', err);
+      console.log('Will fall back to manual transcript extraction methods');
+    });
+  } catch (error) {
+    console.error('Failed to setup youtube-transcript-api:', error);
   }
   
   // Initialize the scheduler service when the server starts
