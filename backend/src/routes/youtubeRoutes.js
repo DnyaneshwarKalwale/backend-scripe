@@ -449,85 +449,44 @@ async function fetchBackupTranscript(videoId, res) {
   try {
     console.log('Using backup transcript method for video ID:', videoId);
     
-    // First try using the Python script directly (which now uses youtube-transcript-api)
-    try {
-      console.log('Trying Python script with youtube-transcript-api for:', videoId);
-      const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
-      const pythonExecutable = await getPythonExecutablePath();
-      
-      console.log(`Using Python executable: ${pythonExecutable}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
-      
-      if (stderr) {
-        console.error('Python script error:', stderr);
-      }
-      
-      const result = JSON.parse(stdout);
-      
-      if (result.success) {
-        console.log(`Successfully fetched transcript with Python script (${result.source || 'unknown'}) for video ${videoId}`);
-        
-        // Store in cache
-        transcriptCache.set(videoId, {
-          transcript: result.transcript,
-          language: result.language || 'Unknown',
-          language_code: result.language_code || 'en',
-          is_generated: result.is_generated || true,
-          source: result.source || 'python_script'
-        });
-        
-        return res.status(200).json({
-          success: true,
-          transcript: result.transcript,
-          language: result.language || 'Unknown',
-          language_code: result.language_code || 'en',
-          is_generated: result.is_generated || true,
-          source: result.source || 'python_script'
-        });
-      } else {
-        console.log('Python script returned error, trying yt-dlp method');
-        throw new Error(result.error || 'Failed to fetch transcript with Python script');
-      }
-    } catch (pythonError) {
-      console.error('Error with Python script method:', pythonError);
-      console.log('Falling back to yt-dlp method');
+    // Try using the Python script directly (which uses youtube-transcript-api)
+    console.log('Trying Python script with youtube-transcript-api for:', videoId);
+    const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
+    const pythonExecutable = await getPythonExecutablePath();
+    
+    console.log(`Using Python executable: ${pythonExecutable}`);
+    const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
+    
+    if (stderr) {
+      console.error('Python script error:', stderr);
     }
     
-    // If Python script fails, try yt-dlp method as last resort
-    // Determine server URL - could be localhost for dev or the deployed URL for production
-    let baseUrl;
+    const result = JSON.parse(stdout);
     
-    if (process.env.NODE_ENV === 'production') {
-      // For production, use the public URL or a relative path
-      baseUrl = process.env.BASE_URL || 'https://backend-scripe.onrender.com';
-    } else {
-      // For local development
-      baseUrl = process.env.BASE_URL || 'http://localhost:5000';
-    }
-    
-    console.log(`Using API base URL: ${baseUrl} for transcript-yt-dlp endpoint`);
-    const ytdlpUrl = `${baseUrl}/api/youtube/transcript-yt-dlp`;
-    
-    const response = await axios.post(ytdlpUrl, { videoId });
-    
-    if (response.data && response.data.success) {
-      // Store successful result in cache
+    if (result.success) {
+      console.log(`Successfully fetched transcript with Python script (${result.source || 'unknown'}) for video ${videoId}`);
+      
+      // Store in cache
       transcriptCache.set(videoId, {
-        transcript: response.data.transcript,
-        language: 'Unknown',
-        language_code: response.data.language || 'en',
-        is_generated: response.data.is_generated || true
+        transcript: result.transcript,
+        language: result.language || 'Unknown',
+        language_code: result.language_code || 'en',
+        is_generated: result.is_generated || true,
+        source: result.source || 'python_script'
       });
-    
+      
       return res.status(200).json({
         success: true,
-        transcript: response.data.transcript,
-        language: 'Unknown',
-        language_code: response.data.language || 'en',
-        is_generated: response.data.is_generated || true
+        transcript: result.transcript,
+        language: result.language || 'Unknown',
+        language_code: result.language_code || 'en',
+        is_generated: result.is_generated || true,
+        source: result.source || 'python_script'
       });
     } else {
-      throw new Error('Failed to fetch transcript with yt-dlp');
+      // If Python script with youtube-transcript-api fails, don't try yt-dlp method
+      // Instead, just return the error
+      throw new Error(result.error || 'No transcript available for this video');
     }
   } catch (error) {
     console.error('Error in backup transcript method:', error);
@@ -544,7 +503,7 @@ async function fetchBackupTranscript(videoId, res) {
     // Return general error for other issues
     return res.status(500).json({ 
       success: false, 
-      message: 'Failed to fetch transcript with all available methods',
+      message: 'Failed to fetch transcript. The video may not have captions available.',
       error: error.toString()
     });
   }
