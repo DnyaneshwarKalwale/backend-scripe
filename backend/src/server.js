@@ -542,6 +542,10 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     const util = require('util');
     const execPromise = util.promisify(exec);
     
+    // User-Agent and Referer to potentially avoid 429 errors
+    const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+    const REFERER = "https://www.youtube.com/";
+
     // Create directory for transcripts if it doesn't exist
     const transcriptsDir = path.join(process.cwd(), 'transcripts');
     if (!fs.existsSync(transcriptsDir)) {
@@ -609,11 +613,11 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     
     // Command for yt-dlp to extract subtitles
     // We try auto-generated first, then manual if available
-    const command = `"${ytDlpExecutable}" --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    const command = `"${ytDlpExecutable}" --user-agent "${USER_AGENT}" --referer "${REFERER}" --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     console.log(`Executing command: ${command}`);
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `"${ytDlpExecutable}" -J "${videoUrl}"`;
+    const metadataCommand = `"${ytDlpExecutable}" --user-agent "${USER_AGENT}" --referer "${REFERER}" -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
