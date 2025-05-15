@@ -5,6 +5,8 @@ const { OpenAI } = require('openai');
 const dotenv = require('dotenv');
 const path = require('path');
 const { exec, spawn } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const fs = require('fs');
 const xml2js = require('xml2js');
 const { getChannelVideos, createCarousels, saveYoutubeVideo, getUserSavedVideos, deleteSavedVideo, saveVideoTranscript, saveMultipleVideos } = require('../controllers/youtubeController');
@@ -53,6 +55,46 @@ const transcriptCache = {
   }
 };
 
+// Helper function to get the correct Python executable path
+async function getPythonExecutablePath() {
+  if (process.platform !== 'win32') {
+    // For Linux/Mac
+    return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+  }
+  
+  // For Windows, use the specific path that works with pip3
+  const specificPath = 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
+  
+  try {
+    await execPromise(`"${specificPath}" --version`);
+    console.log(`Using specific Python path: ${specificPath}`);
+    return specificPath;
+  } catch (err) {
+    console.log(`Error with specific Python path: ${err.message}`);
+    
+    // Fallback to alternative paths if specific path fails
+    const possiblePaths = [
+      'python3',
+      'python',
+      'py'
+    ];
+    
+    for (const path of possiblePaths) {
+      try {
+        await execPromise(`${path} --version`);
+        console.log(`Found working Python at: ${path}`);
+        return path;
+      } catch (err) {
+        // Continue to next path
+      }
+    }
+  }
+  
+  // Default fallback - this should be caught by the caller
+  console.log('No Python executable found, this will likely fail');
+  return 'python3';
+}
+
 /**
  * @route   POST /api/youtube/channel
  * @desc    Fetch YouTube channel videos
@@ -96,20 +138,11 @@ router.post('/transcript', async (req, res) => {
     const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
     
     // Determine the Python executable to use
-    const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+    const pythonExecutable = await getPythonExecutablePath();
     
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
-      const { stdout, stderr } = await new Promise((resolve, reject) => {
-        exec(`${pythonExecutable} ${scriptPath} ${videoId}`, (error, stdout, stderr) => {
-          if (error) {
-            console.error('Python execution error:', error);
-            reject(error);
-          } else {
-            resolve({ stdout, stderr });
-          }
-        });
-      });
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
       
       if (stderr) {
         console.error('Python script stderr:', stderr);
@@ -420,18 +453,10 @@ async function fetchBackupTranscript(videoId, res) {
     try {
       console.log('Trying Python script with youtube-transcript-api for:', videoId);
       const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
-      const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+      const pythonExecutable = await getPythonExecutablePath();
       
-      const { stdout, stderr } = await new Promise((resolve, reject) => {
-        exec(`${pythonExecutable} ${scriptPath} ${videoId}`, (error, stdout, stderr) => {
-          if (error) {
-            console.error('Python execution error:', error);
-            reject(error);
-          } else {
-            resolve({ stdout, stderr });
-          }
-        });
-      });
+      console.log(`Using Python executable: ${pythonExecutable}`);
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
       
       if (stderr) {
         console.error('Python script error:', stderr);
