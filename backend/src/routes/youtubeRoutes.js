@@ -422,12 +422,7 @@ async function fetchBackupTranscript(videoId, res) {
     const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
     const ytdlpUrl = `${baseUrl}/api/youtube/transcript-yt-dlp`;
     
-    const response = await axios.post(ytdlpUrl, { 
-      videoId,
-      debug: true // Add debug flag to get more information
-    }, {
-      timeout: 30000 // Longer timeout for yt-dlp processing
-    });
+    const response = await axios.post(ytdlpUrl, { videoId });
     
     if (response.data && response.data.success) {
       // Store successful result in cache
@@ -446,12 +441,12 @@ async function fetchBackupTranscript(videoId, res) {
         is_generated: response.data.is_generated || true
       });
     } else {
-      throw new Error('Failed to fetch transcript with yt-dlp: ' + (response.data?.message || 'Unknown error'));
+      throw new Error('Failed to fetch transcript with yt-dlp');
     }
   } catch (error) {
     console.error('Error in backup transcript method:', error);
     
-    // Return the actual error to the frontend with more details
+    // Return the actual error to the frontend
     if (error.response?.status === 429) {
       return res.status(429).json({ 
         success: false, 
@@ -460,15 +455,11 @@ async function fetchBackupTranscript(videoId, res) {
       });
     }
     
-    // Return general error for other issues with more debug info
+    // Return general error for other issues
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch transcript with all available methods',
-      error: error.toString(),
-      ytdlpError: error.response?.data?.error || 'No specific error information available',
-      requestError: error.request ? true : false,
-      responseStatus: error.response?.status || 'No response status',
-      responseData: error.response?.data || 'No response data'
+      error: error.toString()
     });
   }
 }

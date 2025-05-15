@@ -7,9 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "check-scheduled": "node src/utils/checkScheduled.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "node src/scripts/install-yt-dlp.js",
-    "prepare-yt-dlp": "node src/scripts/install-yt-dlp.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "axios": "^1.4.0",

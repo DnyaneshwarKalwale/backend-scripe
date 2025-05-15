@@ -54,71 +54,6 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Set up yt-dlp path
-const YT_DLP_BIN_DIR = path.join(__dirname, 'bin');
-const YT_DLP_EXECUTABLE = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
-const YT_DLP_PATH = path.join(YT_DLP_BIN_DIR, YT_DLP_EXECUTABLE);
-
-// Path for cookies.txt file
-const CONFIG_DIR_FOR_LOGGING = path.join(__dirname, '..', 'config');
-console.log(`Checking for cookies.txt in: ${CONFIG_DIR_FOR_LOGGING}`);
-if (fs.existsSync(CONFIG_DIR_FOR_LOGGING)) {
-  try {
-    const filesInConfig = fs.readdirSync(CONFIG_DIR_FOR_LOGGING);
-    console.log(`Files in config directory: ${filesInConfig.join(', ')}`);
-  } catch (e) {
-    console.error(`Error reading config directory: ${e.message}`);
-  }
-} else {
-  console.log(`Config directory ${CONFIG_DIR_FOR_LOGGING} does not exist.`);
-}
-const COOKIES_PATH = path.join(CONFIG_DIR_FOR_LOGGING, 'cookies.txt');
-
-// Make the yt-dlp path available globally
-global.YT_DLP_PATH = YT_DLP_PATH;
-
-// Log the path for debugging
-console.log(`Using yt-dlp from: ${YT_DLP_PATH}`);
-if (fs.existsSync(COOKIES_PATH)) {
-  console.log(`Using cookies for yt-dlp from: ${COOKIES_PATH}`);
-} else {
-  console.warn(`WARNING: cookies.txt not found at ${COOKIES_PATH}. yt-dlp may be rate-limited or blocked by YouTube.`);
-}
-
-// Ensure the bin directory exists
-if (!fs.existsSync(YT_DLP_BIN_DIR)) {
-  fs.mkdirSync(YT_DLP_BIN_DIR, { recursive: true });
-  console.log(`Created bin directory at ${YT_DLP_BIN_DIR}`);
-}
-
-// Ensure the config directory for cookies exists (optional, as user creates it)
-const configDir = path.join(__dirname, '..', 'config');
-if (!fs.existsSync(configDir)) {
-  try {
-    // fs.mkdirSync(configDir, { recursive: true }); // We might not want the script to create it.
-    // console.log(`Created config directory at ${configDir} for cookies.txt (if needed).`);
-  } catch (e) {
-    console.warn(`Could not create config directory at ${configDir}. Please ensure it exists if you plan to use cookies.txt.`);
-  }
-}
-
-// Check if yt-dlp exists
-if (!fs.existsSync(YT_DLP_PATH)) {
-  console.warn(`WARNING: yt-dlp not found at ${YT_DLP_PATH}`);
-} else {
-  console.log(`Found yt-dlp at ${YT_DLP_PATH}`);
-  
-  // Make executable on Unix
-  if (process.platform !== 'win32') {
-    try {
-      fs.chmodSync(YT_DLP_PATH, '755');
-      console.log(`Made yt-dlp executable`);
-    } catch (err) {
-      console.warn(`WARNING: Could not make yt-dlp executable: ${err.message}`);
-    }
-  }
-}
-
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
   'http://localhost:8080',
@@ -573,10 +508,6 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     const util = require('util');
     const execPromise = util.promisify(exec);
     
-    // User-Agent and Referer to potentially avoid 429 errors
-    const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-    const REFERER = "https://www.youtube.com/";
-
     // Create directory for transcripts if it doesn't exist
     const transcriptsDir = path.join(process.cwd(), 'transcripts');
     if (!fs.existsSync(transcriptsDir)) {
@@ -588,14 +519,6 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     
     console.log(`Extracting transcript for video ${videoId} using yt-dlp`);
     
-    // Construct cookies argument if cookies.txt exists
-    let cookiesArg = '';
-    if (fs.existsSync(COOKIES_PATH)) {
-      cookiesArg = ` --cookies "${COOKIES_PATH}"`;
-    } else {
-      console.warn(`cookies.txt not found at ${COOKIES_PATH} for video ${videoId}. Transcript extraction might fail or be rate-limited.`);
-    }
-
     // First check if we already have this transcript saved
     if (fs.existsSync(outputFileName)) {
       try {
@@ -624,39 +547,12 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
-    // Use our local yt-dlp executable
-    let ytDlpExecutable = global.YT_DLP_PATH;
-    
-    // Fallback to looking for the binary in the usual locations
-    if (!fs.existsSync(ytDlpExecutable)) {
-      console.warn(`yt-dlp not found at ${ytDlpExecutable}, trying alternative locations`);
-      
-      // Try src/bin directory
-      const srcBinPath = path.join(__dirname, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
-      if (fs.existsSync(srcBinPath)) {
-        ytDlpExecutable = srcBinPath;
-        console.log(`Found yt-dlp at ${srcBinPath}`);
-      } else {
-        // Try one level up
-        const rootBinPath = path.join(__dirname, '..', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
-        if (fs.existsSync(rootBinPath)) {
-          ytDlpExecutable = rootBinPath;
-          console.log(`Found yt-dlp at ${rootBinPath}`);
-        } else {
-          // Fall back to using the system yt-dlp
-          ytDlpExecutable = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
-          console.log(`Falling back to system yt-dlp command: ${ytDlpExecutable}`);
-        }
-      }
-    }
-    
     // Command for yt-dlp to extract subtitles
     // We try auto-generated first, then manual if available
-    const command = `"${ytDlpExecutable}"${cookiesArg} --user-agent "${USER_AGENT}" --referer "${REFERER}" --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
-    console.log(`Executing command: ${command}`);
+    const command = `yt-dlp --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `"${ytDlpExecutable}"${cookiesArg} --user-agent "${USER_AGENT}" --referer "${REFERER}" -J "${videoUrl}"`;
+    const metadataCommand = `yt-dlp -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
@@ -766,10 +662,7 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       return res.status(500).json({
         success: false,
         message: 'Failed to extract transcript with yt-dlp',
-        error: error.message,
-        command: command,
-        executable_path: ytDlpExecutable,
-        exists: fs.existsSync(ytDlpExecutable)
+        error: error.message
       });
     }
   } catch (error) {
