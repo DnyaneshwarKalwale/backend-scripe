@@ -60,7 +60,19 @@ const YT_DLP_EXECUTABLE = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
 const YT_DLP_PATH = path.join(YT_DLP_BIN_DIR, YT_DLP_EXECUTABLE);
 
 // Path for cookies.txt file
-const COOKIES_PATH = path.join(__dirname, '..', 'config', 'cookies.txt');
+const CONFIG_DIR_FOR_LOGGING = path.join(__dirname, '..', 'config');
+console.log(`Checking for cookies.txt in: ${CONFIG_DIR_FOR_LOGGING}`);
+if (fs.existsSync(CONFIG_DIR_FOR_LOGGING)) {
+  try {
+    const filesInConfig = fs.readdirSync(CONFIG_DIR_FOR_LOGGING);
+    console.log(`Files in config directory: ${filesInConfig.join(', ')}`);
+  } catch (e) {
+    console.error(`Error reading config directory: ${e.message}`);
+  }
+} else {
+  console.log(`Config directory ${CONFIG_DIR_FOR_LOGGING} does not exist.`);
+}
+const COOKIES_PATH = path.join(CONFIG_DIR_FOR_LOGGING, 'cookies.txt');
 
 // Make the yt-dlp path available globally
 global.YT_DLP_PATH = YT_DLP_PATH;
