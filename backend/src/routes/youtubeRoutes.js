@@ -464,4 +464,42 @@ async function fetchBackupTranscript(videoId, res) {
   }
 }
 
+// Setup CORS handlers specifically for YouTube routes
+router.use((req, res, next) => {
+  // Ensure CORS headers are applied to this route
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// Error handling middleware specific to YouTube routes
+router.use((err, req, res, next) => {
+  console.error('YouTube API error:', err);
+  
+  // Set CORS headers even when errors occur
+  res.header('Access-Control-Allow-Origin', '*');
+  
+  // Handle payload too large errors specifically
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'Request payload too large. Please reduce the size of your transcript.',
+      error: err.message
+    });
+  }
+  
+  // Handle other errors
+  res.status(500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    error: err.toString()
+  });
+});
+
 module.exports = router;

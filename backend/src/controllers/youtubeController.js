@@ -540,7 +540,7 @@ const deleteSavedVideo = async (req, res) => {
 
 /**
  * @desc    Save transcript for a YouTube video
- * @route   POST /api/youtube/save-transcript
+ * @route   POST /api/youtube/save-video-transcript
  * @access  Public
  */
 const saveVideoTranscript = async (req, res) => {
@@ -561,6 +561,27 @@ const saveVideoTranscript = async (req, res) => {
       });
     }
     
+    // Limit transcript size if it's too large
+    const MAX_TRANSCRIPT_LENGTH = 200000; // ~200KB limit for database storage
+    let safeTranscript = actualTranscript || '';
+    let safeFormattedTranscript = actualFormattedTranscript || [];
+    
+    if (safeTranscript && safeTranscript.length > MAX_TRANSCRIPT_LENGTH) {
+      console.log(`Transcript for video ${actualVideoId} exceeds size limit (${safeTranscript.length} chars). Trimming to ${MAX_TRANSCRIPT_LENGTH}`);
+      safeTranscript = safeTranscript.substring(0, MAX_TRANSCRIPT_LENGTH) + 
+        `... [Trimmed from ${safeTranscript.length} chars due to size limits]`;
+    }
+    
+    // Also limit size of formatted transcript entries
+    if (Array.isArray(safeFormattedTranscript)) {
+      safeFormattedTranscript = safeFormattedTranscript.map(item => {
+        if (typeof item === 'string' && item.length > MAX_TRANSCRIPT_LENGTH / 10) {
+          return item.substring(0, MAX_TRANSCRIPT_LENGTH / 10) + "...";
+        }
+        return item;
+      }).filter(Boolean);
+    }
+    
     // Find the existing saved video
     let savedVideo;
     
@@ -572,8 +593,8 @@ const saveVideoTranscript = async (req, res) => {
     }
     
     const transcriptData = {
-      transcript: actualTranscript || '',
-      formattedTranscript: actualFormattedTranscript || [],
+      transcript: safeTranscript,
+      formattedTranscript: safeFormattedTranscript,
       language: actualLanguage,
       is_generated: actualIsGenerated,
       updatedAt: new Date()
@@ -622,6 +643,9 @@ const saveVideoTranscript = async (req, res) => {
     });
   } catch (error) {
     console.error('Error saving transcript:', error);
+    // Ensure CORS headers are set even on error
+    res.header('Access-Control-Allow-Origin', '*');
+    
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to save transcript',
