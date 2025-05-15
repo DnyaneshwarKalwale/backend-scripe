@@ -240,6 +240,6 @@ if __name__ == "__main__":
         }))
         sys.exit(1)
     
-    video_id = sys.argv[1]
+        video_id = sys.argv[1]
     result = get_transcript(video_id)
     print(json.dumps(result)) 

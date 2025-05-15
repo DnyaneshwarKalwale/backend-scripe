@@ -592,7 +592,7 @@ app.get('/api/youtube/python-check', async (req, res) => {
         } catch (readErr) {
           scriptResults.readError = readErr.message;
         }
-      } else {
+  } else {
         scriptResults.error = 'File does not exist';
       }
     } catch (err) {
