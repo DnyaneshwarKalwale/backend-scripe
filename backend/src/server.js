@@ -59,16 +59,35 @@ const YT_DLP_BIN_DIR = path.join(__dirname, 'bin');
 const YT_DLP_EXECUTABLE = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 const YT_DLP_PATH = path.join(YT_DLP_BIN_DIR, YT_DLP_EXECUTABLE);
 
+// Path for cookies.txt file
+const COOKIES_PATH = path.join(__dirname, '..', 'config', 'cookies.txt');
+
 // Make the yt-dlp path available globally
 global.YT_DLP_PATH = YT_DLP_PATH;
 
 // Log the path for debugging
 console.log(`Using yt-dlp from: ${YT_DLP_PATH}`);
+if (fs.existsSync(COOKIES_PATH)) {
+  console.log(`Using cookies for yt-dlp from: ${COOKIES_PATH}`);
+} else {
+  console.warn(`WARNING: cookies.txt not found at ${COOKIES_PATH}. yt-dlp may be rate-limited or blocked by YouTube.`);
+}
 
 // Ensure the bin directory exists
 if (!fs.existsSync(YT_DLP_BIN_DIR)) {
   fs.mkdirSync(YT_DLP_BIN_DIR, { recursive: true });
   console.log(`Created bin directory at ${YT_DLP_BIN_DIR}`);
+}
+
+// Ensure the config directory for cookies exists (optional, as user creates it)
+const configDir = path.join(__dirname, '..', 'config');
+if (!fs.existsSync(configDir)) {
+  try {
+    // fs.mkdirSync(configDir, { recursive: true }); // We might not want the script to create it.
+    // console.log(`Created config directory at ${configDir} for cookies.txt (if needed).`);
+  } catch (e) {
+    console.warn(`Could not create config directory at ${configDir}. Please ensure it exists if you plan to use cookies.txt.`);
+  }
 }
 
 // Check if yt-dlp exists
@@ -557,6 +576,14 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     
     console.log(`Extracting transcript for video ${videoId} using yt-dlp`);
     
+    // Construct cookies argument if cookies.txt exists
+    let cookiesArg = '';
+    if (fs.existsSync(COOKIES_PATH)) {
+      cookiesArg = ` --cookies "${COOKIES_PATH}"`;
+    } else {
+      console.warn(`cookies.txt not found at ${COOKIES_PATH} for video ${videoId}. Transcript extraction might fail or be rate-limited.`);
+    }
+
     // First check if we already have this transcript saved
     if (fs.existsSync(outputFileName)) {
       try {
@@ -613,11 +640,11 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     
     // Command for yt-dlp to extract subtitles
     // We try auto-generated first, then manual if available
-    const command = `"${ytDlpExecutable}" --user-agent "${USER_AGENT}" --referer "${REFERER}" --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    const command = `"${ytDlpExecutable}"${cookiesArg} --user-agent "${USER_AGENT}" --referer "${REFERER}" --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     console.log(`Executing command: ${command}`);
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `"${ytDlpExecutable}" --user-agent "${USER_AGENT}" --referer "${REFERER}" -J "${videoUrl}"`;
+    const metadataCommand = `"${ytDlpExecutable}"${cookiesArg} --user-agent "${USER_AGENT}" --referer "${REFERER}" -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
