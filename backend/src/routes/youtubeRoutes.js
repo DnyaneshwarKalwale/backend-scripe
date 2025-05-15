@@ -67,7 +67,7 @@ router.post('/channel', getChannelVideos);
  */
 router.post('/transcript', async (req, res) => {
   try {
-    const { videoId, useScraperApi = true } = req.body;
+    const { videoId, useScraperApi = false } = req.body; // Force useScraperApi to false
     
     if (!videoId) {
       return res.status(400).json({ 
@@ -89,36 +89,9 @@ router.post('/transcript', async (req, res) => {
       });
     }
     
-    console.log(`Fetching transcript for video ID: ${videoId}${useScraperApi ? ' (using ScraperAPI)' : ''}`);
+    console.log(`Fetching transcript for video ID: ${videoId}`);
     
-    // If ScraperAPI is requested, use it directly (faster than going through Python)
-    if (useScraperApi) {
-      try {
-        const transcriptData = await fetchYouTubeTranscript(videoId);
-        
-        // Store successful result in cache
-        transcriptCache.set(videoId, {
-          transcript: transcriptData.transcript,
-          language: 'Unknown',
-          language_code: transcriptData.language || 'en',
-          is_generated: true
-        });
-        
-        return res.status(200).json({
-          success: true,
-          transcript: transcriptData.transcript,
-          language: 'Unknown',
-          language_code: transcriptData.language || 'en',
-          is_generated: true,
-          via: 'scraperapi'
-        });
-      } catch (error) {
-        // If ScraperAPI fails, fall back to Python script
-        console.log('ScraperAPI method failed, falling back to Python script:', error.message);
-      }
-    }
-    
-    // Attempt Python method only if ScraperAPI was not selected or failed
+    // Skip ScraperAPI method completely and go directly to Python method
     // Path to the Python script (relative to the project root)
     const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
     
@@ -440,134 +413,41 @@ function extractVideoId(url) {
   }
 }
 
-// Function to fetch YouTube transcript without API key (backup method)
-async function fetchYouTubeTranscript(videoId) {
-  const maxRetries = 3;
-  let retryCount = 0;
-  let lastError = null;
-  // ScraperAPI key
-  const scraperApiKey = 'b61a1a984e9fc31b3249d792c5c22f87';
-
-  // Helper function to delay execution
-  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-  while (retryCount < maxRetries) {
-    try {
-      // If it's a retry, wait with exponential backoff (1s, 2s, 4s)
-      if (retryCount > 0) {
-        const delay = Math.pow(2, retryCount - 1) * 1000;
-        console.log(`Retry ${retryCount}/${maxRetries} after ${delay}ms for video ID: ${videoId}`);
-        await sleep(delay);
-      }
-
-      // Use ScraperAPI to bypass YouTube rate limits
-      const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const scraperApiUrl = `https://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(targetUrl)}&render=true`;
-      
-      console.log(`Using ScraperAPI to fetch video page for ID: ${videoId}`);
-      
-      // Fetch the video page through ScraperAPI
-      const videoPageResponse = await axios.get(scraperApiUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept-Language': 'en-US,en;q=0.9'
-        }
-      });
-      
-    const videoPageHtml = videoPageResponse.data;
-    
-      // Extract captions data
-    const captionsRegex = /"captionTracks":\s*(\[.*?\])/;
-    const captionsMatch = videoPageHtml.match(captionsRegex);
-    
-    if (!captionsMatch || !captionsMatch[1]) {
-      throw new Error('Could not find captions data');
-    }
-    
-    const captionsData = JSON.parse(captionsMatch[1].replace(/\\"/g, '"'));
-    
-    if (!captionsData || captionsData.length === 0) {
-      throw new Error('No captions available for this video');
-    }
-    
-    // Get the first available caption track (usually English)
-    const captionTrack = captionsData[0];
-    
-      // Fetch the actual transcript data through ScraperAPI
-      const captionUrl = captionTrack.baseUrl;
-      const scraperApiCaptionUrl = `https://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(captionUrl)}`;
-      
-      const transcriptResponse = await axios.get(scraperApiCaptionUrl);
-    const transcriptXml = transcriptResponse.data;
-    
-    // Parse XML to extract text
-    const textRegex = /<text\s+start="([^"]+)"\s+dur="([^"]+)"(?:\s+[^>]*)?>([^<]+)<\/text>/g;
-    let match;
-    let transcriptText = '';
-    
-    while ((match = textRegex.exec(transcriptXml)) !== null) {
-      const text = match[3].replace(/&amp;/g, '&')
-                         .replace(/&lt;/g, '<')
-                         .replace(/&gt;/g, '>')
-                         .replace(/&quot;/g, '"')
-                         .replace(/&#39;/g, "'");
-      transcriptText += text + ' ';
-    }
-      
-      console.log(`Successfully fetched transcript for video ID: ${videoId} using ScraperAPI`);
-    
-    return {
-      transcript: transcriptText.trim(),
-      language: captionTrack.languageCode,
-      isAutoGenerated: captionTrack.kind === 'asr'
-    };
-  } catch (error) {
-      // Store the error for potential reuse later
-      lastError = error;
-      console.error(`ScraperAPI request failed (attempt ${retryCount + 1}/${maxRetries}):`, error.message);
-      
-      // Only retry on rate limit (429) errors or network errors
-      if (error.response?.status === 429 || !error.response) {
-        retryCount++;
-        console.log(`Rate limit or network error on attempt ${retryCount}/${maxRetries}`);
-      } else {
-        // For other errors, don't retry
-        break;
-      }
-    }
-  }
-
-  // If we get here, all retries failed
-  console.error('Failed to fetch transcript after all retries:', lastError);
-  throw lastError;
-}
-
 // Backup method for when Python method fails
 async function fetchBackupTranscript(videoId, res) {
   try {
     console.log('Using backup transcript method for video ID:', videoId);
-    const transcriptData = await fetchYouTubeTranscript(videoId);
     
-    // Store successful result in cache
-    transcriptCache.set(videoId, {
-      transcript: transcriptData.transcript,
-      language: 'Unknown',
-      language_code: transcriptData.language || 'en',
-      is_generated: true
-    });
+    // Instead of using ScraperAPI method, try to use yt-dlp directly through the dedicated route
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+    const ytdlpUrl = `${baseUrl}/api/youtube/transcript-yt-dlp`;
     
-    return res.status(200).json({
-      success: true,
-      transcript: transcriptData.transcript,
-      language: 'Unknown',
-      language_code: transcriptData.language || 'en',
-      is_generated: true
-    });
+    const response = await axios.post(ytdlpUrl, { videoId });
+    
+    if (response.data && response.data.success) {
+      // Store successful result in cache
+      transcriptCache.set(videoId, {
+        transcript: response.data.transcript,
+        language: 'Unknown',
+        language_code: response.data.language || 'en',
+        is_generated: response.data.is_generated || true
+      });
+      
+      return res.status(200).json({
+        success: true,
+        transcript: response.data.transcript,
+        language: 'Unknown',
+        language_code: response.data.language || 'en',
+        is_generated: response.data.is_generated || true
+      });
+    } else {
+      throw new Error('Failed to fetch transcript with yt-dlp');
+    }
   } catch (error) {
     console.error('Error in backup transcript method:', error);
     
-    // Return the actual error to the frontend instead of using dummy data
-    if (error.code === 'ERR_BAD_REQUEST' && error.response?.status === 429) {
+    // Return the actual error to the frontend
+    if (error.response?.status === 429) {
       return res.status(429).json({ 
         success: false, 
         message: 'YouTube rate limit exceeded. Please try again in a few minutes.',

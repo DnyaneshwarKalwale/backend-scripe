@@ -65,6 +65,8 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use(cors({
   origin: [
     'http://localhost:8080', 
+    'http://localhost:3000',
+    'http://localhost:5173',
     'https://brandout.vercel.app', 
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
@@ -75,6 +77,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
   exposedHeaders: ['Set-Cookie']
 }));
+
+// Add a pre-flight options handler for all routes to ensure CORS works properly
+app.options('*', cors());
 
 // Configure session middleware (required for Twitter OAuth)
 app.use(session({
