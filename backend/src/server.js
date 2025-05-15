@@ -26,6 +26,9 @@ const CarouselContent = require('./models/carouselContentModel');
 const cloudinary = require('cloudinary').v2;
 const userLimitRoutes = require('./routes/userLimitRoutes');
 
+// Import the yt-dlp download script
+const downloadYtDlp = require('../downloadYtDlp');
+
 // Load environment variables
 dotenv.config();
 
@@ -56,13 +59,13 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-  'http://localhost:8080',
+    'http://localhost:8080', 
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://brandout.vercel.app',
-  'https://ea50-43-224-158-115.ngrok-free.app',
-  'https://18cd-43-224-158-115.ngrok-free.app',
-  'https://deluxe-cassata-51d628.netlify.app'
+    'https://brandout.vercel.app', 
+    'https://ea50-43-224-158-115.ngrok-free.app',
+    'https://18cd-43-224-158-115.ngrok-free.app',
+    'https://deluxe-cassata-51d628.netlify.app'
 ];
 
 app.use(cors({
@@ -507,6 +510,7 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     const path = require('path');
     const util = require('util');
     const execPromise = util.promisify(exec);
+    const os = require('os');
     
     // Create directory for transcripts if it doesn't exist
     const transcriptsDir = path.join(process.cwd(), 'transcripts');
@@ -547,12 +551,55 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
+    // Determine the correct yt-dlp binary based on platform
+    let ytDlpCommand;
+    
+    // Check if running on render.com or similar cloud platform (Linux)
+    const isCloud = process.env.RENDER || process.env.NODE_ENV === 'production';
+    const isWindows = os.platform() === 'win32';
+    
+    // Try first with local binary, then fallback to global command
+    if (isWindows) {
+      // Windows setup with .exe
+      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
+      ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
+    } else {
+      // Linux/Unix setup
+      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
+      if (fs.existsSync(ytDlpPath)) {
+        // Make sure the binary is executable
+        try {
+          await execPromise(`chmod +x "${ytDlpPath}"`);
+          ytDlpCommand = `"${ytDlpPath}"`;
+        } catch (chmodError) {
+          console.error('Error making yt-dlp executable:', chmodError);
+          ytDlpCommand = 'yt-dlp'; // Fallback to global command
+        }
+      } else if (isCloud) {
+        // On cloud, try installing yt-dlp on demand if not available
+        try {
+          console.log('Attempting to install yt-dlp on cloud platform...');
+          await execPromise('pip install yt-dlp');
+          ytDlpCommand = 'yt-dlp';
+        } catch (installError) {
+          console.error('Error installing yt-dlp:', installError);
+          // Fallback to manual transcript approach
+          return res.status(500).json({
+            success: false,
+            message: 'yt-dlp not available on server. Please try the alternative transcript method.',
+            error: 'yt-dlp not installed'
+          });
+        }
+      } else {
+        ytDlpCommand = 'yt-dlp'; // Try global command
+      }
+    }
+    
     // Command for yt-dlp to extract subtitles
-    // We try auto-generated first, then manual if available
-    const command = `yt-dlp --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `yt-dlp -J "${videoUrl}"`;
+    const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
@@ -966,6 +1013,19 @@ app.use('/api/user-limits', userLimitRoutes);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Download and setup yt-dlp binary for transcript extraction
+  try {
+    console.log('Setting up yt-dlp binary for transcript extraction...');
+    downloadYtDlp().then(() => {
+      console.log('yt-dlp binary setup completed successfully');
+    }).catch(err => {
+      console.error('Error setting up yt-dlp binary:', err);
+      console.log('Transcript extraction functionality might be limited');
+    });
+  } catch (error) {
+    console.error('Failed to setup yt-dlp:', error);
+  }
   
   // Initialize the scheduler service when the server starts
   try {

@@ -419,7 +419,18 @@ async function fetchBackupTranscript(videoId, res) {
     console.log('Using backup transcript method for video ID:', videoId);
     
     // Instead of using ScraperAPI method, try to use yt-dlp directly through the dedicated route
-    const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+    // Determine server URL - could be localhost for dev or the deployed URL for production
+    let baseUrl;
+    
+    if (process.env.NODE_ENV === 'production') {
+      // For production, use the public URL or a relative path
+      baseUrl = process.env.BASE_URL || 'https://backend-scripe.onrender.com';
+    } else {
+      // For local development
+      baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+    }
+    
+    console.log(`Using API base URL: ${baseUrl} for transcript-yt-dlp endpoint`);
     const ytdlpUrl = `${baseUrl}/api/youtube/transcript-yt-dlp`;
     
     const response = await axios.post(ytdlpUrl, { videoId });
@@ -432,7 +443,7 @@ async function fetchBackupTranscript(videoId, res) {
         language_code: response.data.language || 'en',
         is_generated: response.data.is_generated || true
       });
-      
+    
       return res.status(200).json({
         success: true,
         transcript: response.data.transcript,
