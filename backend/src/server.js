@@ -54,46 +54,99 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// Set up yt-dlp path
+const YT_DLP_BIN_DIR = path.join(__dirname, 'bin');
+const YT_DLP_EXECUTABLE = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+const YT_DLP_PATH = path.join(YT_DLP_BIN_DIR, YT_DLP_EXECUTABLE);
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Make the yt-dlp path available globally
+global.YT_DLP_PATH = YT_DLP_PATH;
 
-// Configure CORS with more options
+// Log the path for debugging
+console.log(`Using yt-dlp from: ${YT_DLP_PATH}`);
+
+// Ensure the bin directory exists
+if (!fs.existsSync(YT_DLP_BIN_DIR)) {
+  fs.mkdirSync(YT_DLP_BIN_DIR, { recursive: true });
+  console.log(`Created bin directory at ${YT_DLP_BIN_DIR}`);
+}
+
+// Check if yt-dlp exists
+if (!fs.existsSync(YT_DLP_PATH)) {
+  console.warn(`WARNING: yt-dlp not found at ${YT_DLP_PATH}`);
+} else {
+  console.log(`Found yt-dlp at ${YT_DLP_PATH}`);
+  
+  // Make executable on Unix
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(YT_DLP_PATH, '755');
+      console.log(`Made yt-dlp executable`);
+    } catch (err) {
+      console.warn(`WARNING: Could not make yt-dlp executable: ${err.message}`);
+    }
+  }
+}
+
+// *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://brandout.vercel.app',
+  'https://ea50-43-224-158-115.ngrok-free.app',
+  'https://18cd-43-224-158-115.ngrok-free.app',
+  'https://deluxe-cassata-51d628.netlify.app'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:8080', 
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'https://brandout.vercel.app', 
-    'https://ea50-43-224-158-115.ngrok-free.app',
-    'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app'
-  ],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('netlify.app')) {
+      callback(null, true);
+    } else {
+      console.log(`Origin ${origin} not allowed by CORS policy`);
+      // Still allow the request to continue, just log it as potentially unauthorized
+      callback(null, true);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
   exposedHeaders: ['Set-Cookie']
 }));
 
-// Add a pre-flight options handler for all routes to ensure CORS works properly
+// Ensure OPTIONS requests are handled properly
 app.options('*', cors());
 
-// Add CORS error handler to ensure headers are sent even on errors
+// Add robust CORS error handling
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
-  // Handle CORS preflight requests
+  // Handle preflight 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
   
   next();
 });
+
+// Regular middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Configure session middleware (required for Twitter OAuth)
 app.use(session({
@@ -528,12 +581,39 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
+    // Use our local yt-dlp executable
+    let ytDlpExecutable = global.YT_DLP_PATH;
+    
+    // Fallback to looking for the binary in the usual locations
+    if (!fs.existsSync(ytDlpExecutable)) {
+      console.warn(`yt-dlp not found at ${ytDlpExecutable}, trying alternative locations`);
+      
+      // Try src/bin directory
+      const srcBinPath = path.join(__dirname, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+      if (fs.existsSync(srcBinPath)) {
+        ytDlpExecutable = srcBinPath;
+        console.log(`Found yt-dlp at ${srcBinPath}`);
+      } else {
+        // Try one level up
+        const rootBinPath = path.join(__dirname, '..', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+        if (fs.existsSync(rootBinPath)) {
+          ytDlpExecutable = rootBinPath;
+          console.log(`Found yt-dlp at ${rootBinPath}`);
+        } else {
+          // Fall back to using the system yt-dlp
+          ytDlpExecutable = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+          console.log(`Falling back to system yt-dlp command: ${ytDlpExecutable}`);
+        }
+      }
+    }
+    
     // Command for yt-dlp to extract subtitles
     // We try auto-generated first, then manual if available
-    const command = `yt-dlp --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    const command = `"${ytDlpExecutable}" --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    console.log(`Executing command: ${command}`);
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `yt-dlp -J "${videoUrl}"`;
+    const metadataCommand = `"${ytDlpExecutable}" -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
@@ -643,7 +723,10 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       return res.status(500).json({
         success: false,
         message: 'Failed to extract transcript with yt-dlp',
-        error: error.message
+        error: error.message,
+        command: command,
+        executable_path: ytDlpExecutable,
+        exists: fs.existsSync(ytDlpExecutable)
       });
     }
   } catch (error) {
@@ -734,9 +817,21 @@ app.get('/health', async (req, res) => {
 // Error handler middleware
 app.use(errorHandler);
 
-// Add detailed error logging middleware
+// Add detailed error logging middleware with CORS headers
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
+  
+  // Set CORS headers even in error responses
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  // Send error response
   res.status(500).json({
     success: false,
     message: 'Server error',

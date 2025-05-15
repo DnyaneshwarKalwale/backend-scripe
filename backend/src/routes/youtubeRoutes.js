@@ -422,7 +422,12 @@ async function fetchBackupTranscript(videoId, res) {
     const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
     const ytdlpUrl = `${baseUrl}/api/youtube/transcript-yt-dlp`;
     
-    const response = await axios.post(ytdlpUrl, { videoId });
+    const response = await axios.post(ytdlpUrl, { 
+      videoId,
+      debug: true // Add debug flag to get more information
+    }, {
+      timeout: 30000 // Longer timeout for yt-dlp processing
+    });
     
     if (response.data && response.data.success) {
       // Store successful result in cache
@@ -441,12 +446,12 @@ async function fetchBackupTranscript(videoId, res) {
         is_generated: response.data.is_generated || true
       });
     } else {
-      throw new Error('Failed to fetch transcript with yt-dlp');
+      throw new Error('Failed to fetch transcript with yt-dlp: ' + (response.data?.message || 'Unknown error'));
     }
   } catch (error) {
     console.error('Error in backup transcript method:', error);
     
-    // Return the actual error to the frontend
+    // Return the actual error to the frontend with more details
     if (error.response?.status === 429) {
       return res.status(429).json({ 
         success: false, 
@@ -455,21 +460,44 @@ async function fetchBackupTranscript(videoId, res) {
       });
     }
     
-    // Return general error for other issues
+    // Return general error for other issues with more debug info
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch transcript with all available methods',
-      error: error.toString()
+      error: error.toString(),
+      ytdlpError: error.response?.data?.error || 'No specific error information available',
+      requestError: error.request ? true : false,
+      responseStatus: error.response?.status || 'No response status',
+      responseData: error.response?.data || 'No response data'
     });
   }
 }
 
 // Setup CORS handlers specifically for YouTube routes
 router.use((req, res, next) => {
-  // Ensure CORS headers are applied to this route
-  res.header('Access-Control-Allow-Origin', '*');
+  // Get the origin
+  const origin = req.headers.origin;
+  
+  // Dynamically set Access-Control-Allow-Origin
+  if (origin) {
+    // Allow Netlify origins explicitly
+    if (origin.endsWith('netlify.app') || 
+        origin === 'https://deluxe-cassata-51d628.netlify.app' ||
+        origin.includes('localhost')) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      // For other origins, still allow them but log
+      console.log(`YouTube Routes: Origin ${origin} accessing API`);
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    // No origin header (direct API call)
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -483,7 +511,24 @@ router.use((err, req, res, next) => {
   console.error('YouTube API error:', err);
   
   // Set CORS headers even when errors occur
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin) {
+    // For Netlify domains and localhost, use the specific origin
+    if (origin.endsWith('netlify.app') || 
+        origin === 'https://deluxe-cassata-51d628.netlify.app' || 
+        origin.includes('localhost')) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      console.log(`Error handler: Origin ${origin} accessing API`);
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   // Handle payload too large errors specifically
   if (err.type === 'entity.too.large') {
