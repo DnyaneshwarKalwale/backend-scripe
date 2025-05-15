@@ -32,22 +32,59 @@ if (!fs.existsSync(binDir)) {
   console.log(`Created directory: ${binDir}`);
 }
 
-// Download the file
-console.log('Downloading yt-dlp...');
-const file = fs.createWriteStream(outputPath);
-
-https.get(downloadUrl, (response) => {
-  if (response.statusCode !== 200) {
-    console.error(`Failed to download yt-dlp: HTTP ${response.statusCode}`);
-    process.exit(1);
+// Function to download with redirect support
+function downloadWithRedirects(url, outputPath, maxRedirects = 5) {
+  if (maxRedirects <= 0) {
+    throw new Error('Too many redirects');
   }
+  
+  return new Promise((resolve, reject) => {
+    console.log(`Attempting to download from: ${url}`);
+    const file = fs.createWriteStream(outputPath);
+    
+    const request = https.get(url, (response) => {
+      // Handle redirects (status codes 301, 302, 303, 307, 308)
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        console.log(`Redirected to: ${response.headers.location}`);
+        file.close();
+        fs.unlinkSync(outputPath); // Clean up the file
+        // Follow the redirect
+        return downloadWithRedirects(response.headers.location, outputPath, maxRedirects - 1)
+          .then(resolve)
+          .catch(reject);
+      }
+      
+      if (response.statusCode !== 200) {
+        fs.unlinkSync(outputPath); // Clean up the file
+        return reject(new Error(`Failed to download yt-dlp: HTTP ${response.statusCode}`));
+      }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close(() => resolve());
+        console.log('Download complete.');
+      });
+    });
+    
+    request.on('error', (err) => {
+      fs.unlink(outputPath, () => {}); // Clean up the file
+      reject(err);
+    });
+    
+    file.on('error', (err) => {
+      fs.unlink(outputPath, () => {}); // Clean up the file
+      reject(err);
+    });
+  });
+}
 
-  response.pipe(file);
-
-  file.on('finish', () => {
-    file.close();
-    console.log('Download complete.');
-
+// Main function to download and set up yt-dlp
+async function setupYtDlp() {
+  try {
+    console.log('Downloading yt-dlp...');
+    await downloadWithRedirects(downloadUrl, outputPath);
+    
     // Make executable on Unix platforms
     if (platform !== 'win32') {
       try {
@@ -57,7 +94,7 @@ https.get(downloadUrl, (response) => {
         console.error('Failed to make executable:', err);
       }
     }
-
+    
     // Verify installation
     try {
       const version = platform === 'win32'
@@ -67,9 +104,11 @@ https.get(downloadUrl, (response) => {
     } catch (err) {
       console.error('Failed to verify installation:', err);
     }
-  });
-}).on('error', (err) => {
-  fs.unlink(outputPath, () => {});
-  console.error('Download failed:', err);
-  process.exit(1);
-}); 
+  } catch (error) {
+    console.error('Download failed:', error);
+    process.exit(1);
+  }
+}
+
+// Run the setup
+setupYtDlp(); 
