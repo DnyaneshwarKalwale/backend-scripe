@@ -26,6 +26,9 @@ const CarouselContent = require('./models/carouselContentModel');
 const cloudinary = require('cloudinary').v2;
 const userLimitRoutes = require('./routes/userLimitRoutes');
 
+// Import the yt-dlp download script
+const downloadYtDlp = require('../downloadYtDlp');
+
 // Import the transcript API setup script
 const setupTranscriptApi = require('../setup_transcript_api');
 
@@ -493,6 +496,298 @@ app.post('/api/youtube-carousels', async (req, res) => {
   }
 });
 
+// Add a new endpoint for yt-dlp transcript extraction
+app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
+  try {
+    const { videoId } = req.body;
+    
+    if (!videoId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Video ID is required' 
+      });
+    }
+    
+    const fs = require('fs');
+    const { exec } = require('child_process');
+    const path = require('path');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    const os = require('os');
+    
+    // Create directory for transcripts if it doesn't exist
+    const transcriptsDir = path.join(process.cwd(), 'transcripts');
+    if (!fs.existsSync(transcriptsDir)) {
+      fs.mkdirSync(transcriptsDir, { recursive: true });
+    }
+    
+    const outputFileName = path.join(transcriptsDir, `${videoId}.json`);
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    console.log(`Extracting transcript for video ${videoId} using yt-dlp`);
+    
+    // First check if we already have this transcript saved
+    if (fs.existsSync(outputFileName)) {
+      try {
+        const savedTranscript = JSON.parse(fs.readFileSync(outputFileName, 'utf8'));
+        if (savedTranscript && savedTranscript.transcript) {
+          console.log(`Found existing transcript for ${videoId}`);
+          return res.json({
+            success: true,
+            message: 'Transcript loaded from cache',
+            transcript: savedTranscript.transcript,
+            language: savedTranscript.language || 'en',
+            is_generated: savedTranscript.is_generated || false,
+            // Include metadata if available in the saved file
+            duration: savedTranscript.duration || 'N/A',
+            thumbnail: savedTranscript.thumbnail || '',
+            title: savedTranscript.title || '',
+            channelName: savedTranscript.channelName || '',
+            viewCount: savedTranscript.viewCount || 0,
+            uploadDate: savedTranscript.uploadDate || '',
+            formattedTranscript: savedTranscript.formattedTranscript || 
+              formatTranscriptToBulletPoints(savedTranscript.transcript)
+          });
+        }
+      } catch (readError) {
+        console.error('Error reading existing transcript:', readError);
+      }
+    }
+    
+    // Determine the correct yt-dlp binary based on platform
+    let ytDlpCommand;
+    
+    // Check if running on render.com or similar cloud platform (Linux)
+    const isCloud = process.env.RENDER || process.env.NODE_ENV === 'production';
+    const isWindows = os.platform() === 'win32';
+    
+    // Try first with local binary, then fallback to global command
+    if (isWindows) {
+      // Windows setup with .exe
+      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
+      ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
+    } else {
+      // Linux/Unix setup
+      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
+      if (fs.existsSync(ytDlpPath)) {
+        // Make sure the binary is executable
+        try {
+          await execPromise(`chmod +x "${ytDlpPath}"`);
+          ytDlpCommand = `"${ytDlpPath}"`;
+        } catch (chmodError) {
+          console.error('Error making yt-dlp executable:', chmodError);
+          ytDlpCommand = 'yt-dlp'; // Fallback to global command
+        }
+      } else if (isCloud) {
+        // On cloud, try installing yt-dlp on demand if not available
+        try {
+          console.log('Attempting to install yt-dlp on cloud platform...');
+          await execPromise('pip install yt-dlp');
+          ytDlpCommand = 'yt-dlp';
+        } catch (installError) {
+          console.error('Error installing yt-dlp:', installError);
+          // Fallback to manual transcript approach
+          return res.status(500).json({
+            success: false,
+            message: 'yt-dlp not available on server. Please try the alternative transcript method.',
+            error: 'yt-dlp not installed'
+          });
+        }
+      } else {
+        ytDlpCommand = 'yt-dlp'; // Try global command
+      }
+    }
+    
+    // Command for yt-dlp to extract subtitles
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    
+    // Add a separate command to fetch video metadata including duration
+    const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
+    
+    try {
+      // First fetch video metadata to get duration
+      let duration = "N/A";
+      let thumbnail = "";
+      let title = "";
+      let channelName = "";
+      let viewCount = 0;
+      let uploadDate = "";
+      
+      try {
+        const { stdout: metadataOutput } = await execPromise(metadataCommand);
+        const metadata = JSON.parse(metadataOutput);
+        
+        // Extract relevant metadata
+        duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
+        thumbnail = metadata.thumbnail || "";
+        title = metadata.title || "";
+        channelName = metadata.channel || metadata.uploader || "";
+        viewCount = metadata.view_count || 0;
+        uploadDate = metadata.upload_date || "";
+        
+        console.log(`Video metadata fetched successfully for ${videoId}, duration: ${duration}`);
+      } catch (metadataError) {
+        console.error('Error fetching video metadata:', metadataError);
+        // Continue with transcript extraction even if metadata fails
+      }
+      
+      // Then proceed with transcript extraction
+      const { stdout, stderr } = await execPromise(command);
+      console.log('yt-dlp output:', stdout);
+      
+      if (stderr) {
+        console.error('yt-dlp stderr:', stderr);
+      }
+      
+      // Look for the generated subtitle file
+      const files = fs.readdirSync(process.cwd());
+      const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
+      
+      if (!subtitleFile) {
+        throw new Error('No subtitle file generated');
+      }
+      
+      // Read and parse the subtitle content
+      const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+      let transcriptText = '';
+      let is_generated = false;
+      
+      if (subtitleFile.endsWith('.json3')) {
+        // Parse JSON format
+        const subtitleJson = JSON.parse(subtitleContent);
+        transcriptText = subtitleJson.events
+          .filter(event => event.segs && event.segs.length > 0)
+          .map(event => event.segs.map(seg => seg.utf8).join(' '))
+          .join(' ');
+        is_generated = subtitleFile.includes('auto');
+      } else if (subtitleFile.endsWith('.vtt')) {
+        // Parse VTT format - simple approach
+        transcriptText = subtitleContent
+          .split('\n')
+          .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
+          .join(' ')
+          .replace(/<[^>]*>/g, ''); // Remove HTML tags
+        is_generated = subtitleFile.includes('auto');
+      }
+      
+      // Clean up the extracted files
+      fs.unlinkSync(subtitleFile);
+      
+      // Save the transcript to our JSON file for future use
+      const transcriptData = {
+        transcript: transcriptText,
+        language: 'en',
+        is_generated: is_generated,
+        extractedAt: new Date().toISOString(),
+        duration: duration,
+        thumbnail: thumbnail,
+        title: title,
+        channelName: channelName,
+        viewCount: viewCount,
+        uploadDate: uploadDate
+      };
+      
+      fs.writeFileSync(outputFileName, JSON.stringify(transcriptData, null, 2));
+      
+      // Format the transcript into bullet points for carousel use
+      const formattedTranscript = formatTranscriptToBulletPoints(transcriptText);
+      
+      return res.json({
+        success: true,
+        message: 'Transcript extracted successfully',
+        transcript: transcriptText,
+        formattedTranscript: formattedTranscript,
+        language: 'en',
+        is_generated: is_generated,
+        // Include video metadata in the response
+        duration: duration,
+        thumbnail: thumbnail,
+        title: title,
+        channelName: channelName,
+        viewCount: viewCount,
+        uploadDate: uploadDate
+      });
+    } catch (error) {
+      console.error('Error extracting transcript with yt-dlp:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to extract transcript with yt-dlp',
+        error: error.message
+      });
+    }
+  } catch (error) {
+    console.error('Error in transcript-yt-dlp endpoint:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error processing transcript request',
+      error: error.message
+    });
+  }
+});
+
+// Helper function to format transcript into bullet points
+function formatTranscriptToBulletPoints(text) {
+  if (!text || text.length < 10) return [];
+  
+  // Split by sentences and create meaningful bullet points
+  const sentences = text.replace(/([.?!])\s+/g, "$1|").split("|");
+  const bulletPoints = [];
+  
+  // Process sentences to create meaningful bullet points
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i].trim();
+    
+    // Only include meaningful sentences with proper length
+    if (sentence.length > 15 && sentence.length < 200) {
+      // Filter out timestamps, speaker identification, and other non-content
+      if (!sentence.match(/^\d+:\d+/) && !sentence.match(/^speaker\s\d+:/i)) {
+        bulletPoints.push(sentence);
+        
+        // Limit to 8 bullet points for carousel use
+        if (bulletPoints.length >= 8) break;
+      }
+    }
+  }
+  
+  // If we couldn't extract meaningful bullets, create some based on the text length
+  if (bulletPoints.length === 0) {
+    const words = text.split(' ');
+    const chunkSize = Math.floor(words.length / 8);
+    
+    for (let i = 0; i < 8; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, words.length);
+      const chunk = words.slice(start, end).join(' ');
+      
+      if (chunk.length > 10) {
+        bulletPoints.push(chunk);
+      }
+    }
+  }
+  
+  return bulletPoints.length > 0 ? bulletPoints : ["No meaningful transcript content available"];
+}
+
+// Helper function to format seconds into a human-readable duration (MM:SS)
+function formatDuration(seconds) {
+  if (!seconds || isNaN(seconds)) return "N/A";
+  
+  // Convert to integer
+  const totalSeconds = Math.floor(seconds);
+  
+  // Calculate hours, minutes, seconds
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  
+  // Format as HH:MM:SS or MM:SS
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  } else {
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+}
+
 // Health check route
 app.get('/health', async (req, res) => {
   const dbConnected = await checkMongoConnection();
@@ -503,115 +798,6 @@ app.get('/health', async (req, res) => {
     database: dbConnected ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });
-});
-
-// Diagnostic endpoint for Python/transcript issues
-app.get('/api/youtube/python-check', async (req, res) => {
-  try {
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
-    const os = require('os');
-    
-    // System info
-    const systemInfo = {
-      platform: os.platform(),
-      nodeVersion: process.version,
-      env: process.env.NODE_ENV,
-      directory: process.cwd(),
-      hostname: os.hostname()
-    };
-    
-    // Check Python version
-    let pythonResults = { available: false };
-    try {
-      // Try different Python executables
-      const pythonCommands = ['python3 --version', 'python --version', 'py --version'];
-      let pythonWorked = false;
-      
-      for (const cmd of pythonCommands) {
-        try {
-          const { stdout: pythonVersion } = await execPromise(cmd);
-          pythonResults.available = true;
-          pythonResults.version = pythonVersion.trim();
-          pythonResults.workingCommand = cmd.split(' ')[0];
-          pythonWorked = true;
-          break;
-        } catch (err) {
-          // Continue to next command
-        }
-      }
-      
-      if (!pythonWorked) {
-        pythonResults.error = 'No Python executable found';
-      }
-    } catch (err) {
-      pythonResults.error = err.message;
-    }
-    
-    // Check youtube-transcript-api
-    let ytapiResults = { available: false };
-    if (pythonResults.workingCommand) {
-      try {
-        const { stdout } = await execPromise(`${pythonResults.workingCommand} -c "import youtube_transcript_api; print('available')"`);
-        ytapiResults.available = stdout.includes('available');
-      } catch (err) {
-        ytapiResults.error = err.message;
-      }
-    }
-    
-    // Check transcript_fetcher.py exists and permissions
-    let scriptResults = { exists: false };
-    const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
-    try {
-      if (fs.existsSync(scriptPath)) {
-        scriptResults.exists = true;
-        
-        // Get permissions on Unix-like systems
-        if (os.platform() !== 'win32') {
-          try {
-            const { stdout: lsOutput } = await execPromise(`ls -l ${scriptPath}`);
-            scriptResults.permissions = lsOutput.trim();
-            scriptResults.isExecutable = lsOutput.includes('x');
-          } catch (lsErr) {
-            scriptResults.permissionsError = lsErr.message;
-          }
-        } else {
-          scriptResults.permissions = 'Windows - permissions check not applicable';
-        }
-        
-        // Try to read the file
-        try {
-          const stats = fs.statSync(scriptPath);
-          scriptResults.size = stats.size;
-          scriptResults.mtime = stats.mtime;
-          
-          // Read beginning of the file
-          const content = fs.readFileSync(scriptPath, 'utf8').substring(0, 200);
-          scriptResults.contentPreview = content + '...';
-        } catch (readErr) {
-          scriptResults.readError = readErr.message;
-        }
-  } else {
-        scriptResults.error = 'File does not exist';
-      }
-    } catch (err) {
-      scriptResults.error = err.message;
-    }
-    
-    // Send complete diagnostic result
-    res.json({
-      system: systemInfo,
-      python: pythonResults,
-      youtube_transcript_api: ytapiResults,
-      transcript_script: scriptResults
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      error: error.message, 
-      stack: process.env.NODE_ENV === 'production' ? null : error.stack
-    });
-  }
 });
 
 // Error handler middleware
@@ -831,6 +1017,19 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   
+  // Download and setup yt-dlp binary for transcript extraction
+  try {
+    console.log('Setting up yt-dlp binary for transcript extraction...');
+    downloadYtDlp().then(() => {
+      console.log('yt-dlp binary setup completed successfully');
+    }).catch(err => {
+      console.error('Error setting up yt-dlp binary:', err);
+      console.log('Transcript extraction functionality might be limited');
+    });
+  } catch (error) {
+    console.error('Failed to setup yt-dlp:', error);
+  }
+  
   // Setup youtube-transcript-api for Python extraction
   try {
     console.log('Setting up youtube-transcript-api...');
@@ -838,7 +1037,7 @@ app.listen(PORT, () => {
       console.log('youtube-transcript-api setup completed successfully');
     }).catch(err => {
       console.error('Error setting up youtube-transcript-api:', err);
-      console.log('Transcript functionality might be limited');
+      console.log('Will fall back to manual transcript extraction methods');
     });
   } catch (error) {
     console.error('Failed to setup youtube-transcript-api:', error);

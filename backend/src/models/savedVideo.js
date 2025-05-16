@@ -32,6 +32,11 @@ const savedVideoSchema = new mongoose.Schema(
       type: Date,
       default: Date.now
     },
+    // Add duration field
+    duration: {
+      type: String,
+      default: 'N/A'
+    },
     // New fields for transcript data
     transcript: {
       type: String,

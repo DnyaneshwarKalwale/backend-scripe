@@ -95,7 +95,7 @@ const getChannelVideos = async (req, res) => {
         // Extract channel ID
         const channelIdMatch = response.data.match(/"channelId":"([^"]+)"/);
         if (!channelIdMatch || !channelIdMatch[1]) {
-          // Alternative method - try a different regex pattern
+          // Alternative methods - try different regex patterns
           const altMatch = response.data.match(/channel\/([^"]+)"/);
           if (altMatch && altMatch[1]) {
             // Verify the extracted ID is not 'client' and has a proper channel ID format
@@ -142,6 +142,19 @@ const getChannelVideos = async (req, res) => {
         } else {
           channelId = channelIdMatch[1];
           console.log(`Found channel ID: ${channelId}`);
+        }
+        
+        // Also try to extract channel name from the page
+        let channelNameFromPage = "";
+        const channelNameMatch = response.data.match(/"channelName":"([^"]+)"/);
+        if (channelNameMatch && channelNameMatch[1]) {
+          channelNameFromPage = channelNameMatch[1];
+        } else {
+          // Try alternate patterns for channel name
+          const altChannelNameMatch = response.data.match(/<meta name="title" content="([^"]+)"/);
+          if (altChannelNameMatch && altChannelNameMatch[1]) {
+            channelNameFromPage = altChannelNameMatch[1];
+          }
         }
       } catch (fetchError) {
         console.error('Error fetching channel data:', fetchError);
@@ -199,6 +212,14 @@ const getChannelVideos = async (req, res) => {
           data: []
         });
       }
+
+      // Extract channel name if available
+      let channelName = "Unknown Channel";
+      if (feed.feed.title) {
+        channelName = feed.feed.title;
+      } else if (feed.feed.author && feed.feed.author.name) {
+        channelName = feed.feed.author.name;
+      }
       
       // Ensure entries is an array even if there's only one video
       const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
@@ -222,17 +243,68 @@ const getChannelVideos = async (req, res) => {
         } catch (e) {
           console.log(`Could not extract view count for video ${videoId}`);
         }
+
+        // Extract duration if available in the feed (usually not available)
+        let duration = "N/A";
+        try {
+          if (entry['media:group'] && entry['media:group']['media:content'] && 
+              entry['media:group']['media:content'].$ && 
+              entry['media:group']['media:content'].$.duration) {
+            const durationSeconds = parseInt(entry['media:group']['media:content'].$.duration, 10);
+            duration = formatDuration(durationSeconds);
+          }
+        } catch (e) {
+          console.log(`Could not extract duration for video ${videoId}`);
+        }
         
         return {
           id: videoId,
           title: entry.title || 'Untitled Video',
           thumbnail: thumbnailUrl,
           url: `https://youtube.com/watch?v=${videoId}`,
-          duration: "N/A", // Duration not available from RSS feed
+          duration: duration,
           view_count: viewCount,
-          upload_date: entry.published || new Date().toISOString()
+          upload_date: entry.published || new Date().toISOString(),
+          channelName: channelName
         };
       });
+
+      // For videos without duration (which is most of them from RSS), try to fetch duration data
+      // This can be done in batches to avoid too many requests
+      try {
+        // Batch videos into groups of 10 for processing
+        const batchSize = 10;
+        for (let i = 0; i < videos.length; i += batchSize) {
+          const batch = videos.slice(i, i + batchSize);
+          const videoIds = batch.map(video => video.id).join(',');
+          
+          // Try to fetch video details using scraping approach (no API key needed)
+          const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          };
+          
+          // Get duration for each video in the batch using a more resilient approach
+          await Promise.allSettled(batch.map(async (video) => {
+            try {
+              const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+              const response = await axios.get(videoUrl, { headers, timeout: 5000 });
+              
+              // Extract duration using regex patterns
+              const durationMatch = response.data.match(/"lengthSeconds":"(\d+)"/);
+              if (durationMatch && durationMatch[1]) {
+                const seconds = parseInt(durationMatch[1], 10);
+                video.duration = formatDuration(seconds);
+              }
+            } catch (error) {
+              console.log(`Failed to fetch duration for video ${video.id}: ${error.message}`);
+              // Keep the default N/A if fetch fails
+            }
+          }));
+        }
+      } catch (durationError) {
+        console.error('Error fetching video durations:', durationError);
+        // Continue with the videos we have, even without durations
+      }
       
       return res.status(200).json({
         success: true,
@@ -253,6 +325,26 @@ const getChannelVideos = async (req, res) => {
       message: error.message || 'Error processing YouTube channel request',
       error: error.toString()
     });
+  }
+};
+
+// Helper function to format seconds into a human-readable duration (MM:SS)
+const formatDuration = (seconds) => {
+  if (!seconds || isNaN(seconds)) return "N/A";
+  
+  // Convert to integer
+  const totalSeconds = Math.floor(seconds);
+  
+  // Calculate hours, minutes, seconds
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  
+  // Format as HH:MM:SS or MM:SS
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  } else {
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 };
 
@@ -314,16 +406,16 @@ const createCarousels = async (req, res) => {
  */
 const saveYoutubeVideo = async (req, res) => {
   try {
-    const { videoId, title, thumbnailUrl, channelTitle, publishedAt, userId } = req.body;
+    const { videoId, title, thumbnailUrl, channelTitle, publishedAt, userId, duration, metadata } = req.body;
 
-    if (!videoId || !title || !thumbnailUrl) {
+    if (!videoId || !title) {
       return res.status(400).json({
         success: false,
-        message: 'Video ID, title, and thumbnail URL are required'
+        message: 'Video ID and title are required'
       });
     }
 
-    // Check if the user exists if userId is provided
+    // Check if the user exists if userId is provided and not anonymous
     if (userId && userId !== 'anonymous') {
       try {
         const user = await User.findById(userId);
@@ -345,7 +437,9 @@ const saveYoutubeVideo = async (req, res) => {
         thumbnailUrl,
         channelTitle: channelTitle || 'Unknown Channel',
         publishedAt: publishedAt || new Date(),
-        savedAt: new Date()
+        savedAt: new Date(),
+        duration: duration || 'N/A',
+        ...(metadata && { metadata })
       },
       { new: true, upsert: true }
     );
@@ -398,7 +492,7 @@ const saveMultipleVideos = async (req, res) => {
 
     // Process each video in the array
     for (const video of videos) {
-      const { id, videoId, title, thumbnail, thumbnailUrl, transcript, formattedTranscript, language, is_generated } = video;
+      const { id, videoId, title, thumbnail, thumbnailUrl, transcript, formattedTranscript, language, is_generated, duration, metadata } = video;
       
       const actualVideoId = videoId || id;
       
@@ -417,11 +511,13 @@ const saveMultipleVideos = async (req, res) => {
           channelTitle: video.channelName || video.channelTitle || 'Unknown Channel',
           publishedAt: video.publishedAt || video.upload_date || new Date(),
           savedAt: video.savedAt || new Date(),
+          duration: video.duration || 'N/A',
           // Include transcript data if available
           ...(transcript && { transcript }),
           ...(formattedTranscript && { formattedTranscript }),
           ...(language && { language }),
-          ...(typeof is_generated !== 'undefined' && { is_generated })
+          ...(typeof is_generated !== 'undefined' && { is_generated }),
+          ...(metadata && { metadata })
         };
 
         // Create or update the video in the database
@@ -545,7 +641,7 @@ const deleteSavedVideo = async (req, res) => {
  */
 const saveVideoTranscript = async (req, res) => {
   try {
-    const { video, videoId, transcript, formattedTranscript, language, is_generated, userId } = req.body;
+    const { video, videoId, transcript, formattedTranscript, language, is_generated, userId, duration, channelTitle } = req.body;
     
     // Handle both direct parameters and nested video object
     const actualVideoId = video?.id || video?.videoId || videoId;
@@ -553,6 +649,8 @@ const saveVideoTranscript = async (req, res) => {
     const actualFormattedTranscript = video?.formattedTranscript || formattedTranscript;
     const actualLanguage = video?.language || language || 'Unknown';
     const actualIsGenerated = typeof (video?.is_generated) !== 'undefined' ? video.is_generated : (typeof is_generated !== 'undefined' ? is_generated : false);
+    const actualDuration = video?.duration || duration || 'N/A';
+    const actualChannelTitle = video?.channelName || video?.channelTitle || channelTitle || 'Unknown Channel';
     
     if (!actualVideoId || (!actualTranscript && !actualFormattedTranscript)) {
       return res.status(400).json({
@@ -597,6 +695,8 @@ const saveVideoTranscript = async (req, res) => {
       formattedTranscript: safeFormattedTranscript,
       language: actualLanguage,
       is_generated: actualIsGenerated,
+      duration: actualDuration,
+      channelTitle: actualChannelTitle,
       updatedAt: new Date()
     };
     
@@ -619,7 +719,8 @@ const saveVideoTranscript = async (req, res) => {
         videoId: actualVideoId,
         title: video.title || 'Untitled Video',
         thumbnailUrl: video.thumbnailUrl || video.thumbnail || `https://img.youtube.com/vi/${actualVideoId}/mqdefault.jpg`,
-        channelTitle: video.channelName || video.channelTitle || 'Unknown Channel',
+        channelTitle: actualChannelTitle,
+        duration: actualDuration,
         publishedAt: video.publishedAt || video.upload_date || new Date(),
         savedAt: video.savedAt || new Date(),
         ...transcriptData
@@ -628,6 +729,8 @@ const saveVideoTranscript = async (req, res) => {
         videoId: actualVideoId,
         title: 'Untitled Video',
         thumbnailUrl: `https://img.youtube.com/vi/${actualVideoId}/mqdefault.jpg`,
+        channelTitle: actualChannelTitle,
+        duration: actualDuration,
         ...transcriptData
       };
       
