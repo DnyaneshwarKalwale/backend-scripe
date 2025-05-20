@@ -18,6 +18,7 @@ const youtubeRoutes = require('./routes/youtubeRoutes');
 const postRoutes = require('./routes/postRoutes');
 const carouselRoutes = require('./routes/carouselRoutes');
 const fontRoutes = require('./routes/fontRoutes');
+const stripeRoutes = require('./routes/stripeRoutes');
 const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
 const fs = require('fs');
@@ -116,6 +117,19 @@ app.use((req, res, next) => {
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+// Special handling for Stripe webhooks - needs raw body
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '10mb' }));
+
+// Create a middleware to make raw body available for webhook verification
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook' && Buffer.isBuffer(req.body)) {
+    req.rawBody = req.body;
+    next();
+  } else {
+    next();
+  }
+});
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
@@ -428,6 +442,7 @@ app.use('/api/carousels', carouselRoutes);
 app.use('/api/fonts', fontRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/user-limits', userLimitRoutes);
+app.use('/api/stripe', stripeRoutes);
 // Admin routes
 app.use('/api/admin', require('./routes/adminRoutes'));
 

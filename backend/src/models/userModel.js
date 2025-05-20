@@ -65,6 +65,56 @@ const userSchema = mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    // New fields for subscription management
+    subscription: {
+      planId: {
+        type: String, 
+        enum: ['trial', 'basic', 'premium', 'custom', 'expired'],
+        default: 'expired'
+      },
+      status: {
+        type: String,
+        enum: ['active', 'past_due', 'canceled', 'inactive'],
+        default: 'inactive'
+      },
+      stripeCustomerId: String,
+      stripeSubscriptionId: String,
+      currentPeriodEnd: Date,
+      canceledAt: Date
+    },
+    // Credits for AI content generation
+    credits: {
+      type: Number,
+      default: 0
+    },
+    // Purchased credit packs history
+    creditPurchaseHistory: [
+      {
+        amount: Number,
+        date: {
+          type: Date,
+          default: Date.now
+        },
+        stripeSessionId: String
+      }
+    ],
+    // Payment methods saved via Stripe 
+    paymentMethods: [
+      {
+        type: {
+          type: String,
+          enum: ['card', 'paypal']
+        },
+        lastFour: String,
+        brand: String,
+        expiryDate: String,
+        isDefault: {
+          type: Boolean,
+          default: false
+        },
+        stripePaymentMethodId: String
+      }
+    ]
   },
   {
     timestamps: true,

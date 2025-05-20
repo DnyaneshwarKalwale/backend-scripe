@@ -16,11 +16,17 @@ router.get('/:userId', protect, userLimitController.getUserLimit);
 router.post('/:userId/increment', protect, userLimitController.incrementUserCount);
 
 // Reset user limit
-router.post('/:userId/reset', protect, userLimitController.resetUserLimit);
+router.post('/:userId/reset', protect, checkAdmin, userLimitController.resetUserLimit);
+
+// Update user's subscription plan
+router.post('/:userId/update-plan', protect, checkAdmin, userLimitController.updateUserPlan);
+
+// Set user to trial plan
+router.post('/:userId/set-trial', protect, checkAdmin, userLimitController.setUserToTrialPlan);
 
 // Admin routes
 router.put('/:userId', protect, checkAdmin, userLimitController.updateUserLimit);
-router.put('/multiple', protect, checkAdmin, userLimitController.updateMultipleUserLimits);
-router.put('/all', protect, checkAdmin, userLimitController.updateAllUserLimits);
+router.post('/multiple', protect, checkAdmin, userLimitController.updateMultipleUserLimits);
+router.post('/all', protect, checkAdmin, userLimitController.updateAllUserLimits);
 
 module.exports = router; 

@@ -4,6 +4,7 @@ const path = require('path');
 const { errorHandler } = require('./middleware/errorMiddleware');
 const userRoutes = require('./routes/userRoutes');
 const carouselRoutes = require('./routes/carouselRoutes');
+const stripeRoutes = require('./routes/stripeRoutes');
 const { connectDB } = require('./config/db');
 
 // Set up Express app
@@ -17,6 +18,19 @@ app.use(cors({
   origin: ['http://localhost:8080', 'http://localhost:3000', 'http://localhost:5173'],
   credentials: true
 }));
+
+// Special handling for Stripe webhook route to access raw body for signature verification
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
+// Add middleware to expose the raw body for signature verification
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    req.rawBody = req.body;
+  }
+  next();
+});
+
+// Standard middleware for other routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -33,6 +47,7 @@ app.use('/uploads', express.static(uploadsDir));
 // Routes
 app.use('/api/users', userRoutes);
 app.use('/api/carousels', carouselRoutes);
+app.use('/api/stripe', stripeRoutes);
 
 // Default route
 app.get('/', (req, res) => {
