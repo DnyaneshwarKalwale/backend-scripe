@@ -9,7 +9,9 @@ const {
   getAllContent,
   deleteContent,
   getUserVideos,
-  getUserContent
+  getUserContent,
+  getSavedVideosMetrics,
+  getSubscriptionMetrics
 } = require('../controllers/adminController');
 const { protect, checkAdmin } = require('../middleware/authMiddleware');
 
@@ -20,6 +22,10 @@ router.use(checkAdmin);
 
 // Admin dashboard routes
 router.get('/dashboard', getDashboardStats);
+
+// Analytics metrics routes
+router.get('/saved-videos/metrics', getSavedVideosMetrics);
+router.get('/subscriptions/metrics', getSubscriptionMetrics);
 
 // User management routes
 router.route('/users')
