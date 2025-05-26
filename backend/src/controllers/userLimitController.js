@@ -13,13 +13,53 @@ const PLAN_LIMITS = {
 // Default plan for new users is expired (no plan)
 const DEFAULT_PLAN = 'expired';
 
+// Helper function to check if a subscription has expired and handle accordingly
+exports.checkAndHandleSubscriptionExpiration = async (userId) => {
+  try {
+    const userLimit = await UserLimit.findOne({ userId });
+    
+    if (!userLimit) {
+      return null;
+    }
+    
+    // Check if subscription has expired
+    if (userLimit.expiresAt && new Date() > new Date(userLimit.expiresAt)) {
+      // Check if auto-pay is enabled (you would implement this flag in your userLimit model)
+      const hasAutoPay = userLimit.autoPay === true;
+      
+      if (!hasAutoPay) {
+        // If auto-pay is not enabled, mark as expired but keep the current count
+        userLimit.planId = 'expired';
+        userLimit.planName = 'No Plan';
+        userLimit.status = 'inactive';
+        // Keep count as is, but set limit to 0 to prevent further usage
+        userLimit.limit = 0;
+        await userLimit.save();
+        
+        console.log(`Subscription expired for user ${userId}. Auto-pay not enabled, setting to expired plan.`);
+        return userLimit;
+      } else {
+        // If auto-pay is enabled, this would be handled by Stripe webhooks
+        // Here we just log that we're waiting for Stripe to process the renewal
+        console.log(`Subscription expired for user ${userId} with auto-pay enabled. Waiting for payment processing.`);
+      }
+    }
+    
+    return userLimit;
+  } catch (error) {
+    console.error('Error checking subscription expiration:', error);
+    return null;
+  }
+};
+
 // Get current user's limit
 exports.getCurrentUserLimit = async (req, res) => {
   try {
     // Get User model for additional information
     const User = require('../models/userModel');
 
-    const userLimit = await UserLimit.findOne({ userId: req.user.id });
+    // First check if the user limit exists
+    let userLimit = await UserLimit.findOne({ userId: req.user.id });
     
     if (!userLimit) {
       // Create with expired plan by default (no credits)
@@ -30,7 +70,8 @@ exports.getCurrentUserLimit = async (req, res) => {
         planId: 'expired',
         planName: 'No Plan',
         expiresAt: null,
-        status: 'inactive'
+        status: 'inactive',
+        autoPay: false // Default to auto-pay disabled
       });
       
       return res.status(200).json({
@@ -50,22 +91,8 @@ exports.getCurrentUserLimit = async (req, res) => {
       });
     }
 
-    // For trial users, check if trial has expired
-    if (userLimit.planId === 'trial' && userLimit.expiresAt) {
-      const now = new Date();
-      const trialExpiry = new Date(userLimit.expiresAt);
-      
-      if (now > trialExpiry) {
-        // Trial has expired, update to expired plan
-        userLimit.planId = 'expired';
-        userLimit.planName = 'No Plan';
-        userLimit.limit = 0;
-        userLimit.count = 0;
-        userLimit.expiresAt = null;
-        userLimit.status = 'inactive';
-        await userLimit.save();
-      }
-    }
+    // Check for subscription expiration and handle accordingly
+    userLimit = await exports.checkAndHandleSubscriptionExpiration(req.user.id) || userLimit;
     
     // Get user details
     const user = await User.findById(req.user.id);

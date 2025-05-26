@@ -17,13 +17,13 @@ const getDashboardStats = asyncHandler(async (req, res) => {
     let startDate = new Date();
     startDate.setDate(startDate.getDate() - (timeRange === '7days' ? 7 : timeRange === '90days' ? 90 : 30));
     
-    // Get basic stats for the dashboard
+  // Get basic stats for the dashboard
     const totalUsers = await User.countDocuments() || 0;
-    const activeUsers = await User.countDocuments({ 
-      lastActive: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } 
+  const activeUsers = await User.countDocuments({ 
+    lastActive: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } 
     }) || 0;
-    const newUsersToday = await User.countDocuments({
-      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+  const newUsersToday = await User.countDocuments({
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
     }) || 0;
     
     // Users created in the specified time range
@@ -62,14 +62,14 @@ const getDashboardStats = asyncHandler(async (req, res) => {
       });
       currentDate.setDate(currentDate.getDate() + 1);
     }
-    
-    // Content stats
+  
+  // Content stats
     const totalPosts = await Post.countDocuments() || 0;
     const totalCarousels = await Carousel.countDocuments() || 0;
     const newContentToday = (await Post.countDocuments({
-      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
     }) || 0) + (await Carousel.countDocuments({
-      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
     }) || 0);
     
     // Content created in the specified time range
@@ -126,14 +126,14 @@ const getDashboardStats = asyncHandler(async (req, res) => {
       { type: "Short Post", count: Math.floor(totalPosts * 0.6) }, // Approximation based on post lengths
       { type: "Long Post", count: Math.floor(totalPosts * 0.4) }   // Approximation based on post lengths
     ];
-    
-    // Saved YouTube videos and transcripts stats
+  
+  // Saved YouTube videos and transcripts stats
     const totalSavedVideos = await SavedVideo.countDocuments() || 0;
-    const videosWithTranscripts = await SavedVideo.countDocuments({
-      transcript: { $exists: true, $ne: '' }
+  const videosWithTranscripts = await SavedVideo.countDocuments({
+    transcript: { $exists: true, $ne: '' }
     }) || 0;
-    const newSavedVideosToday = await SavedVideo.countDocuments({
-      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+  const newSavedVideosToday = await SavedVideo.countDocuments({
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
     }) || 0;
     
     // YouTube videos saved in the specified time range
@@ -191,11 +191,11 @@ const getDashboardStats = asyncHandler(async (req, res) => {
       channel: source._id || 'Unknown',
       count: source.count || 0
     }));
-    
-    // AI generated content stats
+  
+  // AI generated content stats
     const totalGeneratedContent = await CarouselContent.countDocuments() || 0;
-    const newGeneratedContentToday = await CarouselContent.countDocuments({
-      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+  const newGeneratedContentToday = await CarouselContent.countDocuments({
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
     }) || 0;
     
     // Get carousel requests stats
@@ -304,14 +304,14 @@ const getDashboardStats = asyncHandler(async (req, res) => {
     const avgVideosSaved = totalUsers > 0 ? (totalSavedVideos / totalUsers).toFixed(1) : "0";
     const avgContentGenerated = totalUsers > 0 ? ((totalPosts + totalCarousels) / totalUsers).toFixed(1) : "0";
     const retentionRate = totalUsers > 0 ? ((activeUsers / totalUsers) * 100).toFixed(1) + "%" : "0%";
-    
-    // Return all stats
-    res.status(200).json({
-      success: true,
-      data: {
-        users: {
-          total: totalUsers,
-          active: activeUsers,
+  
+  // Return all stats
+  res.status(200).json({
+    success: true,
+    data: {
+      users: {
+        total: totalUsers,
+        active: activeUsers,
           newToday: newUsersToday,
           usersByDate,
           avgVideosSaved,
@@ -319,11 +319,11 @@ const getDashboardStats = asyncHandler(async (req, res) => {
           retentionRate,
           topVideoUsers: topVideoUsersWithDetails || [],
           topContentUsers: topContentUsersWithDetails || []
-        },
-        content: {
+      },
+      content: {
           total: totalPosts + totalCarousels,
-          totalPosts,
-          totalCarousels,
+        totalPosts,
+        totalCarousels,
           newToday: newContentToday,
           generationTrend: generationTrend || [],
           byType: byType || [],
@@ -332,27 +332,27 @@ const getDashboardStats = asyncHandler(async (req, res) => {
             { source: "Manual input", count: Math.floor(totalGeneratedContent * 0.2) },
             { source: "Uploaded files", count: Math.floor(totalGeneratedContent * 0.1) }
           ]
-        },
-        youtube: {
-          totalSavedVideos,
-          videosWithTranscripts,
-          newToday: newSavedVideosToday,
+      },
+      youtube: {
+        totalSavedVideos,
+        videosWithTranscripts,
+        newToday: newSavedVideosToday,
           transcriptPercentage: totalSavedVideos > 0 ? Math.round((videosWithTranscripts / totalSavedVideos) * 100) : 0,
           videosByDate: videosByDate || [],
           topChannels: topChannels || []
-        },
-        generatedContent: {
-          total: totalGeneratedContent,
-          newToday: newGeneratedContentToday
+      },
+      generatedContent: {
+        total: totalGeneratedContent,
+        newToday: newGeneratedContentToday
         },
         carousel: {
           totalRequests,
           pendingRequests,
           completedRequests,
           requestsByDate: requestsByDate || []
-        }
       }
-    });
+    }
+  });
   } catch (error) {
     console.error('Error getting dashboard stats:', error);
     res.status(500).json({

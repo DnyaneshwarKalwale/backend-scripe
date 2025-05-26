@@ -110,4 +110,29 @@ router.delete('/delete-linkedin-post', protect, (req, res) => {
   linkedinController.deleteLinkedInPost(req, res);
 });
 
+// Scrape LinkedIn profile (public endpoint - no auth required)
+router.post('/scrape-profile', [
+  check('username', 'LinkedIn username is required').notEmpty()
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  linkedinController.scrapeLinkedInProfile(req, res);
+});
+
+// Save scraped LinkedIn posts (public endpoint - no auth required for now)
+router.post('/save-scraped-posts', [
+  check('posts', 'Posts array is required').isArray().notEmpty(),
+  check('profileData', 'Profile data is required').notEmpty()
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  linkedinController.saveScrapedLinkedInPosts(req, res);
+});
+
 module.exports = router; 

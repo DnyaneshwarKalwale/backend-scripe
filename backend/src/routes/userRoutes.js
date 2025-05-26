@@ -3,7 +3,8 @@ const {
   updateUserProfile,
   updateOnboarding,
   changePassword,
-  deleteAccount
+  deleteAccount,
+  updateAutoPay
 } = require('../controllers/userController');
 const { protect, checkEmailVerified } = require('../middleware/authMiddleware');
 
@@ -17,5 +18,6 @@ router.put('/profile', checkEmailVerified, updateUserProfile);
 router.post('/update-onboarding', updateOnboarding);
 router.put('/change-password', checkEmailVerified, changePassword);
 router.delete('/delete-account', checkEmailVerified, deleteAccount);
+router.post('/subscription/auto-pay', updateAutoPay);
 
 module.exports = router; 

@@ -3,6 +3,7 @@ const User = require('../models/userModel');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const { ApifyClient } = require('apify-client');
 
 // LinkedIn API base URLs
 const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
@@ -832,6 +833,254 @@ const deleteLinkedInPost = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Scrape LinkedIn profile and posts using Apify
+ * @route POST /api/linkedin/scrape-profile
+ * @access Public
+ */
+const scrapeLinkedInProfile = asyncHandler(async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    if (!username) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'LinkedIn username is required' 
+      });
+    }
+
+    // Initialize the ApifyClient with API token
+    const client = new ApifyClient({
+      token: process.env.APIFY_API_TOKEN || 'apify_api_VXCyhcCwpMUgVD2oQRqqLPewsQ14IH3dhZCb',
+    });
+
+    // Format the LinkedIn profile URL
+    const profileUrl = `https://www.linkedin.com/in/${username}/`;
+    
+    console.log(`Scraping LinkedIn profile: ${profileUrl}`);
+    
+    // Prepare Actor input
+    const input = {
+      "targetUrls": [profileUrl],
+      "maxPosts": 30,
+      "maxReactions": 10,
+      "maxComments": 5,
+      "maxDocumentPages": 20
+    };
+
+    // Run the LinkedIn scraper
+    const run = await client.actor("harvestapi~linkedin-profile-posts").call(input);
+
+    // Fetch and process Actor results from the run's dataset
+    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+    
+    console.log(`Scraping completed. Found ${items?.length || 0} items`);
+    
+    // Process the results
+    let profileData = {};
+    let posts = [];
+
+    if (items && items.length > 0) {
+      // Extract posts from the results
+      posts = items.map((item, index) => {
+        // Extract media from multiple sources
+        let mediaArray = [];
+        let documents = [];
+        let videos = [];
+        
+        // Add post images
+        if (item.postImages && Array.isArray(item.postImages)) {
+          mediaArray = [...mediaArray, ...item.postImages.map(img => ({
+            type: 'image',
+            url: img.url,
+            width: img.width,
+            height: img.height
+          }))];
+        }
+        
+        // Add repost images if this is a repost
+        if (item.repost && item.repost.postImages && Array.isArray(item.repost.postImages)) {
+          mediaArray = [...mediaArray, ...item.repost.postImages.map(img => ({
+            type: 'image',
+            url: img.url,
+            width: img.width,
+            height: img.height
+          }))];
+        }
+        
+        // Handle videos
+        if (item.postVideos && Array.isArray(item.postVideos)) {
+          videos = item.postVideos.map(video => ({
+            type: 'video',
+            url: video.url || video.playbackUrl,
+            thumbnail: video.thumbnail,
+            duration: video.duration
+          }));
+        }
+        
+        // Handle documents/PDFs
+        if (item.document) {
+          documents.push({
+            type: 'document',
+            title: item.document.title,
+            url: item.document.transcribedDocumentUrl || item.document.url,
+            coverPages: item.document.coverPages || [],
+            totalPageCount: item.document.totalPageCount || null,
+            fileType: item.document.title?.toLowerCase().includes('.pdf') ? 'pdf' : 'document'
+          });
+        }
+
+        // Handle reposts
+        let combinedContent = item.content || '';
+        let isRepost = false;
+        let originalPost = null;
+
+        if (item.repost) {
+          isRepost = true;
+          originalPost = {
+            content: item.repost.content,
+            author: item.repost.author?.name,
+            authorInfo: item.repost.author?.info,
+            authorAvatar: item.repost.author?.avatar?.url,
+            date: item.repost.postedAt?.postedAgoText
+          };
+          if (item.repost.content && item.repost.content.length > combinedContent.length) {
+            combinedContent = item.repost.content;
+          }
+        }
+
+        return {
+          id: item.linkedinUrl || `post-${Date.now()}-${Math.random()}-${index}`,
+          content: combinedContent,
+          date: item.postedAt?.date || item.postedAt?.timestamp,
+          dateRelative: item.postedAt?.postedAgoText,
+          likes: item.engagement?.likes,
+          comments: item.engagement?.comments,
+          shares: item.engagement?.shares,
+          reactions: item.engagement?.reactions,
+          url: item.linkedinUrl,
+          author: item.author?.name,
+          authorHeadline: item.author?.info,
+          authorAvatar: item.author?.avatar?.url,
+          authorProfile: item.author?.linkedinUrl,
+          media: mediaArray,
+          videos: videos,
+          documents: documents,
+          type: item.type || 'post',
+          isRepost: isRepost,
+          originalPost: originalPost,
+          detailedReactions: item.reactions?.slice(0, 5),
+          detailedComments: item.comments?.slice(0, 3)
+        };
+      });
+
+      // Extract basic profile info from the first post
+      if (items[0] && items[0].author) {
+        const author = items[0].author;
+        profileData = {
+          name: author.name,
+          headline: author.info,
+          profileUrl: author.linkedinUrl,
+          avatar: author.avatar?.url,
+          publicIdentifier: author.publicIdentifier,
+          username: username
+        };
+      }
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      profileData,
+      posts,
+      totalPosts: posts.length,
+      message: posts.length > 0 ? 
+        `Found ${posts.length} recent posts with media and engagement data` : 
+        'No posts found for this user.'
+    });
+  } catch (error) {
+    console.error('Error scraping LinkedIn profile:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to scrape LinkedIn profile',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Save scraped LinkedIn posts to database
+ * @route POST /api/linkedin/save-scraped-posts
+ * @access Public
+ */
+const saveScrapedLinkedInPosts = asyncHandler(async (req, res) => {
+  try {
+    const { posts, profileData, userId } = req.body;
+    
+    if (!posts || !Array.isArray(posts) || posts.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Posts array is required and cannot be empty' 
+      });
+    }
+
+    if (!profileData) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Profile data is required' 
+      });
+    }
+
+    // For now, we'll save to a simple JSON file since we don't have a database model
+    // In a real application, you'd save this to a proper database
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Create data directory if it doesn't exist
+    const dataDir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    
+    // Create filename based on profile and timestamp
+    const timestamp = new Date().toISOString();
+    const filename = `linkedin_posts_${profileData.username}_${Date.now()}.json`;
+    const filepath = path.join(dataDir, filename);
+    
+    // Prepare data to save
+    const dataToSave = {
+      profileData,
+      posts: posts.map(post => ({
+        ...post,
+        savedAt: timestamp,
+        userId: userId || 'anonymous'
+      })),
+      savedAt: timestamp,
+      userId: userId || 'anonymous',
+      totalPosts: posts.length
+    };
+    
+    // Save to file
+    fs.writeFileSync(filepath, JSON.stringify(dataToSave, null, 2));
+    
+    console.log(`Saved ${posts.length} LinkedIn posts to ${filepath}`);
+    
+    res.status(200).json({ 
+      success: true, 
+      message: `Successfully saved ${posts.length} LinkedIn posts`,
+      count: posts.length,
+      savedAt: timestamp,
+      filename: filename
+    });
+  } catch (error) {
+    console.error('Error saving scraped LinkedIn posts:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to save LinkedIn posts',
+      message: error.message
+    });
+  }
+});
+
 module.exports = {
   getLinkedInProfile,
   getUserPosts,
@@ -839,5 +1088,7 @@ module.exports = {
   initializeImageUpload,
   getLinkedInBasicProfile,
   uploadImageToLinkedIn,
-  deleteLinkedInPost
+  deleteLinkedInPost,
+  scrapeLinkedInProfile,
+  saveScrapedLinkedInPosts
 }; 

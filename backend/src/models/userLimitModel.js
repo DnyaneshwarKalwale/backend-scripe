@@ -47,6 +47,11 @@ const userLimitSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Add auto-pay setting
+  autoPay: {
+    type: Boolean,
+    default: false  // Default to not auto-renew
+  },
   // Add billing details
   billingDetails: {
     name: String,

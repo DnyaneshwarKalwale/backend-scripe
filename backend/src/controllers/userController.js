@@ -2,6 +2,7 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
 const Onboarding = require('../models/onboardingModel');
 const generateToken = require('../utils/generateToken');
+const UserLimit = require('../models/userLimitModel');
 
 // @desc    Update user profile
 // @route   PUT /api/users/profile
@@ -209,9 +210,60 @@ const deleteAccount = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Update user auto-pay settings
+// @route   POST /api/users/subscription/auto-pay
+// @access  Private
+const updateAutoPay = async (req, res) => {
+  try {
+    const { autoPay } = req.body;
+    
+    if (typeof autoPay !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'Auto-pay setting must be a boolean value'
+      });
+    }
+    
+    // Find user's limit
+    let userLimit = await UserLimit.findOne({ userId: req.user.id });
+    
+    if (!userLimit) {
+      // Create default user limit if not exists
+      userLimit = await UserLimit.create({
+        userId: req.user.id,
+        limit: 0,
+        count: 0,
+        planId: 'expired',
+        planName: 'No Plan',
+        status: 'inactive',
+        autoPay: autoPay
+      });
+    } else {
+      // Update auto-pay setting
+      userLimit.autoPay = autoPay;
+      await userLimit.save();
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: `Auto-pay ${autoPay ? 'enabled' : 'disabled'} successfully`,
+      data: {
+        autoPay: userLimit.autoPay
+      }
+    });
+  } catch (error) {
+    console.error('Error updating auto-pay setting:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update auto-pay setting'
+    });
+  }
+};
+
 module.exports = {
   updateUserProfile,
   updateOnboarding,
   changePassword,
   deleteAccount,
+  updateAutoPay
 }; 

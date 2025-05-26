@@ -1,5 +1,6 @@
 const dotenv = require('dotenv');
 const User = require('../models/userModel');
+const PaymentTransaction = require('../models/paymentTransactionModel');
 // Use the API key from environment variables
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
@@ -40,6 +41,34 @@ const createCheckoutSession = async (req, res) => {
         success: false,
         message: 'Unauthorized, no user ID found'
       });
+    }
+    
+    // If this is a subscription plan change, check if it's an allowed upgrade/downgrade
+    if (productType === 'subscription' && currentPlanId && currentPlanId !== planId) {
+      // Define plan rankings
+      const planRanking = {
+        'expired': 0,
+        'trial': 1,
+        'basic': 2,
+        'premium': 3,
+        'custom': 4
+      };
+      
+      // Check if it's a downgrade
+      const isDowngrade = planRanking[planId] < planRanking[currentPlanId];
+      
+      if (isDowngrade) {
+        // Check if current subscription is still active
+        const UserLimit = require('../models/userLimitModel');
+        const userLimit = await UserLimit.findOne({ userId: req.user.id });
+        
+        if (userLimit && userLimit.expiresAt && new Date(userLimit.expiresAt) > new Date()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Plan downgrade is not allowed during an active subscription period. You can downgrade once your current subscription expires.'
+          });
+        }
+      }
     }
     
     // Define pricing information based on plan and billing period
@@ -168,7 +197,7 @@ const createCheckoutSession = async (req, res) => {
     
     // Determine checkout mode based on product type
     const checkoutMode = isOneTime ? 'payment' : 'subscription';
-    
+
     // Create session data object
     const sessionData = {
         payment_method_types: ['card'],
@@ -189,7 +218,7 @@ const createCheckoutSession = async (req, res) => {
       },
       customer_email: req.user.email
     };
-    
+
     console.log('Creating session with data:', sessionData);
     
     // Create checkout session
@@ -259,7 +288,7 @@ const handleWebhook = async (req, res) => {
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
-    
+
     // Return a 200 response to acknowledge receipt of the event
     return res.status(200).json({ received: true });
   } catch (err) {
@@ -268,11 +297,56 @@ const handleWebhook = async (req, res) => {
   }
 };
 
-// Handle successful checkout session
+// Helper function to save payment transaction record
+const savePaymentTransaction = async (paymentData) => {
+  try {
+    const {
+      userId,
+      transactionId,
+      amount,
+      currency = 'usd',
+      paymentMethod = { type: 'card' },
+      paymentStatus,
+      paymentType,
+      description,
+      metadata = {},
+      receiptUrl,
+      invoiceId,
+      stripeSessionId
+    } = paymentData;
+    
+    // Create a new payment transaction record
+    const transaction = new PaymentTransaction({
+      userId,
+      transactionId,
+      amount,
+      currency,
+      paymentMethod,
+      paymentStatus,
+      paymentType,
+      description,
+      metadata,
+      receiptUrl,
+      invoiceId,
+      stripeSessionId,
+      createdAt: new Date()
+    });
+    
+    await transaction.save();
+    console.log(`Payment transaction recorded: ${transaction.transactionId}`);
+    return transaction;
+  } catch (error) {
+    console.error('Error saving payment transaction:', error);
+    // Don't throw error - non-critical operation, we still want the payment to process
+    return null;
+  }
+};
+
+// Modify the handleSuccessfulCheckout function to record payment transaction
 const handleSuccessfulCheckout = async (session) => {
   try {
     // Get customer and metadata from session
-    const { customer, metadata, client_reference_id } = session;
+    const { customer, metadata, client_reference_id, amount_total } = session;
     
     // Client reference ID should include the user ID
     const userId = client_reference_id || (metadata ? metadata.userId : null);
@@ -327,6 +401,54 @@ const handleSuccessfulCheckout = async (session) => {
       remainingCredits = parseInt(metadata.remainingCredits, 10) || 0;
       console.log(`Upgrading user with ${remainingCredits} remaining credits from previous plan`);
     }
+    
+    // Record payment transaction
+    const paymentType = metadata && metadata.productType === 'credit-pack' ? 'credit-pack' : 'subscription';
+    const description = metadata && metadata.productType === 'credit-pack' 
+      ? `Purchased ${creditAmount} credits pack` 
+      : `Subscribed to ${planName} plan`;
+    
+    // Try to get payment method details if available
+    let paymentMethod = { type: 'card' };
+    try {
+      if (session.payment_intent) {
+        const paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent);
+        if (paymentIntent.payment_method) {
+          const paymentMethodDetails = await stripe.paymentMethods.retrieve(paymentIntent.payment_method);
+          if (paymentMethodDetails.card) {
+            paymentMethod = {
+              type: 'card',
+              lastFour: paymentMethodDetails.card.last4,
+              brand: paymentMethodDetails.card.brand
+            };
+          }
+        }
+      }
+    } catch (paymentMethodError) {
+      console.log('Could not retrieve detailed payment method info:', paymentMethodError);
+    }
+    
+    // Save transaction record
+    await savePaymentTransaction({
+      userId,
+      transactionId: session.id,
+      amount: session.amount_total ? session.amount_total / 100 : 0, // Convert from cents
+      currency: session.currency || 'usd',
+      paymentMethod,
+      paymentStatus: 'completed',
+      paymentType,
+      description,
+      metadata: {
+        planId,
+        planName,
+        credits: creditAmount,
+        previousPlanId: metadata && metadata.currentPlanId ? metadata.currentPlanId : null,
+        autoRenewal: false, // Initial purchase is not auto-renewal
+        expiryDate
+      },
+      receiptUrl: session.receipt_url,
+      stripeSessionId: session.id
+    });
     
     if (!userLimit) {
       // If no existing user limit, create a new one
@@ -517,7 +639,7 @@ const cancelSubscription = async (req, res) => {
       }
     }
     */
-    
+
     // Update the user limit record
     const UserLimit = require('../models/userLimitModel');
     const userLimit = await UserLimit.findOne({ userId: user.id });
@@ -554,7 +676,7 @@ const cancelSubscription = async (req, res) => {
         success: true,
         message: 'No active paid subscription to cancel',
         currentPeriodEnd: userLimit.expiresAt || new Date()
-      });
+    });
     }
   } catch (error) {
     console.error('Error cancelling subscription:', error);
@@ -565,24 +687,18 @@ const cancelSubscription = async (req, res) => {
   }
 };
 
-// Handle subscription update
+// Modify the handleSubscriptionUpdate function to record payment transaction when subscription renews
 const handleSubscriptionUpdate = async (subscription) => {
   try {
-    // Extract metadata from subscription
-    const { customer, metadata } = subscription;
+    // Get metadata to find the user
+    const metadata = subscription.metadata || {};
+    const customerId = subscription.customer;
+    let userId = metadata.userId;
     
-    // Get the user ID from metadata or customer data
-    let userId;
-    
-    if (metadata && metadata.userId) {
-      userId = metadata.userId;
-    } else if (customer) {
-      // Try to find user by Stripe customer ID
-      const User = require('../models/userModel');
-      const user = await User.findOne({ stripeCustomerId: customer });
-      if (user) {
-        userId = user._id;
-      }
+    // If no userId in metadata, try to get it from customer
+    if (!userId && customerId) {
+      const customer = await stripe.customers.retrieve(customerId);
+      userId = customer.metadata?.userId;
     }
     
     if (!userId) {
@@ -601,31 +717,98 @@ const handleSubscriptionUpdate = async (subscription) => {
       return;
     }
     
-    // Update user limit from subscription data
-    // This is simplified and should be expanded based on your subscription plans
-    const planId = subscription.metadata.planId || 'basic';
-    const planName = subscription.metadata.planName || 'Basic';
-    const creditAmount = parseInt(subscription.metadata.credits) || 10;
-    
-    // Calculate expiry date from subscription period end if available
-    let expiryDate;
-    if (subscription.current_period_end) {
-      expiryDate = new Date(subscription.current_period_end * 1000); // Convert from Unix timestamp
-    } else {
-      // Default to 30 days from now
-      expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 30);
+    // Check if auto-pay is enabled for this user
+    if (!userLimit.autoPay) {
+      console.log(`Subscription ${subscription.id} for user ${userId} not renewed: Auto-pay disabled`);
+      // Do not update the subscription if auto-pay is disabled
+      return;
     }
     
-    // Update the user limit
+    // Proceed with subscription update
+    // Get plan details from subscription
+    const planId = subscription.metadata?.planId || 'basic';
+    const creditAmount = parseInt(subscription.metadata?.credits) || 10;
+    const planName = subscription.metadata?.planName || 'Basic Plan';
+    
+    // Calculate expiry date based on subscription current period end
+    const expiryDate = new Date(subscription.current_period_end * 1000);
+    
+    // Check if this is a renewal (rather than an initial subscription creation)
+    const isRenewal = subscription.status === 'active' && 
+                      subscription.current_period_start && 
+                      subscription.current_period_end;
+    
+    if (isRenewal) {
+      // Record the auto-renewal payment transaction
+      try {
+        // Get payment details
+        let amount = 0;
+        if (subscription.latest_invoice) {
+          const invoice = await stripe.invoices.retrieve(subscription.latest_invoice);
+          amount = invoice.amount_paid / 100; // Convert from cents
+        } else {
+          // If no invoice, try to get amount from plan
+          amount = subscription.plan?.amount 
+            ? subscription.plan.amount / 100 
+            : (planId === 'basic' ? 100 : (planId === 'premium' ? 200 : 0));
+        }
+        
+        let paymentMethod = { type: 'card' };
+        // Try to get card details if available
+        if (subscription.default_payment_method) {
+          try {
+            const paymentMethodDetails = await stripe.paymentMethods.retrieve(
+              subscription.default_payment_method
+            );
+            if (paymentMethodDetails.card) {
+              paymentMethod = {
+                type: 'card',
+                lastFour: paymentMethodDetails.card.last4,
+                brand: paymentMethodDetails.card.brand
+              };
+            }
+          } catch (error) {
+            console.log('Could not retrieve payment method details:', error);
+          }
+        }
+        
+        await savePaymentTransaction({
+          userId,
+          transactionId: `renewal_${subscription.id}_${new Date().getTime()}`,
+          amount,
+          paymentMethod,
+          paymentStatus: 'completed',
+          paymentType: 'auto-renewal',
+          description: `Auto-renewal of ${planName} subscription`,
+          metadata: {
+            planId,
+            planName,
+            credits: creditAmount,
+            previousPlanId: planId, // Same plan since it's a renewal
+            autoRenewal: true,
+            expiryDate
+          },
+          stripeSessionId: null,
+          invoiceId: subscription.latest_invoice || null
+        });
+        
+        console.log(`Recorded auto-renewal payment for user ${userId}`);
+      } catch (transactionError) {
+        console.error('Error recording renewal transaction:', transactionError);
+        // Continue with subscription update even if transaction recording fails
+      }
+    }
+    
+    // Update user limit
     userLimit.planId = planId;
     userLimit.planName = planName;
     userLimit.limit = creditAmount;
+    userLimit.count = 0; // Reset used credits
     userLimit.expiresAt = expiryDate;
-    userLimit.updatedAt = new Date();
+    userLimit.status = 'active';
     
     await userLimit.save();
-    console.log('Updated user limit from subscription:', userLimit);
+    console.log('Updated user limit for subscription:', userLimit);
   } catch (error) {
     console.error('Error handling subscription update:', error);
     throw error;

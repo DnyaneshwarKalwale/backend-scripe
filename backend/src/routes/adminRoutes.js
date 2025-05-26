@@ -13,12 +13,12 @@ const {
   getSavedVideosMetrics,
   getSubscriptionMetrics
 } = require('../controllers/adminController');
-const { protect, checkAdmin } = require('../middleware/authMiddleware');
+const { protect, isAdmin } = require('../middleware/authMiddleware');
 
 // Apply protection middleware to all routes
 router.use(protect);
 // Ensure user has admin role
-router.use(checkAdmin);
+router.use(isAdmin);
 
 // Admin dashboard routes
 router.get('/dashboard', getDashboardStats);

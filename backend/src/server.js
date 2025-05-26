@@ -26,6 +26,7 @@ const cronRoutes = require('./routes/cronRoutes');
 const CarouselContent = require('./models/carouselContentModel');
 const cloudinary = require('cloudinary').v2;
 const userLimitRoutes = require('./routes/userLimitRoutes');
+const adminNotificationRoutes = require('./routes/adminNotificationRoutes');
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
@@ -66,7 +67,7 @@ const allowedOrigins = [
     'http://localhost:8080', 
   'http://localhost:3000',
   'http://localhost:5173',
-    'https://brandout.vercel.app', 
+    'https://brandout.vercel.app',
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app'
@@ -443,8 +444,12 @@ app.use('/api/fonts', fontRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/user-limits', userLimitRoutes);
 app.use('/api/stripe', stripeRoutes);
+// Add notification routes
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 // Admin routes
 app.use('/api/admin', require('./routes/adminRoutes'));
+// Admin notification routes
+app.use('/api/admin/notifications', require('./routes/adminNotificationRoutes'));
 
 // Add carousel route handler for YouTube videos
 app.post('/api/youtube-carousels', async (req, res) => {
