@@ -11,7 +11,8 @@ const userSchema = mongoose.Schema(
     },
     lastName: {
       type: String,
-      required: [true, 'Please add a last name'],
+      required: false, // Made optional for OAuth users who might not have a last name
+      default: '', // Default to empty string if not provided
     },
     email: {
       type: String,

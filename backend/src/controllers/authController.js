@@ -12,8 +12,8 @@ const { generateToken } = require('../utils/jwt');
 const registerUser = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, password } = req.body;
 
-  // Validation
-  if (!firstName || !lastName || !email || !password) {
+  // Validation - lastName is now optional
+  if (!firstName || !email || !password) {
     res.status(400);
     throw new Error(getTranslation('missingFields', req.language));
   }
@@ -49,7 +49,7 @@ const registerUser = asyncHandler(async (req, res) => {
   // Create user
   const user = await User.create({
     firstName,
-    lastName,
+    lastName: lastName || '', // Use empty string if lastName is not provided
     email,
     password: hashedPassword,
     language, // Store user's language preference
