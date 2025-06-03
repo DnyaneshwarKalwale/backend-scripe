@@ -74,7 +74,10 @@ const TweetSchema = new mongoose.Schema({
   }],
   thread_id: String,
   thread_index: Number,
+  thread_position: Number,
   is_long: Boolean,
+  is_self_thread: Boolean,
+  is_root_tweet: Boolean,
   category: {
     type: String,
     enum: ['all', 'normal', 'thread', 'long'],

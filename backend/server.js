@@ -12,6 +12,7 @@ const stripeRoutes = require('./src/routes/stripeRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const adminNotificationRoutes = require('./src/routes/adminNotificationRoutes');
+const twitterRoutes = require('./src/routes/twitterRoutes');
 
 // Load env variables
 dotenv.config();
@@ -31,6 +32,7 @@ app.use('/api/stripe', stripeRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/twitter', twitterRoutes);
 
 // Schedule subscription check job to run at midnight every day
 cron.schedule('0 0 * * *', () => {

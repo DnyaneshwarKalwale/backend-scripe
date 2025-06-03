@@ -186,7 +186,7 @@ Apply the following rules **strictly**:
 4. **Create a fresh, original headline** that is attention-grabbing and not similar to the video title.
 5. **Restructure the flow** — don't just summarize sequentially. Rearrange points for originality.
 6. Use **short paragraphs** and leave **one line of space between each point**.
-7. Keep the entire post **under 1000 characters**.
+7. Keep the entire post **under 500 words**.
 8. **Remove all bold text**, emojis, links, names, tool references, or brand mentions.
 9. Use a **casual, founder-style tone** that feels like expert advice being shared.
 10. Avoid storytelling. Focus on **insights, learnings, and takeaways**.

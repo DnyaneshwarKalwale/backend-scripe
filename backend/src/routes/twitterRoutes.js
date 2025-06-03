@@ -13,12 +13,15 @@ const {
   deleteTweetsByUser
 } = require('../controllers/twitterController');
 
-// All routes protected by auth middleware
+// Public routes (no authentication required) - for reading Twitter data
+router.get('/user/:username', getUserTweets);
+router.get('/tweets', getUserTweets);
+
+// Protected routes (authentication required) - for user-specific operations
 router.use(protect);
 
-// Twitter profile and data routes
+// Twitter profile and analytics routes
 router.get('/profile', getTwitterProfile);
-router.get('/tweets', getUserTweets);
 router.get('/analytics', getTwitterAnalytics);
 
 // Get all users who have saved tweets

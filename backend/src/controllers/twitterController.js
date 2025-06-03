@@ -8,8 +8,410 @@ const Tweet = require('../models/tweetModel');
 const TWITTER_API_BASE_URL = 'https://api.twitter.com/2';
 
 // Configuration for the Twitter API
-const RAPID_API_KEY = process.env.RAPID_API_KEY || '4738e035f2mshf219c943077bffap1d4150jsn085da35f2f75';
+const RAPID_API_KEY = process.env.RAPID_API_KEY || '1c0f30351amsh154d75323888fa1p1cf4bcjsn6c692ac3286e';
 const RAPID_API_HOST = 'twitter154.p.rapidapi.com';
+
+// User configurable options
+const TwitterConfig = {
+  fetchLimit: 50, // Default number of tweets to fetch initially
+  maxTweets: 200, // Maximum number of tweets to fetch in total
+  threadsToProcess: 10, // Number of threads to process for replies
+  maxContinuations: 3, // Maximum number of continuation fetches
+  replyMaxPages: 4, // Maximum number of pages when fetching replies
+  retryDelay: 3000, // Delay between retries in ms
+};
+
+// Cache for API responses
+const API_CACHE = {
+  tweetDetails: new Map(),
+  userTweets: new Map(),
+  failedRequests: new Map()
+};
+
+// Rate limiting
+const MIN_API_CALL_INTERVAL = 2000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 3000;
+const FAILED_REQUEST_EXPIRY = 10 * 60 * 1000;
+
+let lastApiCallTime = 0;
+const requestQueue = [];
+let isProcessingQueue = false;
+
+// Helper functions
+const rateLimit = async () => {
+  const now = Date.now();
+  const timeSinceLastCall = now - lastApiCallTime;
+  
+  if (timeSinceLastCall < MIN_API_CALL_INTERVAL) {
+    await new Promise(resolve => setTimeout(resolve, MIN_API_CALL_INTERVAL - timeSinceLastCall));
+  }
+  lastApiCallTime = Date.now();
+};
+
+const processQueue = async () => {
+  if (isProcessingQueue || requestQueue.length === 0) return;
+  isProcessingQueue = true;
+  
+  while (requestQueue.length > 0) {
+    const request = requestQueue.shift();
+    if (request) {
+      try {
+        await request();
+        await rateLimit();
+      } catch (error) {
+        console.error('Error processing queued request:', error);
+      }
+    }
+  }
+  isProcessingQueue = false;
+};
+
+const queueRequest = (request) => {
+  return new Promise((resolve, reject) => {
+    const wrappedRequest = async () => {
+      try {
+        const result = await request();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    requestQueue.push(wrappedRequest);
+    processQueue();
+  });
+};
+
+const hasRecentlyFailed = (url) => {
+  const failedRequest = API_CACHE.failedRequests.get(url);
+  if (!failedRequest) return false;
+  
+  const now = Date.now();
+  if (now - failedRequest.timestamp > FAILED_REQUEST_EXPIRY) {
+    API_CACHE.failedRequests.delete(url);
+    return false;
+  }
+  
+  if (failedRequest.retryAfter && now > failedRequest.retryAfter) {
+    API_CACHE.failedRequests.delete(url);
+    return false;
+  }
+  
+  return true;
+};
+
+const recordFailedRequest = (url, errorCode, retryAfter) => {
+  API_CACHE.failedRequests.set(url, {
+    timestamp: Date.now(),
+    errorCode,
+    retryAfter: retryAfter ? Date.now() + retryAfter : undefined
+  });
+  
+  // Clean up old failed requests
+  for (const [key, value] of API_CACHE.failedRequests.entries()) {
+    if (Date.now() - value.timestamp > FAILED_REQUEST_EXPIRY) {
+      API_CACHE.failedRequests.delete(key);
+    }
+  }
+};
+
+// API request function with retry logic
+const makeApiRequest = async (url, retryCount = 0) => {
+  if (hasRecentlyFailed(url)) {
+    throw new Error(`Skipping recently failed request to: ${url}`);
+  }
+  
+  const executeRequest = async () => {
+    await rateLimit();
+    
+    return new Promise((resolve, reject) => {
+      const options = {
+        headers: {
+          'x-rapidapi-key': RAPID_API_KEY,
+          'x-rapidapi-host': RAPID_API_HOST,
+        },
+        timeout: 30000
+      };
+      
+      axios.get(url, options)
+        .then(response => {
+          resolve(response.data);
+        })
+        .catch(error => {
+          if (error.response?.status === 429 && retryCount < MAX_RETRIES) {
+            const delay = RETRY_DELAY * Math.pow(2, retryCount);
+            console.warn(`Rate limited (429). Retrying in ${delay}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            
+            setTimeout(() => {
+              makeApiRequest(url, retryCount + 1)
+                .then(resolve)
+                .catch(reject);
+            }, delay);
+          } else {
+            if (error.response?.status === 429) {
+              recordFailedRequest(url, error.response.status, 60000);
+            } else {
+              recordFailedRequest(url, error.response?.status || 500);
+            }
+            reject(error);
+          }
+        });
+    });
+  };
+  
+  return retryCount > 0 ? executeRequest() : queueRequest(executeRequest);
+};
+
+// Improved thread detection
+const detectTruncatedText = (text) => {
+  if (!text || text.trim().length === 0) return false;
+  
+  // Obvious truncation indicators
+  if (text.endsWith('…') || text.endsWith('...')) return true;
+  if (text.includes('… https://') || text.includes('... https://')) return true;
+  
+  // Check for abrupt endings
+  const lastWords = text.trim().split(/\s+/).slice(-2);
+  const commonTruncationEnders = ['the', 'a', 'an', 'to', 'in', 'on', 'at', 'by', 'for', 'with', 'about', 'like', 'of', 'all'];
+  if (lastWords.length > 0 && commonTruncationEnders.includes(lastWords[lastWords.length - 1].toLowerCase())) {
+    return true;
+  }
+  
+  // Check for non-Latin scripts
+  const hasNonLatinScript = /[\u0900-\u097F\u0600-\u06FF\u0590-\u05FF\u0E00-\u0E7F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]/.test(text);
+  const thresholdLength = hasNonLatinScript ? 180 : 240;
+  
+  if (text.length >= thresholdLength && !/[.!?"]$/.test(text.trim())) {
+      return true;
+  }
+  
+  return false;
+};
+
+// Enhanced tweet processing
+const processTweet = (tweet) => {
+    const textContent = tweet.extended_text || tweet.extended_tweet?.full_text || tweet.full_text || tweet.text || '';
+    const isLikelyTruncated = detectTruncatedText(textContent);
+    
+    // Handle retweets and quoted tweets
+    let finalText = textContent;
+    let isRetweet = false;
+    let retweetedTweet = null;
+    let quotedTweet = null;
+    
+    // Check if this is a retweet
+    if (tweet.retweeted_tweet || finalText.startsWith('RT @')) {
+        isRetweet = true;
+        retweetedTweet = tweet.retweeted_tweet ? processTweet(tweet.retweeted_tweet) : null;
+        // For retweets, preserve the original RT format but also include the retweeted content
+        if (retweetedTweet) {
+            finalText = `RT @${retweetedTweet.author.username}: ${retweetedTweet.full_text || retweetedTweet.text}`;
+        }
+    }
+    
+    // Check if this is a quoted tweet
+    if (tweet.quoted_tweet) {
+        quotedTweet = processTweet(tweet.quoted_tweet);
+        // For quoted tweets, preserve the original text and add the quoted content
+        finalText = `${finalText}\n\nQuoted: @${quotedTweet.author.username}: ${quotedTweet.full_text || quotedTweet.text}`;
+    }
+    
+    // Get media URLs efficiently - include media from retweets and quotes
+    const mediaUrls = [
+        ...(tweet.media_urls || []),
+        ...(tweet.extended_entities?.media?.map((m) => m.media_url_https || m.video_info?.variants?.[0]?.url) || []),
+        ...(tweet.entities?.media?.map((m) => m.media_url_https || m.video_info?.variants?.[0]?.url) || []),
+        // Include media from retweeted/quoted tweets
+        ...(retweetedTweet?.media?.map(m => m.url) || []),
+        ...(quotedTweet?.media?.map(m => m.url) || [])
+    ].filter(Boolean);
+    
+    // Process media items at once
+    const processedMedia = mediaUrls.map((url, i) => ({
+        media_key: `media-${tweet.tweet_id}-${i}`,
+        type: url.includes('.mp4') || url.includes('/video/') ? 'video' : 
+              url.includes('.gif') ? 'animated_gif' : 'photo',
+        url: url,
+        preview_image_url: tweet.extended_entities?.media?.[0]?.media_url_https || url,
+    }));
+
+    // Improved text cleaning - preserve important URLs
+    let cleanedText = finalText;
+    
+    // Extract all URLs first to preserve important ones
+    const urlRegex = /https?:\/\/[^\s]+/g;
+    const allUrls = cleanedText.match(urlRegex) || [];
+    const importantUrls = allUrls.filter(url => {
+        // Keep non-t.co URLs (these are actual content URLs)
+        if (!url.includes('t.co/')) return true;
+        // Keep short t.co URLs that might be important
+        if (url.length < 25) return true;
+        return false;
+    });
+    
+    // Only remove trailing t.co URLs that are likely tracking/preview URLs
+    // Keep all other URLs intact
+    cleanedText = cleanedText.replace(/\s*https:\/\/t\.co\/\w{10,}\s*$/g, '');
+    
+    // If we removed a URL but have important URLs, make sure at least one important URL is preserved
+    if (importantUrls.length > 0 && !cleanedText.includes('http')) {
+        cleanedText += `\n${importantUrls[0]}`;
+    }
+    
+    // Clean up excessive whitespace and ellipsis only if no important URLs are nearby
+    if (!importantUrls.some(url => cleanedText.includes(url))) {
+        cleanedText = cleanedText.replace(/(\s*[…\.]{3,})$/g, '');
+    }
+    
+    cleanedText = cleanedText.replace(/\n{3,}/g, '\n\n').trim();
+    
+    // Better thread and conversation detection
+    const conversation_id = tweet.conversation_id || tweet.in_reply_to_status_id || tweet.tweet_id;
+    const thread_id = tweet.thread_id || conversation_id;
+    const in_reply_to_tweet_id = tweet.in_reply_to_tweet_id || tweet.in_reply_to_status_id;
+    
+    // Handle self-thread detection
+    const isSelfThread = tweet.in_reply_to_user_id && 
+                       tweet.user?.user_id && 
+                       tweet.in_reply_to_user_id === tweet.user.user_id;
+    
+    // Only log important conversation information
+    if (in_reply_to_tweet_id && (conversation_id !== tweet.tweet_id) && isSelfThread) {
+        console.log(`Tweet ${tweet.tweet_id} is part of self-thread with conversation ID ${conversation_id}`);
+    }
+      
+    return {
+        id: tweet.tweet_id,
+        text: tweet.text || '',
+        full_text: cleanedText,
+        created_at: tweet.creation_date,
+        author: {
+            id: tweet.user?.user_id,
+            name: tweet.user?.name,
+            username: tweet.user?.username,
+            profile_image_url: tweet.user?.profile_pic_url
+        },
+        public_metrics: {
+            reply_count: tweet.reply_count || 0,
+            retweet_count: tweet.retweet_count || 0,
+            like_count: tweet.favorite_count || 0,
+            quote_count: tweet.quote_count || 0
+        },
+        media: processedMedia,
+        conversation_id,
+        in_reply_to_user_id: tweet.in_reply_to_user_id,
+        in_reply_to_tweet_id,
+        is_long: textContent.length > 280 || isLikelyTruncated,
+        thread_id,
+        is_self_thread: isSelfThread,
+        is_retweet: isRetweet,
+        retweeted_tweet: retweetedTweet,
+        quoted_tweet: quotedTweet,
+        urls: importantUrls, // Include extracted URLs for reference
+    };
+};
+
+// Fetch all replies for a tweet to build complete threads
+const fetchAllReplies = async (tweetId, username) => {
+  const allReplies = [];
+  let continuationToken = null;
+  let attempts = 0;
+  const REPLY_MAX_ATTEMPTS = 3;
+  const REPLY_MAX_PAGES = TwitterConfig.replyMaxPages;
+  const uniqueReplyIds = new Set();
+  let pageCount = 0;
+  
+  console.log(`Starting to fetch replies for tweet ${tweetId} by user ${username}`);
+
+  do {
+    try {
+      if (pageCount >= REPLY_MAX_PAGES) {
+        console.log(`Reached maximum page limit (${REPLY_MAX_PAGES}) for tweet ${tweetId}, stopping`);
+        break;
+      }
+
+      const url = continuationToken 
+        ? `https://twitter154.p.rapidapi.com/tweet/replies/continuation?tweet_id=${tweetId}&continuation_token=${encodeURIComponent(continuationToken)}`
+        : `https://twitter154.p.rapidapi.com/tweet/replies?tweet_id=${tweetId}`;
+
+      console.log(`Fetching replies for tweet ${tweetId}, page ${pageCount + 1}`);
+      const response = await makeApiRequest(url);
+      
+      if (response?.replies?.length) {
+        const filteredReplies = response.replies
+          .map(processTweet)
+          .filter((t) => {
+            const isAuthor = t.author.username.toLowerCase() === username.toLowerCase();
+            if (!isAuthor) return false;
+            
+            if (uniqueReplyIds.has(t.id)) return false;
+            
+            const tweetText = t.full_text || t.text || '';
+            if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
+              console.log(`Skipping reply ${t.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
+              return false;
+            }
+            
+            uniqueReplyIds.add(t.id);
+            return true;
+          });
+        
+        if (filteredReplies.length > 0) {
+          allReplies.push(...filteredReplies);
+          console.log(`Found ${filteredReplies.length} new replies for tweet ${tweetId} (page ${pageCount + 1})`);
+          
+          if (response?.continuation_token) {
+            continuationToken = response.continuation_token;
+          }
+        } else {
+          console.log(`No new author replies found on page ${pageCount + 1} for tweet ${tweetId}`);
+          
+          if (response.replies.length >= 10 && response?.continuation_token) {
+            continuationToken = response.continuation_token;
+          } else {
+            continuationToken = null;
+          }
+        }
+      } else {
+        console.log(`No replies found for tweet ${tweetId} (page ${pageCount + 1})`);
+        continuationToken = null;
+      }
+
+      pageCount++;
+      attempts = 0;
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+  } catch (error) {
+      console.error(`Error fetching replies for tweet ${tweetId} (attempt ${attempts+1}):`, error);
+      attempts++;
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      if (attempts >= REPLY_MAX_ATTEMPTS) {
+        console.log(`Reached maximum attempts (${REPLY_MAX_ATTEMPTS}) for tweets ${tweetId}, moving on`);
+        break;
+      }
+    }
+  } while (continuationToken && attempts < REPLY_MAX_ATTEMPTS && pageCount < REPLY_MAX_PAGES);
+
+  if (allReplies.length > 1) {
+    allReplies.sort((a, b) => {
+      try {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      } catch (err) {
+        return Number(BigInt(a.id) - BigInt(b.id));
+      }
+    });
+    
+    allReplies.forEach((tweet, index) => {
+      tweet.thread_position = index;
+      tweet.thread_index = index;
+    });
+  }
+
+  console.log(`Total replies fetched for tweet ${tweetId}: ${allReplies.length} across ${pageCount} pages`);
+  return allReplies;
+};
 
 /**
  * Get Twitter user profile data
@@ -57,13 +459,14 @@ const getTwitterProfile = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get user's recent tweets
- * @route GET /api/twitter/tweets
- * @access Private
+ * Enhanced user tweets fetching with complete threads
+ * @route GET /api/twitter/user/:username
+ * @access Private  
  */
 const getUserTweets = asyncHandler(async (req, res) => {
   try {
     const { username } = req.params;
+    const { initialFetch = 50, maxTweets = 200 } = req.query;
     
     if (!username) {
       return res.status(400).json({ 
@@ -72,17 +475,23 @@ const getUserTweets = asyncHandler(async (req, res) => {
       });
     }
 
-    // First get the user ID
-    const userResponse = await axios.get(`https://twitter154.p.rapidapi.com/user/details?username=${username}`, {
-      headers: {
-        'x-rapidapi-key': RAPID_API_KEY,
-        'x-rapidapi-host': RAPID_API_HOST,
-      },
-    });
+    console.log(`Fetching ${initialFetch} tweets for user ${username}`);
+    
+    // Check cache first
+    const cacheKey = username.toLowerCase();
+    if (API_CACHE.userTweets.has(cacheKey)) {
+      console.log(`Using cached tweets for user ${username}`);
+      const cachedTweets = API_CACHE.userTweets.get(cacheKey);
+      return res.status(200).json({
+        success: true,
+        count: cachedTweets.length,
+        data: cachedTweets
+      });
+    }
 
-    const userData = userResponse.data;
+    // Get user ID first
+    const userData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/details?username=${username}`);
     const userId = userData.user_id;
-
     if (!userId) {
       return res.status(404).json({ 
         success: false, 
@@ -90,20 +499,116 @@ const getUserTweets = asyncHandler(async (req, res) => {
       });
     }
 
-    // Then fetch tweets
-    const response = await axios.get(`https://twitter154.p.rapidapi.com/user/tweets?username=${username}&limit=50&includeReplies=false&includeFulltext=true&includeExtendedContent=true&includeQuoted=true&include_entities=true&includeAttachments=true&sort_by=recency&include_video_info=true&includeMedia=true`, {
-      headers: {
-        'x-rapidapi-key': RAPID_API_KEY,
-        'x-rapidapi-host': RAPID_API_HOST,
-      },
-    });
+    // Initial fetch
+    const initialData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/tweets?username=${username}&limit=${initialFetch}&user_id=${userId}&include_replies=false&include_pinned=false&includeFulltext=true`);
+    
+    // Process and filter tweets by author
+    let allTweets = (initialData.results || [])
+      .map(processTweet)
+      .filter(tweet => {
+        const isAuthor = tweet.author.username.toLowerCase() === username.toLowerCase();
+        if (!isAuthor) return false;
+        
+        const tweetText = tweet.full_text || tweet.text || '';
+        if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
+          console.log(`Skipping tweet ${tweet.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
+          return false;
+        }
+        
+        return true;
+      });
 
-    const tweets = processTweets(response.data);
+    console.log(`Found ${allTweets.length} tweets in initial fetch for ${username}`);
+
+    const uniqueTweetIds = new Set();
+    allTweets.forEach(tweet => uniqueTweetIds.add(tweet.id));
+
+    // Process threads with highest reply counts first
+    const threadsToProcess = [...allTweets]
+      .filter(tweet => tweet.public_metrics.reply_count && tweet.public_metrics.reply_count > 0) 
+      .sort((a, b) => (b.public_metrics.reply_count || 0) - (a.public_metrics.reply_count || 0))
+      .slice(0, TwitterConfig.threadsToProcess);
+
+    console.log(`Selected ${threadsToProcess.length} threads to fetch replies for`);
+    
+    // Process threads first to build complete conversations
+    for (const tweet of threadsToProcess) {
+      try {
+        console.log(`Fetching replies for tweet ${tweet.id} (has ${tweet.public_metrics.reply_count} replies)`);
+        const replies = await fetchAllReplies(tweet.id, username);
+        
+        const newReplies = replies.filter(reply => {
+          if (uniqueTweetIds.has(reply.id)) return false;
+          uniqueTweetIds.add(reply.id);
+          return true;
+        });
+        
+        if (newReplies.length > 0) {
+          console.log(`Added ${newReplies.length} new replies for tweet ${tweet.id}`);
+          allTweets.push(...newReplies);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`Error fetching replies for tweet ${tweet.id}:`, error);
+        await new Promise(resolve => setTimeout(resolve, 2500));
+      }
+    }
+
+    console.log(`After fetching replies, total tweet count: ${allTweets.length}`);
+
+    // Continue fetching more tweets using continuation token if needed
+    let continuationToken = initialData.continuation_token;
+    let continuationCount = 0;
+    
+    while (continuationToken && allTweets.length < maxTweets && continuationCount < TwitterConfig.maxContinuations) {
+      try {
+        console.log(`Fetching continuation ${continuationCount + 1} for ${username}`);
+        const continuationData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/tweets/continuation?username=${username}&continuation_token=${continuationToken}&user_id=${userId}`);
+        
+        const additionalTweets = (continuationData.results || [])
+          .map(processTweet)
+          .filter(tweet => {
+            const isAuthor = tweet.author.username.toLowerCase() === username.toLowerCase();
+            const isUnique = !uniqueTweetIds.has(tweet.id);
+            
+            if (!isAuthor || !isUnique) return false;
+            
+            const tweetText = tweet.full_text || tweet.text || '';
+            if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
+              console.log(`Skipping tweet ${tweet.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
+              return false;
+            }
+            
+            uniqueTweetIds.add(tweet.id);
+            return true;
+          });
+        
+        console.log(`Found ${additionalTweets.length} new tweets in continuation ${continuationCount + 1}`);
+        
+        if (additionalTweets.length > 0) {
+          allTweets.push(...additionalTweets);
+        }
+        
+        continuationToken = continuationData.continuation_token;
+        continuationCount++;
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (error) {
+        console.error(`Error fetching continuation ${continuationCount + 1}:`, error);
+        break;
+      }
+    }
+
+    console.log(`Fetched ${allTweets.length} total tweets (${uniqueTweetIds.size} unique)`);
+    
+    // Cache and return results
+    API_CACHE.userTweets.set(cacheKey, allTweets);
     
     res.status(200).json({
       success: true,
-      count: tweets.length,
-      data: tweets
+      count: allTweets.length,
+      data: allTweets
     });
   } catch (error) {
     console.error('Error fetching tweets:', error);
