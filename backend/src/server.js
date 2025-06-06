@@ -706,6 +706,43 @@ app.post('/api/generate-image', async (req, res) => {
   }
 });
 
+// Root route handler
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Brandout API Server is running successfully!',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      auth: '/api/auth',
+      users: '/api/users',
+      onboarding: '/api/onboarding',
+      teams: '/api/teams',
+      linkedin: '/api/linkedin',
+      twitter: '/api/twitter',
+      youtube: '/api/youtube',
+      posts: '/api/posts',
+      carousels: '/api/carousels',
+      fonts: '/api/fonts',
+      cron: '/api/cron',
+      userLimits: '/api/user-limits',
+      stripe: '/api/stripe',
+      notifications: '/api/notifications',
+      admin: '/api/admin'
+    }
+  });
+});
+
+// API health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'healthy',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
