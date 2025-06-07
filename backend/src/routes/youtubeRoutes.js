@@ -503,55 +503,171 @@ async function fetchBackupTranscript(videoId, res) {
           source: result.source || 'python_script'
         });
       } else {
-        console.log('Python script returned error, trying yt-dlp method');
+        console.log('Python script returned error, trying direct yt-dlp method');
         throw new Error(result.error || 'Failed to fetch transcript with Python script');
       }
     } catch (pythonError) {
       console.error('Error with Python script method:', pythonError);
-      console.log('Falling back to yt-dlp method');
+      console.log('Falling back to direct yt-dlp method');
     }
     
-    // If Python script fails, try yt-dlp method as last resort
-    // Determine server URL - could be localhost for dev or the deployed URL for production
-    let baseUrl;
+    // If Python script fails, try direct yt-dlp method as last resort
+    console.log('Attempting direct yt-dlp extraction for video:', videoId);
     
-    if (process.env.NODE_ENV === 'production') {
-      // For production, use the public URL or a relative path
-      baseUrl = process.env.BASE_URL || 'https://api.brandout.ai';
+    const fs = require('fs');
+    const os = require('os');
+    
+    // Create directory for transcripts if it doesn't exist
+    const transcriptsDir = path.join(process.cwd(), 'transcripts');
+    if (!fs.existsSync(transcriptsDir)) {
+      fs.mkdirSync(transcriptsDir, { recursive: true });
+    }
+    
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Determine the correct yt-dlp binary based on platform
+    let ytDlpCommand;
+    const isWindows = os.platform() === 'win32';
+    
+    if (isWindows) {
+      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
+      ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
     } else {
-      // For local development
-      baseUrl = process.env.BASE_URL || 'https://api.brandout.ai';
+      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
+      if (fs.existsSync(ytDlpPath)) {
+        try {
+          await execPromise(`chmod +x "${ytDlpPath}"`);
+          ytDlpCommand = `"${ytDlpPath}"`;
+        } catch (chmodError) {
+          console.error('Error making yt-dlp executable:', chmodError);
+          ytDlpCommand = 'yt-dlp';
+        }
+      } else {
+        ytDlpCommand = 'yt-dlp';
+      }
     }
     
-    console.log(`Using API base URL: ${baseUrl} for transcript-yt-dlp endpoint`);
-    const ytdlpUrl = `${baseUrl}/api/youtube/transcript-yt-dlp`;
+    // Try multiple authentication methods
+    let cookiesFlag = '';
+    const cookiesPath = path.join(process.cwd(), 'toutube_cookies', 'www.youtube.com_cookies.txt');
     
-    const response = await axios.post(ytdlpUrl, { videoId });
+    console.log('Checking for authentication options...');
     
-    if (response.data && response.data.success) {
-    // Store successful result in cache
-    transcriptCache.set(videoId, {
-        transcript: response.data.transcript,
-      language: 'Unknown',
-        language_code: response.data.language || 'en',
-        is_generated: response.data.is_generated ?? false
-    });
-    
-    return res.status(200).json({
-      success: true,
-        transcript: response.data.transcript,
-      language: 'Unknown',
-        language_code: response.data.language || 'en',
-        is_generated: response.data.is_generated ?? false
-    });
+    if (fs.existsSync(cookiesPath)) {
+      const cookieStats = fs.statSync(cookiesPath);
+      const cookieAge = Date.now() - cookieStats.mtime.getTime();
+      const cookieAgeHours = cookieAge / (1000 * 60 * 60);
+      
+      console.log(`Found cookies file (${cookieAgeHours.toFixed(1)} hours old)`);
+      
+      // Try --cookies-from-browser first (more effective against bot detection)
+      console.log('Attempting authentication with browser cookies extraction...');
+      cookiesFlag = '--cookies-from-browser chrome';
+      
+      // If that fails, fall back to file cookies
+      const fallbackCookiesFlag = `--cookies "${cookiesPath}"`;
+      
+      // Additional options to help avoid bot detection
+      const antiDetectionOptions = [
+        '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"',
+        '--referer "https://www.youtube.com/"',
+        '--sleep-interval 2',
+        '--max-sleep-interval 5',
+        '--retry-sleep 3'
+      ].join(' ');
+      
+      // Command for yt-dlp to extract subtitles with browser cookies
+      let command = `${ytDlpCommand} ${cookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+      
+      try {
+        console.log('Trying yt-dlp with browser cookie extraction...');
+        const { stdout, stderr } = await execPromise(command);
+        console.log('yt-dlp browser extraction output:', stdout);
+        
+        if (stderr && stderr.includes('Sign in to confirm')) {
+          console.log('Browser cookie extraction failed, trying file cookies...');
+          // Try with file cookies
+          command = `${ytDlpCommand} ${fallbackCookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+          const { stdout: stdout2, stderr: stderr2 } = await execPromise(command);
+          console.log('yt-dlp file cookies output:', stdout2);
+          
+          if (stderr2 && stderr2.includes('Sign in to confirm')) {
+            throw new Error('Authentication failed with both browser and file cookies');
+          }
+        }
+        
+        // Look for the generated subtitle file
+        const files = fs.readdirSync(process.cwd());
+        const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
+        
+        if (!subtitleFile) {
+          throw new Error('No subtitle file generated by yt-dlp');
+        }
+        
+        // Read and parse the subtitle content
+        const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+        let transcriptText = '';
+        let isGenerated = false;
+        
+        if (subtitleFile.endsWith('.json3')) {
+          const subtitleJson = JSON.parse(subtitleContent);
+          transcriptText = subtitleJson.events
+            .filter(event => event.segs && event.segs.length > 0)
+            .map(event => event.segs.map(seg => seg.utf8).join(' '))
+            .join(' ');
+          isGenerated = subtitleFile.includes('auto');
+        } else if (subtitleFile.endsWith('.vtt')) {
+          transcriptText = subtitleContent
+            .split('\n')
+            .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
+            .join(' ')
+            .replace(/<[^>]*>/g, '');
+          isGenerated = subtitleFile.includes('auto');
+        }
+        
+        // Clean up the extracted files
+        fs.unlinkSync(subtitleFile);
+        
+        if (!transcriptText || transcriptText.trim().length === 0) {
+          throw new Error('Extracted transcript is empty');
+        }
+        
+        // Store in cache
+        transcriptCache.set(videoId, {
+          transcript: transcriptText,
+          language: 'English',
+          language_code: 'en',
+          is_generated: isGenerated,
+          source: 'yt-dlp_direct'
+        });
+        
+        return res.status(200).json({
+          success: true,
+          transcript: transcriptText,
+          language: 'English',
+          language_code: 'en',
+          is_generated: isGenerated,
+          source: 'yt-dlp_direct'
+        });
+        
+      } catch (ytdlpError) {
+        console.error('Direct yt-dlp extraction failed:', ytdlpError);
+        throw ytdlpError;
+      }
+      
     } else {
-      throw new Error('Failed to fetch transcript with yt-dlp');
+      console.log('❌ No cookies file found');
+      console.log('💡 To avoid bot detection, please export your YouTube cookies');
+      console.log('📖 See YOUTUBE_COOKIES_SETUP.md for instructions');
+      
+      throw new Error('No authentication cookies available for YouTube access');
     }
+    
   } catch (error) {
     console.error('Error in backup transcript method:', error);
     
     // Return the actual error to the frontend
-    if (error.response?.status === 429) {
+    if (error.message && error.message.includes('rate limit')) {
       return res.status(429).json({ 
         success: false, 
         message: 'YouTube rate limit exceeded. Please try again in a few minutes.',
