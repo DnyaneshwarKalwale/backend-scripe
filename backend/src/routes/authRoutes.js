@@ -84,10 +84,10 @@ router.get('/linkedin-direct', (req, res) => {
     // Generate LinkedIn authorization URL with OpenID Connect scopes
     console.log('Generating LinkedIn authorization URL with OpenID Connect');
     console.log('Using client ID:', process.env.LINKEDIN_CLIENT_ID.substring(0, 3) + '...');
-    console.log('Using callback URL:', process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'https://api.brandout.ai'}/api/auth/linkedin-direct/callback`);
+    console.log('Using callback URL:', process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`);
     
     // Use a specific callback URL for direct auth
-    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'https://api.brandout.ai'}/api/auth/linkedin-direct/callback`;
+    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
     
     // Using OpenID Connect scopes: openid, profile, email, and w_member_social for posting
     const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=openid%20profile%20email%20w_member_social&state=${Math.random().toString(36).substring(2, 15)}`;
@@ -118,7 +118,7 @@ router.get('/linkedin-direct/callback', async (req, res) => {
   
   try {
     // Use a specific callback URL for direct auth
-    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'https://api.brandout.ai'}/api/auth/linkedin-direct/callback`;
+    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
     
     console.log('Received authorization code, exchanging for access token');
     // Exchange authorization code for access token
