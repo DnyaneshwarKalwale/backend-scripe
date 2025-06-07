@@ -934,20 +934,48 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     // Path to cookies file
     const cookiesPath = path.join(process.cwd(), 'toutube_cookies', 'www.youtube.com_cookies.txt');
     
-    // Check if cookies file exists
+    // Try multiple authentication methods
     let cookiesFlag = '';
+    
+    // Check for cookies file and use it if available
+    console.log('Checking for authentication options...');
+    
     if (fs.existsSync(cookiesPath)) {
-      console.log('Using cookies file for yt-dlp authentication');
+      const cookieStats = fs.statSync(cookiesPath);
+      const cookieAge = Date.now() - cookieStats.mtime.getTime();
+      const cookieAgeHours = cookieAge / (1000 * 60 * 60);
+      
+      console.log(`Found cookies file (${cookieAgeHours.toFixed(1)} hours old)`);
+      
+      if (cookieAgeHours > 48) {
+        console.log('⚠️ Cookies are quite old and may be expired. Consider refreshing them.');
+        console.log('💡 Run: npm run refresh-cookies');
+      }
+      
       cookiesFlag = `--cookies "${cookiesPath}"`;
     } else {
-      console.log('Cookies file not found, proceeding without authentication');
+      console.log('❌ No cookies file found');
+      console.log('💡 To avoid bot detection, please export your YouTube cookies');
+      console.log('📖 See YOUTUBE_COOKIES_SETUP.md for instructions');
+      console.log('🔧 Or run: npm run refresh-cookies');
+      
+      // Proceed without authentication (will likely fail for many videos)
+      cookiesFlag = '';
     }
     
+    // Additional options to help avoid bot detection
+    const antiDetectionOptions = [
+      '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"',
+      '--referer "https://www.youtube.com/"',
+      '--sleep-interval 1',
+      '--max-sleep-interval 3'
+    ].join(' ');
+    
     // Command for yt-dlp to extract subtitles
-    const command = `${ytDlpCommand} ${cookiesFlag} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    const command = `${ytDlpCommand} ${cookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `${ytDlpCommand} ${cookiesFlag} -J "${videoUrl}"`;
+    const metadataCommand = `${ytDlpCommand} ${cookiesFlag} ${antiDetectionOptions} -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration

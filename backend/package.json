@@ -8,7 +8,9 @@
     "dev": "nodemon src/server.js",
     "check-scheduled": "node src/utils/checkScheduled.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test-cookies": "node test_cookies.js"
+    "test-cookies": "node test_cookies.js",
+    "refresh-cookies": "node refresh_cookies.js",
+    "check-cookies": "node refresh_cookies.js check"
   },
   "dependencies": {
     "apify-client": "^2.12.4",
