@@ -134,7 +134,18 @@ router.post('/transcript', async (req, res) => {
     const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
     
     // Determine the Python executable to use
-    const pythonExecutable = await getPythonExecutablePath();
+    let pythonExecutable = await getPythonExecutablePath();
+    
+    // On Windows, prefer 'py' command if available
+    if (process.platform === 'win32') {
+      try {
+        await execPromise('py --version');
+        pythonExecutable = 'py';
+        console.log('Using py command for Python execution');
+      } catch (error) {
+        console.log('py command not available, using:', pythonExecutable);
+      }
+    }
     
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
@@ -449,7 +460,18 @@ async function fetchBackupTranscript(videoId, res) {
     try {
       console.log('Trying Python script with youtube-transcript-api for:', videoId);
       const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
-      const pythonExecutable = await getPythonExecutablePath();
+      let pythonExecutable = await getPythonExecutablePath();
+      
+      // On Windows, prefer 'py' command if available
+      if (process.platform === 'win32') {
+        try {
+          await execPromise('py --version');
+          pythonExecutable = 'py';
+          console.log('Using py command for Python execution in backup method');
+        } catch (error) {
+          console.log('py command not available in backup method, using:', pythonExecutable);
+        }
+      }
       
       console.log(`Using Python executable: ${pythonExecutable}`);
       const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
