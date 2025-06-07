@@ -495,10 +495,10 @@ async function fetchBackupTranscript(videoId, res) {
     
     if (process.env.NODE_ENV === 'production') {
       // For production, use the public URL or a relative path
-      baseUrl = process.env.BASE_URL || 'https://backend-scripe.onrender.com';
+      baseUrl = process.env.BASE_URL || 'https://api.brandout.ai';
     } else {
       // For local development
-      baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+      baseUrl = process.env.BASE_URL || 'https://api.brandout.ai';
     }
     
     console.log(`Using API base URL: ${baseUrl} for transcript-yt-dlp endpoint`);
