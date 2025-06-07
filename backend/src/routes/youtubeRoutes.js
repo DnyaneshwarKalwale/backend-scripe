@@ -462,25 +462,25 @@ async function fetchBackupTranscript(videoId, res) {
     
     if (ytdlpResult.success && ytdlpResult.transcript && ytdlpResult.transcript.trim().length > 0) {
       console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${ytdlpResult.transcript.length}`);
-      
-      // Store in cache
-      transcriptCache.set(videoId, {
+        
+        // Store in cache
+        transcriptCache.set(videoId, {
         transcript: ytdlpResult.transcript,
         language: ytdlpResult.language || 'en',
         language_code: ytdlpResult.language_code || 'en',
         is_generated: ytdlpResult.is_generated ?? false,
         source: ytdlpResult.source || 'yt-dlp'
-      });
-      
-      return res.status(200).json({
-        success: true,
+        });
+        
+        return res.status(200).json({
+          success: true,
         transcript: ytdlpResult.transcript,
         language: ytdlpResult.language || 'en',
         language_code: ytdlpResult.language_code || 'en',
         is_generated: ytdlpResult.is_generated ?? false,
         source: ytdlpResult.source || 'yt-dlp'
-      });
-    } else {
+        });
+      } else {
       console.log(`yt-dlp method failed for video ${videoId}:`, ytdlpResult.error || 'Unknown error');
       throw new Error(ytdlpResult.error || 'Failed to fetch transcript with yt-dlp - empty or invalid result');
     }
@@ -634,7 +634,7 @@ async function extractTranscriptWithYtDlp(videoId) {
   } catch (error) {
     console.error('Error in yt-dlp transcript extraction:', error);
     return {
-      success: false,
+      success: false, 
       error: error.message || 'Failed to extract transcript with yt-dlp',
       source: 'yt-dlp'
     };
