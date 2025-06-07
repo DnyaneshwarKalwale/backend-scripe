@@ -11,6 +11,7 @@ const fs = require('fs');
 const xml2js = require('xml2js');
 const { getChannelVideos, createCarousels, saveYoutubeVideo, getUserSavedVideos, deleteSavedVideo, saveVideoTranscript, saveMultipleVideos } = require('../controllers/youtubeController');
 const SavedVideo = require('../models/savedVideo');
+const os = require('os');
 
 // Load environment variables
 dotenv.config();
@@ -134,31 +135,31 @@ router.post('/transcript', async (req, res) => {
     const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
     
     // Determine the Python executable to use
-    let pythonExecutable = await getPythonExecutablePath();
-    
-    // On Windows, prefer 'py' command if available
-    if (process.platform === 'win32') {
-      try {
-        await execPromise('py --version');
-        pythonExecutable = 'py';
-        console.log('Using py command for Python execution');
-      } catch (error) {
-        console.log('py command not available, using:', pythonExecutable);
-      }
-    }
+    const pythonExecutable = await getPythonExecutablePath();
     
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`);
       
       if (stderr) {
         console.error('Python script stderr:', stderr);
       }
       
-      const result = JSON.parse(stdout);
+      // Parse JSON from stdout, handling debug output
+      let result;
+      try {
+        // If using debug mode, the JSON will be on the last line
+        const outputLines = stdout.trim().split('\n');
+        const jsonLine = outputLines[outputLines.length - 1];
+        result = JSON.parse(jsonLine);
+      } catch (parseError) {
+        // Fallback to parsing the entire stdout
+        console.log('Failed to parse last line as JSON, trying full output:', parseError);
+        result = JSON.parse(stdout);
+      }
       
-      if (result.success) {
-        console.log(`Successfully fetched transcript with Python script (${result.source || 'unknown'}) for video ${videoId}`);
+      if (result.success && result.transcript && result.transcript.trim().length > 0) {
+        console.log(`Successfully fetched transcript with Python script (${result.source || 'unknown'}) for video ${videoId}, length: ${result.transcript.length}`);
         
         // Store in cache
         transcriptCache.set(videoId, {
@@ -178,7 +179,7 @@ router.post('/transcript', async (req, res) => {
           source: result.source || 'python_script'
         });
       } else {
-        console.log('Python script returned error, trying backup method:', result.error);
+        console.log(`Python script returned error or empty transcript for video ${videoId}:`, result.error || 'Empty transcript');
         fetchBackupTranscript(videoId, res);
         return;
       }
@@ -451,71 +452,55 @@ function extractVideoId(url) {
   }
 }
 
-// Backup method for when Python method fails
+// Backup method for when Python method fails - now uses direct yt-dlp integration
 async function fetchBackupTranscript(videoId, res) {
   try {
-    console.log('Using backup transcript method for video ID:', videoId);
+    console.log('Using backup yt-dlp method for video ID:', videoId);
     
-    // First try using the Python script directly (which now uses youtube-transcript-api)
-    try {
-      console.log('Trying Python script with youtube-transcript-api for:', videoId);
-      const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
-      let pythonExecutable = await getPythonExecutablePath();
+    // Try the direct yt-dlp method
+    const ytdlpResult = await extractTranscriptWithYtDlp(videoId);
+    
+    if (ytdlpResult.success && ytdlpResult.transcript && ytdlpResult.transcript.trim().length > 0) {
+      console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${ytdlpResult.transcript.length}`);
       
-      // On Windows, prefer 'py' command if available
-      if (process.platform === 'win32') {
-        try {
-          await execPromise('py --version');
-          pythonExecutable = 'py';
-          console.log('Using py command for Python execution in backup method');
-        } catch (error) {
-          console.log('py command not available in backup method, using:', pythonExecutable);
-        }
-      }
+      // Store in cache
+      transcriptCache.set(videoId, {
+        transcript: ytdlpResult.transcript,
+        language: ytdlpResult.language || 'en',
+        language_code: ytdlpResult.language_code || 'en',
+        is_generated: ytdlpResult.is_generated ?? false,
+        source: ytdlpResult.source || 'yt-dlp'
+      });
       
-      console.log(`Using Python executable: ${pythonExecutable}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
-      
-      if (stderr) {
-        console.error('Python script error:', stderr);
-      }
-      
-      const result = JSON.parse(stdout);
-      
-      if (result.success) {
-        console.log(`Successfully fetched transcript with Python script (${result.source || 'unknown'}) for video ${videoId}`);
-        
-        // Store in cache
-        transcriptCache.set(videoId, {
-          transcript: result.transcript,
-          language: result.language || 'Unknown',
-          language_code: result.language_code || 'en',
-          is_generated: result.is_generated ?? false,
-          source: result.source || 'python_script'
-        });
-        
-        return res.status(200).json({
-          success: true,
-          transcript: result.transcript,
-          language: result.language || 'Unknown',
-          language_code: result.language_code || 'en',
-          is_generated: result.is_generated ?? false,
-          source: result.source || 'python_script'
-        });
-      } else {
-        console.log('Python script returned error, trying direct yt-dlp method');
-        throw new Error(result.error || 'Failed to fetch transcript with Python script');
-      }
-    } catch (pythonError) {
-      console.error('Error with Python script method:', pythonError);
-      console.log('Falling back to direct yt-dlp method');
+      return res.status(200).json({
+        success: true,
+        transcript: ytdlpResult.transcript,
+        language: ytdlpResult.language || 'en',
+        language_code: ytdlpResult.language_code || 'en',
+        is_generated: ytdlpResult.is_generated ?? false,
+        source: ytdlpResult.source || 'yt-dlp'
+      });
+    } else {
+      console.log(`yt-dlp method failed for video ${videoId}:`, ytdlpResult.error || 'Unknown error');
+      throw new Error(ytdlpResult.error || 'Failed to fetch transcript with yt-dlp - empty or invalid result');
     }
+  } catch (error) {
+    console.error('Error in backup yt-dlp method:', error);
     
-    // If Python script fails, try direct yt-dlp method as last resort
-    console.log('Attempting direct yt-dlp extraction for video:', videoId);
-    
-    const fs = require('fs');
-    const os = require('os');
+    // Return error to frontend - all methods have failed
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch transcript with all available methods (YouTube Transcript API + yt-dlp)',
+      error: error.toString(),
+      methods_tried: ['youtube_transcript_api', 'yt-dlp']
+    });
+  }
+}
+
+// Direct yt-dlp function (extracted from server.js for efficiency)
+async function extractTranscriptWithYtDlp(videoId) {
+  try {
+    console.log(`Extracting transcript for video ${videoId} using yt-dlp directly`);
     
     // Create directory for transcripts if it doesn't exist
     const transcriptsDir = path.join(process.cwd(), 'transcripts');
@@ -523,7 +508,28 @@ async function fetchBackupTranscript(videoId, res) {
       fs.mkdirSync(transcriptsDir, { recursive: true });
     }
     
+    const outputFileName = path.join(transcriptsDir, `${videoId}.json`);
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Check if we already have this transcript saved
+    if (fs.existsSync(outputFileName)) {
+      try {
+        const savedTranscript = JSON.parse(fs.readFileSync(outputFileName, 'utf8'));
+        if (savedTranscript && savedTranscript.transcript && savedTranscript.transcript.trim().length > 0) {
+          console.log(`Found existing yt-dlp transcript for ${videoId}`);
+          return {
+            success: true,
+            transcript: savedTranscript.transcript,
+            language: savedTranscript.language || 'en',
+            language_code: savedTranscript.language || 'en',
+            is_generated: savedTranscript.is_generated || false,
+            source: 'yt-dlp_cached'
+          };
+        }
+      } catch (readError) {
+        console.error('Error reading existing yt-dlp transcript:', readError);
+      }
+    }
     
     // Determine the correct yt-dlp binary based on platform
     let ytDlpCommand;
@@ -547,140 +553,91 @@ async function fetchBackupTranscript(videoId, res) {
       }
     }
     
-    // Try multiple authentication methods
-    let cookiesFlag = '';
-    const cookiesPath = path.join(process.cwd(), 'toutube_cookies', 'www.youtube.com_cookies.txt');
+    // Command for yt-dlp to extract subtitles
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
-    console.log('Checking for authentication options...');
+    console.log(`Running yt-dlp command: ${command}`);
+    const { stdout, stderr } = await execPromise(command);
     
-    if (fs.existsSync(cookiesPath)) {
-      const cookieStats = fs.statSync(cookiesPath);
-      const cookieAge = Date.now() - cookieStats.mtime.getTime();
-      const cookieAgeHours = cookieAge / (1000 * 60 * 60);
-      
-      console.log(`Found cookies file (${cookieAgeHours.toFixed(1)} hours old)`);
-      
-      // Try --cookies-from-browser first (more effective against bot detection)
-      console.log('Attempting authentication with browser cookies extraction...');
-      cookiesFlag = '--cookies-from-browser chrome';
-      
-      // If that fails, fall back to file cookies
-      const fallbackCookiesFlag = `--cookies "${cookiesPath}"`;
-      
-      // Additional options to help avoid bot detection
-      const antiDetectionOptions = [
-        '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"',
-        '--referer "https://www.youtube.com/"',
-        '--sleep-interval 2',
-        '--max-sleep-interval 5',
-        '--retry-sleep 3'
-      ].join(' ');
-      
-      // Command for yt-dlp to extract subtitles with browser cookies
-      let command = `${ytDlpCommand} ${cookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
-      
-      try {
-        console.log('Trying yt-dlp with browser cookie extraction...');
-        const { stdout, stderr } = await execPromise(command);
-        console.log('yt-dlp browser extraction output:', stdout);
-        
-        if (stderr && stderr.includes('Sign in to confirm')) {
-          console.log('Browser cookie extraction failed, trying file cookies...');
-          // Try with file cookies
-          command = `${ytDlpCommand} ${fallbackCookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
-          const { stdout: stdout2, stderr: stderr2 } = await execPromise(command);
-          console.log('yt-dlp file cookies output:', stdout2);
-          
-          if (stderr2 && stderr2.includes('Sign in to confirm')) {
-            throw new Error('Authentication failed with both browser and file cookies');
-          }
-        }
-        
-        // Look for the generated subtitle file
-        const files = fs.readdirSync(process.cwd());
-        const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
-        
-        if (!subtitleFile) {
-          throw new Error('No subtitle file generated by yt-dlp');
-        }
-        
-        // Read and parse the subtitle content
-        const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
-        let transcriptText = '';
-        let isGenerated = false;
-        
-        if (subtitleFile.endsWith('.json3')) {
-          const subtitleJson = JSON.parse(subtitleContent);
-          transcriptText = subtitleJson.events
-            .filter(event => event.segs && event.segs.length > 0)
-            .map(event => event.segs.map(seg => seg.utf8).join(' '))
-            .join(' ');
-          isGenerated = subtitleFile.includes('auto');
-        } else if (subtitleFile.endsWith('.vtt')) {
-          transcriptText = subtitleContent
-            .split('\n')
-            .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
-            .join(' ')
-            .replace(/<[^>]*>/g, '');
-          isGenerated = subtitleFile.includes('auto');
-        }
-        
-        // Clean up the extracted files
-        fs.unlinkSync(subtitleFile);
-        
-        if (!transcriptText || transcriptText.trim().length === 0) {
-          throw new Error('Extracted transcript is empty');
-        }
-        
-        // Store in cache
-        transcriptCache.set(videoId, {
-          transcript: transcriptText,
-          language: 'English',
-          language_code: 'en',
-          is_generated: isGenerated,
-          source: 'yt-dlp_direct'
-        });
-        
-        return res.status(200).json({
-          success: true,
-          transcript: transcriptText,
-          language: 'English',
-          language_code: 'en',
-          is_generated: isGenerated,
-          source: 'yt-dlp_direct'
-        });
-        
-      } catch (ytdlpError) {
-        console.error('Direct yt-dlp extraction failed:', ytdlpError);
-        throw ytdlpError;
-      }
-      
-    } else {
-      console.log('❌ No cookies file found');
-      console.log('💡 To avoid bot detection, please export your YouTube cookies');
-      console.log('📖 See YOUTUBE_COOKIES_SETUP.md for instructions');
-      
-      throw new Error('No authentication cookies available for YouTube access');
+    if (stderr) {
+      console.error('yt-dlp stderr:', stderr);
     }
+    
+    // Look for the generated subtitle file
+    const files = fs.readdirSync(process.cwd());
+    const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
+    
+    if (!subtitleFile) {
+      throw new Error('No subtitle file generated by yt-dlp');
+    }
+    
+    // Read and parse the subtitle content
+    const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+    let transcriptText = '';
+    let is_generated = false;
+    
+    if (subtitleFile.endsWith('.json3')) {
+      // Parse JSON format
+      const subtitleJson = JSON.parse(subtitleContent);
+      transcriptText = subtitleJson.events
+        .filter(event => event.segs && event.segs.length > 0)
+        .map(event => event.segs.map(seg => seg.utf8).join(' '))
+        .join(' ');
+      is_generated = subtitleFile.includes('auto');
+    } else if (subtitleFile.endsWith('.vtt')) {
+      // Parse VTT format
+      transcriptText = subtitleContent
+        .split('\n')
+        .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
+        .join(' ')
+        .replace(/<[^>]*>/g, ''); // Remove HTML tags
+      is_generated = subtitleFile.includes('auto');
+    }
+    
+    // Clean up the extracted files
+    try {
+      fs.unlinkSync(subtitleFile);
+    } catch (cleanupError) {
+      console.error('Error cleaning up subtitle file:', cleanupError);
+    }
+    
+    // Check if transcript is empty
+    if (!transcriptText || transcriptText.trim().length === 0) {
+      throw new Error('yt-dlp extracted empty transcript');
+    }
+    
+    // Save the transcript to our JSON file for future use
+    const transcriptData = {
+      transcript: transcriptText,
+      language: 'en',
+      is_generated: is_generated,
+      extractedAt: new Date().toISOString()
+    };
+    
+    try {
+      fs.writeFileSync(outputFileName, JSON.stringify(transcriptData, null, 2));
+    } catch (saveError) {
+      console.error('Error saving yt-dlp transcript:', saveError);
+    }
+    
+    console.log(`Successfully extracted transcript with yt-dlp for ${videoId}, length: ${transcriptText.length}`);
+    
+    return {
+      success: true,
+      transcript: transcriptText,
+      language: 'en',
+      language_code: 'en',
+      is_generated: is_generated,
+      source: 'yt-dlp'
+    };
     
   } catch (error) {
-    console.error('Error in backup transcript method:', error);
-    
-    // Return the actual error to the frontend
-    if (error.message && error.message.includes('rate limit')) {
-      return res.status(429).json({ 
-        success: false, 
-        message: 'YouTube rate limit exceeded. Please try again in a few minutes.',
-        error: 'Rate limit (429) encountered when fetching transcript'
-      });
-    }
-    
-    // Return general error for other issues
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch transcript with all available methods',
-      error: error.toString()
-    });
+    console.error('Error in yt-dlp transcript extraction:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to extract transcript with yt-dlp',
+      source: 'yt-dlp'
+    };
   }
 }
 

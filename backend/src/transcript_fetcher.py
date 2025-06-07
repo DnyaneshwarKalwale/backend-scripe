@@ -4,8 +4,6 @@
 import sys
 import json
 import traceback
-import os
-from http.cookiejar import MozillaCookieJar
 
 # Debug mode (when run with --debug flag)
 DEBUG = False
@@ -23,127 +21,19 @@ try:
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
     debug_print("YouTube Transcript API imported successfully")
-    
-    # Try to import requests session for better cookie handling
-    try:
-        import requests
-        HAS_REQUESTS = True
-        debug_print("Requests library available for enhanced cookie support")
-    except ImportError:
-        HAS_REQUESTS = False
-        debug_print("Requests library not available, using urllib only")
 except ImportError as e:
     debug_print(f"Failed to import YouTube Transcript API: {e}")
     try_ytapi = False
-    HAS_REQUESTS = False
 
 # Fallback method imports
-from urllib.request import urlopen, Request, HTTPCookieProcessor, build_opener
+from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 import re
-
-def load_cookies():
-    """Load cookies from the YouTube cookies file."""
-    try:
-        # Look for cookies file in the expected location
-        cookies_path = os.path.join(os.path.dirname(__file__), '..', 'toutube_cookies', 'www.youtube.com_cookies.txt')
-        
-        if not os.path.exists(cookies_path):
-            debug_print(f"Cookies file not found at: {cookies_path}")
-            return None
-            
-        debug_print(f"Loading cookies from: {cookies_path}")
-        cookie_jar = MozillaCookieJar(cookies_path)
-        cookie_jar.load(ignore_discard=True, ignore_expires=True)
-        debug_print(f"Loaded {len(cookie_jar)} cookies")
-        return cookie_jar
-    except Exception as e:
-        debug_print(f"Error loading cookies: {e}")
-        return None
-
-def create_requests_session_with_cookies():
-    """Create a requests session with YouTube cookies if available."""
-    if not HAS_REQUESTS:
-        return None
-    
-    try:
-        import requests
-        session = requests.Session()
-        
-        cookies = load_cookies()
-        if cookies:
-            # Convert cookie jar to requests session cookies
-            for cookie in cookies:
-                session.cookies.set(cookie.name, cookie.value, domain=cookie.domain, path=cookie.path)
-            
-            # Set realistic headers that match a real browser
-            session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                'Sec-Ch-Ua-Mobile': '?0',
-                'Sec-Ch-Ua-Platform': '"Windows"',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            })
-            
-            debug_print(f"Created requests session with {len(session.cookies)} cookies")
-            return session
-        else:
-            debug_print("No cookies available for requests session")
-            return session
-    except Exception as e:
-        debug_print(f"Error creating requests session: {e}")
-        return None
 
 def get_transcript_with_api(video_id):
     """Fetch transcript using the youtube_transcript_api library."""
     try:
         debug_print(f"Using YouTube Transcript API for video ID: {video_id}")
-        
-        # Load cookies for the API
-        session = create_requests_session_with_cookies()
-        
-        # Set up urllib opener as backup
-        cookies = load_cookies()
-        if cookies:
-            debug_print("Using cookies for YouTube Transcript API")
-            # Set up cookie processor for requests - this helps with the underlying HTTP requests
-            import urllib.request
-            cookie_processor = HTTPCookieProcessor(cookies)
-            opener = build_opener(cookie_processor)
-            urllib.request.install_opener(opener)
-            
-            # Also try to set up session headers that might help with authentication
-            import ssl
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-        # If we have requests session, try to monkey-patch the youtube_transcript_api to use it
-        if session and HAS_REQUESTS:
-            debug_print("Attempting to use requests session for YouTube Transcript API")
-            # This is a bit hacky but might help with cookie authentication
-            try:
-                import youtube_transcript_api._api as yt_api
-                original_get = getattr(yt_api, '_get', None)
-                if original_get:
-                    def patched_get(url, headers=None):
-                        debug_print(f"Making request to: {url}")
-                        response = session.get(url, headers=headers or {})
-                        return response.text
-                    yt_api._get = patched_get
-                    debug_print("Successfully patched YouTube Transcript API to use session")
-            except Exception as patch_error:
-                debug_print(f"Could not patch YouTube Transcript API: {patch_error}")
-                # Continue with default behavior
         
         # Get transcript list
         debug_print("Getting transcript list...")
@@ -244,43 +134,15 @@ def fetch_transcript_manually(video_id):
     try:
         debug_print(f"Using manual scraping for video ID: {video_id}")
         
-        # Try to use requests session first, fallback to urllib
-        session = create_requests_session_with_cookies()
-        
-        # Load cookies for manual scraping (urllib fallback)
-        cookies = load_cookies()
-        if cookies:
-            debug_print("Using cookies for manual scraping")
-            cookie_processor = HTTPCookieProcessor(cookies)
-            opener = build_opener(cookie_processor)
-        else:
-            debug_print("No cookies available, using default opener")
-            opener = build_opener()
-        
         # First try to get video info to check if transcripts are available
         url = f"https://www.youtube.com/watch?v={video_id}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # Try requests session first if available
-        if session and HAS_REQUESTS:
-            debug_print("Using requests session for manual scraping")
-            # Add a small delay to appear more human-like
-            import time
-            time.sleep(1)
-            response = session.get(url)
-            html = response.text
-        else:
-            debug_print("Using urllib for manual scraping")
-            request = Request(url, headers=headers)
-            response = opener.open(request)
-            html = response.read().decode('utf-8')
+        request = Request(url, headers=headers)
+        response = urlopen(request)
+        html = response.read().decode('utf-8')
         
         # Extract channel name
         channel_title = "Unknown Channel"
@@ -374,20 +236,9 @@ def fetch_transcript_manually(video_id):
         try:
             debug_print("Fetching captions as text...")
             caption_url = base_url + '&fmt=txt'
-            
-            # Use requests session if available
-            if session and HAS_REQUESTS:
-                # Add referer header for caption requests
-                caption_headers = {
-                    'Referer': url,
-                    'Origin': 'https://www.youtube.com'
-                }
-                response = session.get(caption_url, headers=caption_headers)
-                transcript = response.text
-            else:
-                request = Request(caption_url, headers=headers)
-                response = opener.open(request)
-                transcript = response.read().decode('utf-8')
+            request = Request(caption_url, headers=headers)
+            response = urlopen(request)
+            transcript = response.read().decode('utf-8')
             
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters")
             return {
@@ -407,20 +258,9 @@ def fetch_transcript_manually(video_id):
             try:
                 debug_print("Trying to fetch captions as JSON...")
                 caption_url = base_url + '&fmt=json3'
-                
-                # Use requests session if available
-                if session and HAS_REQUESTS:
-                    # Add referer header for caption requests
-                    caption_headers = {
-                        'Referer': url,
-                        'Origin': 'https://www.youtube.com'
-                    }
-                    response = session.get(caption_url, headers=caption_headers)
-                    caption_data = response.json()
-                else:
-                    request = Request(caption_url, headers=headers)
-                    response = opener.open(request)
-                    caption_data = json.loads(response.read().decode('utf-8'))
+                request = Request(caption_url, headers=headers)
+                response = urlopen(request)
+                caption_data = json.loads(response.read().decode('utf-8'))
                 
                 # Extract transcript from JSON
                 transcript_pieces = []

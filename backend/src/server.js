@@ -931,256 +931,128 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
-    // Path to cookies file
-    const cookiesPath = path.join(process.cwd(), 'toutube_cookies', 'www.youtube.com_cookies.txt');
+    // Command for yt-dlp to extract subtitles
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
-    // Try multiple authentication methods
-    let cookiesFlag = '';
+    // Add a separate command to fetch video metadata including duration
+    const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
     
-    // Check for cookies file and use it if available
-    console.log('Checking for authentication options...');
-    
-    if (fs.existsSync(cookiesPath)) {
-      const cookieStats = fs.statSync(cookiesPath);
-      const cookieAge = Date.now() - cookieStats.mtime.getTime();
-      const cookieAgeHours = cookieAge / (1000 * 60 * 60);
-      
-      console.log(`Found cookies file (${cookieAgeHours.toFixed(1)} hours old)`);
-      
-      if (cookieAgeHours > 48) {
-        console.log('⚠️ Cookies are quite old and may be expired. Consider refreshing them.');
-        console.log('💡 Run: npm run refresh-cookies');
-      }
-      
-      // Try --cookies-from-browser first (more effective against bot detection)
-      console.log('🔄 Attempting authentication with browser cookies extraction...');
-      cookiesFlag = '--cookies-from-browser chrome';
-      
-      // Keep file cookies as fallback
-      const fallbackCookiesFlag = `--cookies "${cookiesPath}"`;
-      
-      // Additional options to help avoid bot detection
-      const antiDetectionOptions = [
-        '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"',
-        '--referer "https://www.youtube.com/"',
-        '--sleep-interval 2',
-        '--max-sleep-interval 5',
-        '--retry-sleep 3',
-        '--socket-timeout 30'
-      ].join(' ');
-      
-      // Command for yt-dlp to extract subtitles with browser cookies first
-      let command = `${ytDlpCommand} ${cookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
-      let metadataCommand = `${ytDlpCommand} ${cookiesFlag} ${antiDetectionOptions} -J "${videoUrl}"`;
-      
-      // Try browser cookie extraction first
-      try {
-        console.log('🚀 Trying yt-dlp with browser cookie extraction...');
-        
-        // First try to get metadata
-        try {
-          const { stdout: metadataOutput } = await execPromise(metadataCommand);
-          const metadata = JSON.parse(metadataOutput);
-          
-          duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
-          thumbnail = metadata.thumbnail || "";
-          title = metadata.title || "";
-          channelName = metadata.channel || metadata.uploader || "";
-          viewCount = metadata.view_count || 0;
-          uploadDate = metadata.upload_date || "";
-          
-          console.log(`✅ Video metadata fetched successfully for ${videoId}, duration: ${duration}`);
-        } catch (metadataError) {
-          console.error('⚠️ Error fetching video metadata with browser cookies:', metadataError);
-          // Try with file cookies for metadata
-          try {
-            const fallbackMetadataCommand = `${ytDlpCommand} ${fallbackCookiesFlag} ${antiDetectionOptions} -J "${videoUrl}"`;
-            const { stdout: metadataOutput2 } = await execPromise(fallbackMetadataCommand);
-            const metadata2 = JSON.parse(metadataOutput2);
-            
-            duration = metadata2.duration ? formatDuration(metadata2.duration) : "N/A";
-            thumbnail = metadata2.thumbnail || "";
-            title = metadata2.title || "";
-            channelName = metadata2.channel || metadata2.uploader || "";
-            viewCount = metadata2.view_count || 0;
-            uploadDate = metadata2.upload_date || "";
-            
-            console.log(`✅ Video metadata fetched with file cookies for ${videoId}`);
-          } catch (fallbackMetadataError) {
-            console.error('⚠️ Error fetching metadata with both methods:', fallbackMetadataError);
-          }
-        }
-        
-        // Now try transcript extraction
-        const { stdout, stderr } = await execPromise(command);
-        console.log('📜 yt-dlp browser extraction output:', stdout);
-        
-        if (stderr && stderr.includes('Sign in to confirm')) {
-          console.log('🔄 Browser cookie extraction failed, trying file cookies...');
-          throw new Error('Browser auth failed, trying file cookies');
-        }
-        
-        // Look for generated subtitle file
-        const files = fs.readdirSync(process.cwd());
-        const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
-        
-        if (!subtitleFile) {
-          console.log('🔄 No subtitle file from browser auth, trying file cookies...');
-          throw new Error('No subtitle file generated with browser auth');
-        }
-        
-        console.log('✅ Successfully extracted transcript with browser cookies');
-        
-      } catch (browserAuthError) {
-        console.log('🔄 Browser authentication failed, falling back to file cookies...');
-        console.error('Browser auth error:', browserAuthError.message);
-        
-        // Fallback to file cookies
-        command = `${ytDlpCommand} ${fallbackCookiesFlag} ${antiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
-        
-        try {
-          const { stdout, stderr } = await execPromise(command);
-          console.log('📜 yt-dlp file cookies output:', stdout);
-          
-          if (stderr && stderr.includes('Sign in to confirm')) {
-            throw new Error('🚫 Authentication failed with both browser and file cookies - YouTube bot detection active');
-          }
-          
-          console.log('✅ Successfully extracted transcript with file cookies');
-          
-        } catch (fileAuthError) {
-          console.error('❌ File cookie authentication also failed:', fileAuthError);
-          throw new Error(`Authentication failed with all methods: ${fileAuthError.message}`);
-        }
-      }
-      
-    } else {
-      console.log('❌ No cookies file found at:', cookiesPath);
-      console.log('💡 To avoid bot detection, please export your YouTube cookies');
-      console.log('📖 See YOUTUBE_COOKIES_SETUP.md for instructions');
-      console.log('🔧 Or run: npm run refresh-cookies');
-      
-      // Try without authentication (will likely fail for many videos)
-      console.log('⚠️ Attempting without authentication (high chance of failure)...');
-      cookiesFlag = '';
-      
-      // Basic anti-detection options without cookies
-      const basicAntiDetectionOptions = [
-        '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"',
-        '--referer "https://www.youtube.com/"',
-        '--sleep-interval 3',
-        '--max-sleep-interval 7'
-      ].join(' ');
-      
-      // Command for yt-dlp to extract subtitles without authentication
-      command = `${ytDlpCommand} ${basicAntiDetectionOptions} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
-      metadataCommand = `${ytDlpCommand} ${basicAntiDetectionOptions} -J "${videoUrl}"`;
+    try {
+      // First fetch video metadata to get duration
+      let duration = "N/A";
+      let thumbnail = "";
+      let title = "";
+      let channelName = "";
+      let viewCount = 0;
+      let uploadDate = "";
       
       try {
-        // Try to get metadata first
-        try {
-          const { stdout: metadataOutput } = await execPromise(metadataCommand);
-          const metadata = JSON.parse(metadataOutput);
-          
-          duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
-          thumbnail = metadata.thumbnail || "";
-          title = metadata.title || "";
-          channelName = metadata.channel || metadata.uploader || "";
-          viewCount = metadata.view_count || 0;
-          uploadDate = metadata.upload_date || "";
-          
-          console.log(`✅ Video metadata fetched without auth for ${videoId}`);
-        } catch (metadataError) {
-          console.error('⚠️ Error fetching video metadata without auth:', metadataError);
-        }
+        const { stdout: metadataOutput } = await execPromise(metadataCommand);
+        const metadata = JSON.parse(metadataOutput);
         
-        // Now try transcript extraction
-        const { stdout, stderr } = await execPromise(command);
-        console.log('📜 yt-dlp no-auth output:', stdout);
+        // Extract relevant metadata
+        duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
+        thumbnail = metadata.thumbnail || "";
+        title = metadata.title || "";
+        channelName = metadata.channel || metadata.uploader || "";
+        viewCount = metadata.view_count || 0;
+        uploadDate = metadata.upload_date || "";
         
-        if (stderr && stderr.includes('Sign in to confirm')) {
-          throw new Error('🚫 YouTube requires authentication - bot detection is active. Please provide cookies.');
-        }
-        
-      } catch (noAuthError) {
-        console.error('❌ No-auth extraction failed:', noAuthError);
-        throw new Error(`No authentication available and YouTube is blocking requests: ${noAuthError.message}`);
+        console.log(`Video metadata fetched successfully for ${videoId}, duration: ${duration}`);
+      } catch (metadataError) {
+        console.error('Error fetching video metadata:', metadataError);
+        // Continue with transcript extraction even if metadata fails
       }
+      
+      // Then proceed with transcript extraction
+      const { stdout, stderr } = await execPromise(command);
+      console.log('yt-dlp output:', stdout);
+      
+      if (stderr) {
+        console.error('yt-dlp stderr:', stderr);
+      }
+      
+      // Look for the generated subtitle file
+      const files = fs.readdirSync(process.cwd());
+      const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
+      
+      if (!subtitleFile) {
+        throw new Error('No subtitle file generated');
+      }
+      
+      // Read and parse the subtitle content
+      const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+      let transcriptText = '';
+      let is_generated = false;
+      
+      if (subtitleFile.endsWith('.json3')) {
+        // Parse JSON format
+        const subtitleJson = JSON.parse(subtitleContent);
+        transcriptText = subtitleJson.events
+          .filter(event => event.segs && event.segs.length > 0)
+          .map(event => event.segs.map(seg => seg.utf8).join(' '))
+          .join(' ');
+        is_generated = subtitleFile.includes('auto');
+      } else if (subtitleFile.endsWith('.vtt')) {
+        // Parse VTT format - simple approach
+        transcriptText = subtitleContent
+          .split('\n')
+          .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
+          .join(' ')
+          .replace(/<[^>]*>/g, ''); // Remove HTML tags
+        is_generated = subtitleFile.includes('auto');
+      }
+      
+      // Clean up the extracted files
+      fs.unlinkSync(subtitleFile);
+      
+      // Save the transcript to our JSON file for future use
+      const transcriptData = {
+        transcript: transcriptText,
+        language: 'en',
+        is_generated: is_generated,
+        extractedAt: new Date().toISOString(),
+        duration: duration,
+        thumbnail: thumbnail,
+        title: title,
+        channelName: channelName,
+        viewCount: viewCount,
+        uploadDate: uploadDate
+      };
+      
+      fs.writeFileSync(outputFileName, JSON.stringify(transcriptData, null, 2));
+      
+      // Format the transcript into bullet points for carousel use
+      const formattedTranscript = formatTranscriptToBulletPoints(transcriptText);
+      
+      return res.json({
+        success: true,
+        message: 'Transcript extracted successfully',
+        transcript: transcriptText,
+        formattedTranscript: formattedTranscript,
+        language: 'en',
+        is_generated: is_generated,
+        // Include video metadata in the response
+        duration: duration,
+        thumbnail: thumbnail,
+        title: title,
+        channelName: channelName,
+        viewCount: viewCount,
+        uploadDate: uploadDate
+      });
+    } catch (error) {
+      console.error('Error extracting transcript with yt-dlp:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to extract transcript with yt-dlp',
+        error: error.message
+      });
     }
-    
-    // Look for the generated subtitle file (this should be moved outside the auth block)
-    const files = fs.readdirSync(process.cwd());
-    const subtitleFile = files.find(file => file.includes(videoId) && (file.endsWith('.en.vtt') || file.endsWith('.en.json3')));
-    
-    if (!subtitleFile) {
-      throw new Error('No subtitle file generated');
-    }
-    
-    // Read and parse the subtitle content
-    const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
-    let transcriptText = '';
-    let is_generated = false;
-    
-    if (subtitleFile.endsWith('.json3')) {
-      // Parse JSON format
-      const subtitleJson = JSON.parse(subtitleContent);
-      transcriptText = subtitleJson.events
-        .filter(event => event.segs && event.segs.length > 0)
-        .map(event => event.segs.map(seg => seg.utf8).join(' '))
-        .join(' ');
-      is_generated = subtitleFile.includes('auto');
-    } else if (subtitleFile.endsWith('.vtt')) {
-      // Parse VTT format - simple approach
-      transcriptText = subtitleContent
-        .split('\n')
-        .filter(line => !line.includes('-->') && !line.match(/^\d+$/) && !line.match(/^\s*$/))
-        .join(' ')
-        .replace(/<[^>]*>/g, ''); // Remove HTML tags
-      is_generated = subtitleFile.includes('auto');
-    }
-    
-    // Clean up the extracted files
-    fs.unlinkSync(subtitleFile);
-    
-    // Save the transcript to our JSON file for future use
-    const transcriptData = {
-      transcript: transcriptText,
-      language: 'en',
-      is_generated: is_generated,
-      extractedAt: new Date().toISOString(),
-      duration: duration,
-      thumbnail: thumbnail,
-      title: title,
-      channelName: channelName,
-      viewCount: viewCount,
-      uploadDate: uploadDate
-    };
-    
-    fs.writeFileSync(outputFileName, JSON.stringify(transcriptData, null, 2));
-    
-    // Format the transcript into bullet points for carousel use
-    const formattedTranscript = formatTranscriptToBulletPoints(transcriptText);
-    
-    return res.json({
-      success: true,
-      message: 'Transcript extracted successfully',
-      transcript: transcriptText,
-      formattedTranscript: formattedTranscript,
-      language: 'en',
-      is_generated: is_generated,
-      // Include video metadata in the response
-      duration: duration,
-      thumbnail: thumbnail,
-      title: title,
-      channelName: channelName,
-      viewCount: viewCount,
-      uploadDate: uploadDate
-    });
   } catch (error) {
-    console.error('Error extracting transcript with yt-dlp:', error);
+    console.error('Error in transcript-yt-dlp endpoint:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to extract transcript with yt-dlp',
+      message: 'Server error processing transcript request',
       error: error.message
     });
   }
