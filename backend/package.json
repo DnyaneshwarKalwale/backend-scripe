@@ -10,7 +10,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-cookies": "node test_cookies.js",
     "refresh-cookies": "node refresh_cookies.js",
-    "check-cookies": "node refresh_cookies.js check"
+    "check-cookies": "node refresh_cookies.js check",
+    "export-cookies": "node export_fresh_cookies.js"
   },
   "dependencies": {
     "apify-client": "^2.12.4",
