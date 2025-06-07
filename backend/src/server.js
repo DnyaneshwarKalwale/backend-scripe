@@ -64,7 +64,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'http://localhost:8080', 
+    'https://app.brandout.ai', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
