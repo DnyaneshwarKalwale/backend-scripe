@@ -931,11 +931,23 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
+    // Path to cookies file
+    const cookiesPath = path.join(process.cwd(), 'toutube_cookies', 'www.youtube.com_cookies.txt');
+    
+    // Check if cookies file exists
+    let cookiesFlag = '';
+    if (fs.existsSync(cookiesPath)) {
+      console.log('Using cookies file for yt-dlp authentication');
+      cookiesFlag = `--cookies "${cookiesPath}"`;
+    } else {
+      console.log('Cookies file not found, proceeding without authentication');
+    }
+    
     // Command for yt-dlp to extract subtitles
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    const command = `${ytDlpCommand} ${cookiesFlag} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
+    const metadataCommand = `${ytDlpCommand} ${cookiesFlag} -J "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
