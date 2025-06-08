@@ -65,8 +65,8 @@ def get_transcript_with_api(video_id):
         
         # Configure proxies for requests
         proxies = {
-            'http': 'http://tzlgbidr:p2gjh6cl2hq6@p.webshare.io:80/',
-            'https': 'http://tzlgbidr:p2gjh6cl2hq6@p.webshare.io:80/'
+            'http': 'http://tzlgbidr-rotate:p2gjh6cl2hq6@p.webshare.io:80',
+            'https': 'http://tzlgbidr-rotate:p2gjh6cl2hq6@p.webshare.io:80'
         }
         
         debug_print("Initializing YouTube Transcript API with Webshare proxy...")
