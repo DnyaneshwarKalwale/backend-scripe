@@ -56,39 +56,16 @@ const transcriptCache = {
   }
 };
 
-// Helper function to get the correct Python executable path
+// Function to get the appropriate Python executable path
 async function getPythonExecutablePath() {
-  try {
-    // For Windows, check the specific Python location first
-    if (process.platform === 'win32') {
-      const specificPaths = [
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
-        'C:\\Python39\\python.exe',
-        'C:\\Python310\\python.exe',
-        'C:\\Python311\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python39\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python310\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe'
-      ];
-      
-      for (const path of specificPaths) {
-        try {
-          await fs.promises.access(path);
-          return path;
-        } catch {
-          // Path not found, continue to next one
-        }
-      }
-      
-      // If specific paths fail, try the general command
-      return 'python';
-    } else {
-      // For Linux/Mac, use python3 in production, python in development
-      return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
-    }
-  } catch (error) {
-    console.error('Error determining Python path:', error);
-    return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+  if (process.env.NODE_ENV === 'production') {
+    // Use the virtual environment's Python in production
+    return path.join(__dirname, '../../venv/bin/python');
+  } else {
+    // For development, use the system Python or specific path
+    return process.platform === 'win32' 
+      ? 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
+      : 'python3';
   }
 }
 
