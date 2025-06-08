@@ -504,7 +504,7 @@ if __name__ == "__main__":
         }))
         sys.exit(1)
     
-        video_id = sys.argv[1]
+    video_id = sys.argv[1]
     result = get_transcript(video_id)
     # Ensure encoding issues don't break the JSON output
     try:
