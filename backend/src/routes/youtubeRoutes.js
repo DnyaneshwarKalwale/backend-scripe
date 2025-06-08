@@ -553,8 +553,9 @@ async function extractTranscriptWithYtDlp(videoId) {
       }
     }
     
-    // Command for yt-dlp to extract subtitles
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 "${videoUrl}"`;
+    // Command for yt-dlp to extract subtitles with cookies authentication
+    const cookiesPath = path.join(__dirname, '../cookies/www.youtube.com_cookies.txt');
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${cookiesPath}" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --sleep-interval 1 --max-sleep-interval 3 --extractor-retries 3 "${videoUrl}"`;
     
     console.log(`Running yt-dlp command: ${command}`);
     const { stdout, stderr } = await execPromise(command);
