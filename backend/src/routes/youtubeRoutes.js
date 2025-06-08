@@ -16,13 +16,10 @@ const os = require('os');
 // Load environment variables
 dotenv.config();
 
-// Initialize OpenAI if API key is available
-let openai = null;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-}
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Simple in-memory cache for storing transcripts
 const transcriptCache = {
@@ -62,42 +59,36 @@ const transcriptCache = {
 // Helper function to get the correct Python executable path
 async function getPythonExecutablePath() {
   try {
-    // For Linux/Mac, use virtual environment's Python
-    if (process.platform !== 'win32') {
-      const venvPython = path.join(__dirname, '..', '..', 'venv', 'bin', 'python');
-      if (fs.existsSync(venvPython)) {
-        console.log('Using virtual environment Python:', venvPython);
-        return venvPython;
-      }
-      console.log('Virtual environment not found, falling back to system Python');
-      return 'python3';
-    }
-    
     // For Windows, check the specific Python location first
-    const specificPaths = [
-      'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
-      'C:\\Python39\\python.exe',
-      'C:\\Python310\\python.exe',
-      'C:\\Python311\\python.exe',
-      'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python39\\python.exe',
-      'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python310\\python.exe',
-      'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe'
-    ];
-    
-    for (const path of specificPaths) {
-      try {
-        await fs.promises.access(path);
-        return path;
-      } catch {
-        // Path not found, continue to next one
+    if (process.platform === 'win32') {
+      const specificPaths = [
+        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+        'C:\\Python39\\python.exe',
+        'C:\\Python310\\python.exe',
+        'C:\\Python311\\python.exe',
+        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python39\\python.exe',
+        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python310\\python.exe',
+        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe'
+      ];
+      
+      for (const path of specificPaths) {
+        try {
+          await fs.promises.access(path);
+          return path;
+        } catch {
+          // Path not found, continue to next one
+        }
       }
+      
+      // If specific paths fail, try the general command
+      return 'python';
+    } else {
+      // For Linux/Mac, use python3 in production, python in development
+      return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
     }
-    
-    // If specific paths fail, try the general command
-    return 'python';
   } catch (error) {
     console.error('Error determining Python path:', error);
-    return 'python3';
+    return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
   }
 }
 
