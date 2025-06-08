@@ -8,8 +8,9 @@ const fs = require('fs');
 async function testYoutubeTranscriptAPI() {
   console.log('Testing YouTube Transcript API functionality...');
   
-  // Determine Python executable path (specific to user environment)
-  const pythonPath = 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
+  // Use Python from virtual environment
+  const pythonPath = path.join(process.cwd(), 'venv', 
+    process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
   
   try {
     // Check if Python is available
@@ -119,9 +120,7 @@ async function testYoutubeTranscriptAPI() {
       console.log('Raw output:', stdout);
     }
   } catch (error) {
-    console.error('Error during testing:', error.message);
-    if (error.stdout) console.log('stdout:', error.stdout);
-    if (error.stderr) console.error('stderr:', error.stderr);
+    console.error('Error in testYoutubeTranscriptAPI:', error);
   }
 }
 
