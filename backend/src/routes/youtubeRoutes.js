@@ -61,7 +61,7 @@ async function getPythonExecutablePath() {
   if (process.env.NODE_ENV === 'production') {
     // Use the virtual environment's Python in production
     return path.join(__dirname, '../../venv/bin/python');
-  } else {
+    } else {
     // For development, use the system Python or specific path
     return process.platform === 'win32' 
       ? 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'

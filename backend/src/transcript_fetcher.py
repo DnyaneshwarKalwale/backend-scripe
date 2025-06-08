@@ -298,9 +298,9 @@ def fetch_transcript_manually(video_id):
                     seconds = int(duration_match.group(2))
                     seconds = minutes * 60 + seconds
                 else:
-                    # Try JSON-LD structured data
+                                        # Try JSON-LD structured data
                     duration_match = re.search(r'"duration":"PT(\d+)M(\d+)S"', html)
-        if duration_match:
+                    if duration_match:
                         minutes = int(duration_match.group(1))
                         secs = int(duration_match.group(2))
                         seconds = minutes * 60 + secs
