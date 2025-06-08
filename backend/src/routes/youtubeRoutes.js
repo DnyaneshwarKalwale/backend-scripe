@@ -135,11 +135,11 @@ router.post('/transcript', async (req, res) => {
     const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
     
     // Determine the Python executable to use
-    const pythonExecutable = await getPythonExecutablePath();
+    const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : (os.platform() === 'win32' ? 'python' : 'python3');
     
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`);
+      const { stdout, stderr } = await execPromise(`${pythonExecutable} "${scriptPath}" ${videoId}`);
       
       if (stderr) {
         console.error('Python script stderr:', stderr);
@@ -314,7 +314,7 @@ router.get('/transcript', async (req, res) => {
       const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
       
       // Determine the Python executable to use
-      const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+      const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : (os.platform() === 'win32' ? 'python' : 'python3');
       
       try {
         // Run Python script to get transcript

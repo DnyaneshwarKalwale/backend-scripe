@@ -887,89 +887,46 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
-    // Determine the correct yt-dlp binary based on platform
-    let ytDlpCommand;
-    
-    // Check if running on render.com or similar cloud platform (Linux)
-    const isCloud = process.env.RENDER || process.env.NODE_ENV === 'production';
+    // Determine the Python executable to use
+    let pythonExecutable;
     const isWindows = os.platform() === 'win32';
-    
-    // Try first with local binary, then fallback to global command
+    const isProduction = process.env.NODE_ENV === 'production';
+
     if (isWindows) {
-      // Windows setup with .exe
-      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
-      ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
+      // Try to find Python in common Windows locations
+      const possiblePaths = [
+        'python',
+        'py',
+        'C:\\Python39\\python.exe',
+        'C:\\Python310\\python.exe',
+        'C:\\Python311\\python.exe',
+        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
+      ];
+      
+      for (const path of possiblePaths) {
+        try {
+          await execPromise(`${path} --version`);
+          pythonExecutable = path;
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!pythonExecutable) {
+        pythonExecutable = 'python'; // fallback to system python
+      }
     } else {
-      // Linux/Unix setup
-      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
-      if (fs.existsSync(ytDlpPath)) {
-        // Make sure the binary is executable
-        try {
-          await execPromise(`chmod +x "${ytDlpPath}"`);
-          ytDlpCommand = `"${ytDlpPath}"`;
-        } catch (chmodError) {
-          console.error('Error making yt-dlp executable:', chmodError);
-          ytDlpCommand = 'yt-dlp'; // Fallback to global command
-        }
-      } else if (isCloud) {
-        // On cloud, try installing yt-dlp on demand if not available
-        try {
-          console.log('Attempting to install yt-dlp on cloud platform...');
-          await execPromise('pip install yt-dlp');
-          ytDlpCommand = 'yt-dlp';
-        } catch (installError) {
-          console.error('Error installing yt-dlp:', installError);
-          // Fallback to manual transcript approach
-          return res.status(500).json({
-            success: false,
-            message: 'yt-dlp not available on server. Please try the alternative transcript method.',
-            error: 'yt-dlp not installed'
-          });
-        }
-      } else {
-        ytDlpCommand = 'yt-dlp'; // Try global command
-      }
+      // Linux/Unix systems
+      pythonExecutable = isProduction ? 'python3' : 'python3';
     }
-    
-    // Command for yt-dlp to extract subtitles
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" "${videoUrl}"`;
-    
-    // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
-    
+
     try {
-      // First fetch video metadata to get duration
-      let duration = "N/A";
-      let thumbnail = "";
-      let title = "";
-      let channelName = "";
-      let viewCount = 0;
-      let uploadDate = "";
-      
-      try {
-        const { stdout: metadataOutput } = await execPromise(metadataCommand);
-        const metadata = JSON.parse(metadataOutput);
-        
-        // Extract relevant metadata
-        duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
-        thumbnail = metadata.thumbnail || "";
-        title = metadata.title || "";
-        channelName = metadata.channel || metadata.uploader || "";
-        viewCount = metadata.view_count || 0;
-        uploadDate = metadata.upload_date || "";
-        
-        console.log(`Video metadata fetched successfully for ${videoId}, duration: ${duration}`);
-      } catch (metadataError) {
-        console.error('Error fetching video metadata:', metadataError);
-        // Continue with transcript extraction even if metadata fails
-      }
-      
-      // Then proceed with transcript extraction
-      const { stdout, stderr } = await execPromise(command);
-      console.log('yt-dlp output:', stdout);
+      console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`);
       
       if (stderr) {
-        console.error('yt-dlp stderr:', stderr);
+        console.error('Python script stderr:', stderr);
       }
       
       // Look for the generated subtitle file
