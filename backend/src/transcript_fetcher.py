@@ -48,7 +48,6 @@ try_ytapi = True
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
-    from youtube_transcript_api.proxies import WebshareProxyConfig
     debug_print("YouTube Transcript API imported successfully with proxy support")
 except ImportError as e:
     debug_print(f"Failed to import YouTube Transcript API: {e}")
@@ -64,18 +63,15 @@ def get_transcript_with_api(video_id):
         debug_print(f"Adding anti-detection delay: {delay:.2f}s")
         time.sleep(delay)
         
-        # Initialize YouTubeTranscriptApi with Webshare proxy configuration
-        proxy_config = WebshareProxyConfig(
-            proxy_username="tzlgbidr",
-            proxy_password="p2gjh6cl2hq6"
-        )
+        # Configure proxies for requests
+        proxies = {
+            'http': 'http://tzlgbidr:p2gjh6cl2hq6@p.webshare.io:80/',
+            'https': 'http://tzlgbidr:p2gjh6cl2hq6@p.webshare.io:80/'
+        }
         
         debug_print("Initializing YouTube Transcript API with Webshare proxy...")
-        ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
-        
-        # Get transcript list
-        debug_print("Getting transcript list...")
-        transcript_list = ytt_api.list_transcripts(video_id)
+        # Get transcript list with proxies
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
         
         # Try to find English transcript
         try:
@@ -154,9 +150,9 @@ def get_transcript_with_api(video_id):
             # Handle gzip encoding
             raw_data = response.read()
             if response.info().get('Content-Encoding') == 'gzip':
-                html = gzip.decompress(raw_data).decode('utf-8')
+                html = gzip.decompress(raw_data).decode('utf-8', errors='ignore')
             else:
-                html = raw_data.decode('utf-8')
+                html = raw_data.decode('utf-8', errors='ignore')
             
             # Extract channel name using regex
             channel_match = re.search(r'"channelName":"([^"]+)"', html)
@@ -265,9 +261,9 @@ def fetch_transcript_manually(video_id):
         # Handle gzip encoding
         raw_data = response.read()
         if response.info().get('Content-Encoding') == 'gzip':
-            html = gzip.decompress(raw_data).decode('utf-8')
+            html = gzip.decompress(raw_data).decode('utf-8', errors='ignore')
         else:
-            html = raw_data.decode('utf-8')
+            html = raw_data.decode('utf-8', errors='ignore')
         
         # Extract channel name
         channel_title = "Unknown Channel"
@@ -395,9 +391,9 @@ def fetch_transcript_manually(video_id):
             # Handle gzip encoding for captions
             raw_data = response.read()
             if response.info().get('Content-Encoding') == 'gzip':
-                transcript = gzip.decompress(raw_data).decode('utf-8')
+                transcript = gzip.decompress(raw_data).decode('utf-8', errors='ignore')
             else:
-                transcript = raw_data.decode('utf-8')
+                transcript = raw_data.decode('utf-8', errors='ignore')
             
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters using proxy")
             return {
@@ -425,9 +421,9 @@ def fetch_transcript_manually(video_id):
                 # Handle gzip encoding for JSON captions
                 raw_data = response.read()
                 if response.info().get('Content-Encoding') == 'gzip':
-                    caption_text = gzip.decompress(raw_data).decode('utf-8')
+                    caption_text = gzip.decompress(raw_data).decode('utf-8', errors='ignore')
                 else:
-                    caption_text = raw_data.decode('utf-8')
+                    caption_text = raw_data.decode('utf-8', errors='ignore')
                     
                 caption_data = json.loads(caption_text)
                 
@@ -506,18 +502,17 @@ if __name__ == "__main__":
     
     video_id = sys.argv[1]
     result = get_transcript(video_id)
-    # Ensure encoding issues don't break the JSON output
     try:
         json_result = json.dumps(result)
         print(json_result)
-    except UnicodeEncodeError as e:
+    except UnicodeEncodeError as encode_error:
         # If encoding issues occur, try to sanitize the transcript
         if 'transcript' in result and result['success']:
             result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
             print(json.dumps(result))
-    else:
+        else:
             print(json.dumps({
                 'success': False,
-                'error': f"Encoding error: {str(e)}",
+                'error': f"Encoding error: {str(encode_error)}",
                 'video_id': video_id
             })) 
