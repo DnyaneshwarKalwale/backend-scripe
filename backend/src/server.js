@@ -27,6 +27,9 @@ const CarouselContent = require('./models/carouselContentModel');
 const cloudinary = require('cloudinary').v2;
 const userLimitRoutes = require('./routes/userLimitRoutes');
 const adminNotificationRoutes = require('./routes/adminNotificationRoutes');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
@@ -1366,16 +1369,48 @@ app.listen(PORT, async () => {
   // Setup youtube-transcript-api for Python extraction
   try {
     console.log('Setting up youtube-transcript-api...');
-    const pythonExecutable = path.join(process.cwd(), 'venv', 
+    
+    // Use system Python for initial setup if virtual environment is not ready
+    const isProd = process.env.NODE_ENV === 'production';
+    let pythonCmd = isProd ? 'python3' : 'python';
+    
+    // Try to install youtube-transcript-api
+    try {
+      const { stdout, stderr } = await execPromise(`${pythonCmd} -m pip install youtube-transcript-api`);
+      if (stderr) {
+        console.error('Warning during package installation:', stderr);
+      }
+      console.log('youtube-transcript-api installed successfully');
+    } catch (pipError) {
+      console.error('Error installing package:', pipError);
+    }
+    
+    // Now use virtual environment Python for testing
+    const pythonExecutable = path.join(process.cwd(), 'venv',
       process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
     
     const scriptPath = path.join(__dirname, 'transcript_fetcher.py');
-    const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --test`);
     
-    if (stderr) {
-      console.error('Error testing youtube-transcript-api:', stderr);
-    } else {
-      console.log('youtube-transcript-api setup completed successfully');
+    // Make the script executable on Unix systems
+    if (process.platform !== 'win32') {
+      try {
+        await execPromise(`chmod +x "${scriptPath}"`);
+        console.log('Made transcript_fetcher.py executable');
+      } catch (chmodError) {
+        console.error('Error making script executable:', chmodError);
+      }
+    }
+    
+    // Test the script
+    try {
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --test`);
+      if (stderr) {
+        console.error('Error testing youtube-transcript-api:', stderr);
+      } else {
+        console.log('youtube-transcript-api setup completed successfully');
+      }
+    } catch (testError) {
+      console.error('Error testing transcript fetcher:', testError);
     }
   } catch (error) {
     console.error('Failed to setup youtube-transcript-api:', error);
