@@ -262,27 +262,12 @@ def fetch_transcript_manually(video_id):
         request = Request(url, headers=headers)
         response = opener.open(request)
         
-        # Handle gzip encoding - improved detection
+        # Handle gzip encoding
         raw_data = response.read()
-        
-        # Check for gzip magic number (1f 8b) or Content-Encoding header
-        is_gzipped = (response.info().get('Content-Encoding') == 'gzip' or 
-                     (len(raw_data) >= 2 and raw_data[0] == 0x1f and raw_data[1] == 0x8b))
-        
-        if is_gzipped:
-            try:
-                html = gzip.decompress(raw_data).decode('utf-8')
-                debug_print("Successfully decompressed gzip data")
-            except gzip.BadGzipFile:
-                debug_print("Gzip decompression failed, trying as plain text")
-                html = raw_data.decode('utf-8', errors='ignore')
+        if response.info().get('Content-Encoding') == 'gzip':
+            html = gzip.decompress(raw_data).decode('utf-8')
         else:
-            try:
-                html = raw_data.decode('utf-8')
-            except UnicodeDecodeError:
-                # If UTF-8 fails, try with error handling
-                html = raw_data.decode('utf-8', errors='ignore')
-                debug_print("Used UTF-8 decoding with error handling")
+            html = raw_data.decode('utf-8')
         
         # Extract channel name
         channel_title = "Unknown Channel"
@@ -407,26 +392,12 @@ def fetch_transcript_manually(video_id):
             request = Request(caption_url, headers=headers)
             response = opener.open(request)
             
-            # Handle gzip encoding for captions - improved detection
+            # Handle gzip encoding for captions
             raw_data = response.read()
-            
-            # Check for gzip magic number (1f 8b) or Content-Encoding header
-            is_gzipped = (response.info().get('Content-Encoding') == 'gzip' or 
-                         (len(raw_data) >= 2 and raw_data[0] == 0x1f and raw_data[1] == 0x8b))
-            
-            if is_gzipped:
-                try:
-                    transcript = gzip.decompress(raw_data).decode('utf-8')
-                    debug_print("Successfully decompressed gzip caption data")
-                except gzip.BadGzipFile:
-                    debug_print("Gzip decompression failed for captions, trying as plain text")
-                    transcript = raw_data.decode('utf-8', errors='ignore')
+            if response.info().get('Content-Encoding') == 'gzip':
+                transcript = gzip.decompress(raw_data).decode('utf-8')
             else:
-                try:
-                    transcript = raw_data.decode('utf-8')
-                except UnicodeDecodeError:
-                    transcript = raw_data.decode('utf-8', errors='ignore')
-                    debug_print("Used UTF-8 decoding with error handling for captions")
+                transcript = raw_data.decode('utf-8')
             
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters using proxy")
             return {
@@ -451,26 +422,12 @@ def fetch_transcript_manually(video_id):
                 request = Request(caption_url, headers=headers)
                 response = opener.open(request)
                 
-                # Handle gzip encoding for JSON captions - improved detection
+                # Handle gzip encoding for JSON captions
                 raw_data = response.read()
-                
-                # Check for gzip magic number (1f 8b) or Content-Encoding header
-                is_gzipped = (response.info().get('Content-Encoding') == 'gzip' or 
-                             (len(raw_data) >= 2 and raw_data[0] == 0x1f and raw_data[1] == 0x8b))
-                
-                if is_gzipped:
-                    try:
-                        caption_text = gzip.decompress(raw_data).decode('utf-8')
-                        debug_print("Successfully decompressed gzip JSON caption data")
-                    except gzip.BadGzipFile:
-                        debug_print("Gzip decompression failed for JSON captions, trying as plain text")
-                        caption_text = raw_data.decode('utf-8', errors='ignore')
+                if response.info().get('Content-Encoding') == 'gzip':
+                    caption_text = gzip.decompress(raw_data).decode('utf-8')
                 else:
-                    try:
-                        caption_text = raw_data.decode('utf-8')
-                    except UnicodeDecodeError:
-                        caption_text = raw_data.decode('utf-8', errors='ignore')
-                        debug_print("Used UTF-8 decoding with error handling for JSON captions")
+                    caption_text = raw_data.decode('utf-8')
                     
                 caption_data = json.loads(caption_text)
                 
