@@ -887,38 +887,15 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
-    // Determine the Python executable to use
+    // Get Python path from venv-paths.json
     let pythonExecutable;
-    const isWindows = os.platform() === 'win32';
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    if (isWindows) {
-      // Try to find Python in common Windows locations
-      const possiblePaths = [
-        'python',
-        'py',
-        'C:\\Python39\\python.exe',
-        'C:\\Python310\\python.exe',
-        'C:\\Python311\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-      ];
-      
-      for (const path of possiblePaths) {
-        try {
-          await execPromise(`${path} --version`);
-          pythonExecutable = path;
-          break;
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      if (!pythonExecutable) {
-        pythonExecutable = 'python'; // fallback to system python
-      }
-    } else {
-      // Linux/Unix systems
-      pythonExecutable = isProduction ? 'python3' : 'python3';
+    try {
+      const envPaths = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'venv-paths.json'), 'utf8'));
+      pythonExecutable = envPaths.pythonPath;
+    } catch (error) {
+      console.error('Error reading venv-paths.json:', error);
+      // Fallback to system Python
+      pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
     }
 
     try {
