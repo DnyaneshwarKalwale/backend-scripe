@@ -64,7 +64,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'https://app.brandout.ai', 
+    'http://localhost:8080', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
@@ -72,7 +72,7 @@ const allowedOrigins = [
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
     'https://app.brandout.ai',      // New production domain
-    'https://api.brandout.ai'       // New API domain
+    'http://localhost:5000'       // New API domain
 ];
 
 app.use(cors({
@@ -931,9 +931,8 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       }
     }
     
-    // Command for yt-dlp to extract subtitles with cookies authentication
-    const cookiesPath = path.join(__dirname, '../cookies/www.youtube.com_cookies.txt');
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${cookiesPath}" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --sleep-interval 1 --max-sleep-interval 3 --extractor-retries 3 "${videoUrl}"`;
+    // Command for yt-dlp to extract subtitles
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
     const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
