@@ -79,6 +79,15 @@ async function installYoutubeTranscriptApi() {
   }
 }
 
+async function checkPackageInstalled(pythonPath, packageName) {
+  try {
+    await execAsync(`"${pythonPath}" -c "import ${packageName}"`);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 // Main function to setup everything
 async function setupTranscriptApi() {
   console.log('Setting up youtube-transcript-api...');
@@ -95,28 +104,37 @@ async function setupTranscriptApi() {
 
     if (isProduction) {
       try {
-        // Ensure python3-venv is installed on Linux
-        if (!isWindows) {
-          console.log('Installing python3-venv...');
-          await execAsync('apt-get update && apt-get install -y python3-venv');
-        }
-
-        // Create virtual environment if it doesn't exist
+        // Check if virtual environment exists
         if (!fs.existsSync(venvPath)) {
+          // Ensure python3-venv is installed on Linux
+          if (!isWindows) {
+            console.log('Installing python3-venv...');
+            await execAsync('apt-get update && apt-get install -y python3-venv');
+          }
+
           console.log('Creating Python virtual environment...');
           const createVenvCmd = isWindows ? 
             'python -m venv venv' : 
             'python3 -m venv venv';
           await execAsync(createVenvCmd);
           console.log('Virtual environment created successfully');
+        } else {
+          console.log('Virtual environment already exists');
         }
 
-        // Install required packages in the virtual environment
-        console.log('Installing required packages in virtual environment...');
-        const pipInstallCmd = `"${pipPath}" install youtube-transcript-api requests`;
-        const { stdout, stderr } = await execAsync(pipInstallCmd);
-        console.log('Package installation output:', stdout);
-        if (stderr) console.error('Package installation stderr:', stderr);
+        // Check if packages are already installed
+        const ytApiInstalled = await checkPackageInstalled(pythonPath, 'youtube_transcript_api');
+        const requestsInstalled = await checkPackageInstalled(pythonPath, 'requests');
+
+        if (!ytApiInstalled || !requestsInstalled) {
+          console.log('Installing missing packages in virtual environment...');
+          const pipInstallCmd = `"${pipPath}" install youtube-transcript-api requests`;
+          const { stdout, stderr } = await execAsync(pipInstallCmd);
+          console.log('Package installation output:', stdout);
+          if (stderr) console.error('Package installation stderr:', stderr);
+        } else {
+          console.log('Required packages are already installed in virtual environment');
+        }
 
         // Verify installation
         console.log('Verifying installation...');
@@ -170,15 +188,23 @@ async function setupTranscriptApi() {
         throw new Error('Python not found in common Windows locations');
       }
 
-      // Install packages for development
-      const pipInstallCmd = `"${pythonCommand}" -m pip install youtube-transcript-api requests`;
-      try {
-        const { stdout, stderr } = await execAsync(pipInstallCmd);
-        console.log('Package installation output:', stdout);
-        if (stderr) console.error('Package installation stderr:', stderr);
-      } catch (error) {
-        console.error('Error installing packages:', error);
-        throw error;
+      // Check if packages are already installed
+      const ytApiInstalled = await checkPackageInstalled(pythonCommand, 'youtube_transcript_api');
+      const requestsInstalled = await checkPackageInstalled(pythonCommand, 'requests');
+
+      if (!ytApiInstalled || !requestsInstalled) {
+        console.log('Installing missing packages...');
+        const pipInstallCmd = `"${pythonCommand}" -m pip install youtube-transcript-api requests`;
+        try {
+          const { stdout, stderr } = await execAsync(pipInstallCmd);
+          console.log('Package installation output:', stdout);
+          if (stderr) console.error('Package installation stderr:', stderr);
+        } catch (error) {
+          console.error('Error installing packages:', error);
+          throw error;
+        }
+      } else {
+        console.log('Required packages are already installed');
       }
 
       // Save the Python path for development

@@ -890,12 +890,16 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     // Get Python path from venv-paths.json
     let pythonExecutable;
     try {
-      const envPaths = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'venv-paths.json'), 'utf8'));
+      const envPaths = JSON.parse(fs.readFileSync(path.join(process.cwd(), '..', 'venv-paths.json'), 'utf8'));
       pythonExecutable = envPaths.pythonPath;
+      console.log('Using Python from virtual environment:', pythonExecutable);
     } catch (error) {
       console.error('Error reading venv-paths.json:', error);
-      // Fallback to system Python
-      pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+      // Fallback to virtual environment Python
+      pythonExecutable = process.env.NODE_ENV === 'production' ? 
+        path.join(process.cwd(), '..', 'venv', 'bin', 'python') :
+        'python';
+      console.log('Falling back to Python path:', pythonExecutable);
     }
 
     try {
