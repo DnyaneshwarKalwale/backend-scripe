@@ -134,20 +134,13 @@ router.post('/transcript', async (req, res) => {
     // Call the Python script directly which now uses youtube-transcript-api first
     const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
     
-    // Get Python path from venv-paths.json
-    let pythonExecutable;
-    try {
-      const envPaths = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'venv-paths.json'), 'utf8'));
-      pythonExecutable = envPaths.pythonPath;
-    } catch (error) {
-      console.error('Error reading venv-paths.json:', error);
-      // Fallback to system Python
-      pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
-    }
-
+    // Determine the Python executable to use
+    const pythonExecutable = path.join(process.cwd(), 'venv', 
+      process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
+    
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" ${videoId}`);
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`);
       
       if (stderr) {
         console.error('Python script stderr:', stderr);
@@ -322,12 +315,13 @@ router.get('/transcript', async (req, res) => {
       const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
       
       // Determine the Python executable to use
-      const pythonExecutable = process.env.NODE_ENV === 'production' ? 'python3' : (os.platform() === 'win32' ? 'python' : 'python3');
+      const pythonExecutable = path.join(process.cwd(), 'venv', 
+        process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
       
       try {
         // Run Python script to get transcript
         const { stdout, stderr } = await new Promise((resolve, reject) => {
-          exec(`${pythonExecutable} ${scriptPath} ${videoId}`, (error, stdout, stderr) => {
+          exec(`"${pythonExecutable}" "${scriptPath}" ${videoId}`, (error, stdout, stderr) => {
             if (error) {
               reject(error);
             } else {
