@@ -5,49 +5,16 @@ const execPromise = util.promisify(exec);
 const path = require('path');
 const fs = require('fs');
 
-// Helper function to get the correct Python executable path
-async function getPythonExecutablePath() {
-  try {
-    // For Windows, check the specific Python location first
-    if (process.platform === 'win32') {
-      const specificPaths = [
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
-        'C:\\Python39\\python.exe',
-        'C:\\Python310\\python.exe',
-        'C:\\Python311\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python39\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python310\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe'
-      ];
-      
-      for (const path of specificPaths) {
-        try {
-          await fs.promises.access(path);
-          return path;
-        } catch {
-          // Path not found, continue to next one
-        }
-      }
-      
-      // If specific paths fail, try the general command
-      return 'python';
-    } else {
-      // For Linux/Mac, use python3 in production, python in development
-      return process.env.NODE_ENV === 'production' ? 'python3' : 'python3';
-    }
-  } catch (error) {
-    console.error('Error determining Python path:', error);
-    return process.env.NODE_ENV === 'production' ? 'python3' : 'python3';
-  }
-}
-
 // Function to check if the Python package is installed
 async function checkYoutubeTranscriptApi() {
   try {
     console.log('Checking if youtube-transcript-api is installed...');
     
-    // Get the correct Python executable for this platform
-    const pythonExecutable = await getPythonExecutablePath();
+    // The Python command to check for the package
+    let pythonExecutable = process.platform === 'win32' 
+      ? 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
+      : 'python3';
+    
     console.log(`Using Python executable: ${pythonExecutable}`);
     
     const checkCmd = `"${pythonExecutable}" -c "import youtube_transcript_api; print('Package is installed')"`;
@@ -73,50 +40,47 @@ async function installYoutubeTranscriptApi() {
   try {
     console.log('Installing youtube-transcript-api...');
     
-    // Get the correct Python executable for this platform
-    const pythonExecutable = await getPythonExecutablePath();
-    
-    if (process.platform === 'win32') {
-      // For Windows, try with the specific Python path
+    // For Linux/Mac systems
+    if (process.platform !== 'win32') {
       try {
-        console.log(`Installing with Python executable: ${pythonExecutable}`);
-        const { stdout, stderr } = await execPromise(`"${pythonExecutable}" -m pip install youtube-transcript-api`);
-        console.log('Installation output:', stdout);
-        if (stderr) {
-          console.error('Installation stderr:', stderr);
+        // Create virtual environment if it doesn't exist
+        if (!fs.existsSync(path.join(__dirname, 'venv'))) {
+          console.log('Creating Python virtual environment...');
+          await execPromise('python3 -m venv venv');
         }
-        return true;
-      } catch (pythonError) {
-        console.error('Error installing with specific Python path:', pythonError);
-        return false;
-      }
-    } else {
-      // For Linux/Mac, try pip3 first, then fall back to python -m pip
-      try {
-        console.log('Trying with pip3...');
-        const { stdout: pip3Stdout, stderr: pip3Stderr } = await execPromise(`pip3 install youtube-transcript-api`);
-        console.log('pip3 installation output:', pip3Stdout);
-        if (pip3Stderr) {
-          console.error('pip3 installation stderr:', pip3Stderr);
-        }
-        return true;
-      } catch (pip3Error) {
-        console.error('Error installing with pip3:', pip3Error);
         
-        // If pip3 fails, try with python -m pip
+        // Install package in virtual environment
+        console.log('Installing package in virtual environment...');
+        await execPromise('source venv/bin/activate && pip install youtube-transcript-api');
+        return true;
+      } catch (error) {
+        console.error('Error installing in virtual environment:', error);
+        
+        // Fallback to system-wide installation
         try {
-          console.log(`Trying with ${pythonExecutable} -m pip...`);
-          const { stdout, stderr } = await execPromise(`${pythonExecutable} -m pip install youtube-transcript-api`);
-          console.log('Installation output:', stdout);
-          if (stderr) {
-            console.error('Installation stderr:', stderr);
-          }
+          console.log('Attempting system-wide installation...');
+          await execPromise('pip3 install youtube-transcript-api');
           return true;
-        } catch (pythonError) {
-          console.error('Error installing with python -m pip:', pythonError);
+        } catch (pipError) {
+          console.error('Error installing with pip3:', pipError);
           return false;
         }
       }
+    }
+    
+    // For Windows systems
+    try {
+      const pythonPath = 'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
+      console.log(`Trying with specific Python path: ${pythonPath}`);
+      const { stdout, stderr } = await execPromise(`"${pythonPath}" -m pip install youtube-transcript-api`);
+      console.log('Installation output:', stdout);
+      if (stderr) {
+        console.error('Installation stderr:', stderr);
+      }
+      return true;
+    } catch (pythonPathError) {
+      console.error('Error installing with specific Python path:', pythonPathError);
+      return false;
     }
   } catch (error) {
     console.error('Error during installation:', error);
