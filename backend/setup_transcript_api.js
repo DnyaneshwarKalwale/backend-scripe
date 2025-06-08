@@ -43,28 +43,22 @@ async function installYoutubeTranscriptApi() {
     // For Linux/Mac systems
     if (process.platform !== 'win32') {
       try {
+        const venvPath = path.join(__dirname, 'venv');
+        
         // Create virtual environment if it doesn't exist
-        if (!fs.existsSync(path.join(__dirname, 'venv'))) {
+        if (!fs.existsSync(venvPath)) {
           console.log('Creating Python virtual environment...');
           await execPromise('python3 -m venv venv');
         }
         
-        // Install package in virtual environment
+        // Install package using the virtual environment's pip directly
         console.log('Installing package in virtual environment...');
-        await execPromise('source venv/bin/activate && pip install youtube-transcript-api');
+        const venvPip = path.join(venvPath, 'bin', 'pip');
+        await execPromise(`${venvPip} install youtube-transcript-api`);
         return true;
       } catch (error) {
         console.error('Error installing in virtual environment:', error);
-        
-        // Fallback to system-wide installation
-        try {
-          console.log('Attempting system-wide installation...');
-          await execPromise('pip3 install youtube-transcript-api');
-          return true;
-        } catch (pipError) {
-          console.error('Error installing with pip3:', pipError);
-          return false;
-        }
+        return false;
       }
     }
     

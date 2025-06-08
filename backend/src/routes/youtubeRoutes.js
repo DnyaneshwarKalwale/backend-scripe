@@ -59,8 +59,12 @@ const transcriptCache = {
 // Helper function to get the correct Python executable path
 async function getPythonExecutablePath() {
   try {
-    // For Linux/Mac, always use python3
+    // For Linux/Mac, use virtual environment's Python
     if (process.platform !== 'win32') {
+      const venvPython = path.join(__dirname, '..', '..', 'venv', 'bin', 'python');
+      if (fs.existsSync(venvPython)) {
+        return venvPython;
+      }
       return 'python3';
     }
     
