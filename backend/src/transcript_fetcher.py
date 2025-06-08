@@ -149,7 +149,7 @@ def get_transcript_with_api(video_id):
                 response = opener.open(request)
             else:
                 request = Request(f"https://www.youtube.com/watch?v={video_id}", headers=headers)
-                response = urlopen(request)
+            response = urlopen(request)
             
             # Handle gzip encoding
             raw_data = response.read()
@@ -300,7 +300,7 @@ def fetch_transcript_manually(video_id):
                 else:
                     # Try JSON-LD structured data
                     duration_match = re.search(r'"duration":"PT(\d+)M(\d+)S"', html)
-                    if duration_match:
+        if duration_match:
                         minutes = int(duration_match.group(1))
                         secs = int(duration_match.group(2))
                         seconds = minutes * 60 + secs
@@ -504,7 +504,7 @@ if __name__ == "__main__":
         }))
         sys.exit(1)
     
-    video_id = sys.argv[1]
+        video_id = sys.argv[1]
     result = get_transcript(video_id)
     # Ensure encoding issues don't break the JSON output
     try:
@@ -515,7 +515,7 @@ if __name__ == "__main__":
         if 'transcript' in result and result['success']:
             result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
             print(json.dumps(result))
-        else:
+    else:
             print(json.dumps({
                 'success': False,
                 'error': f"Encoding error: {str(e)}",
