@@ -1,5 +1,5 @@
 ### Direct Twitter Authentication (for development)
-POST http://localhost:5000/api/auth/twitter-auth
+POST https://api.brandout.ai/api/auth/twitter-auth
 Content-Type: application/json
 
 {
@@ -10,7 +10,7 @@ Content-Type: application/json
 }
 
 ### Direct Twitter Authentication (minimal)
-POST http://localhost:5000/api/auth/twitter-auth
+POST https://api.brandout.ai/api/auth/twitter-auth
 Content-Type: application/json
 
 {
