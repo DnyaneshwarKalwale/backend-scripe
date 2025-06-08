@@ -118,7 +118,7 @@ pip install youtube-transcript-api>=0.6.0
 python transcript_fetcher.py --debug VIDEO_ID
 
 # Test through API endpoint
-curl -X POST http://localhost:5000/api/youtube/transcript \
+curl -X POST https://api.brandout.ai/api/youtube/transcript \
   -H "Content-Type: application/json" \
   -d '{"videoId": "VIDEO_ID"}'
 ```
