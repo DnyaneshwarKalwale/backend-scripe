@@ -44,6 +44,7 @@ async function installYoutubeTranscriptApi() {
     if (process.platform !== 'win32') {
       try {
         const venvPath = path.join(__dirname, 'venv');
+        const venvPip = path.join(venvPath, 'bin', 'pip');
         
         // Create virtual environment if it doesn't exist
         if (!fs.existsSync(venvPath)) {
@@ -53,8 +54,7 @@ async function installYoutubeTranscriptApi() {
         
         // Install package using the virtual environment's pip directly
         console.log('Installing package in virtual environment...');
-        const venvPip = path.join(venvPath, 'bin', 'pip');
-        await execPromise(`${venvPip} install youtube-transcript-api`);
+        await execPromise(`"${venvPip}" install --no-cache-dir youtube-transcript-api`);
         return true;
       } catch (error) {
         console.error('Error installing in virtual environment:', error);

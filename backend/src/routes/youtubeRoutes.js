@@ -16,10 +16,13 @@ const os = require('os');
 // Load environment variables
 dotenv.config();
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI if API key is available
+let openai = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 // Simple in-memory cache for storing transcripts
 const transcriptCache = {
@@ -63,8 +66,10 @@ async function getPythonExecutablePath() {
     if (process.platform !== 'win32') {
       const venvPython = path.join(__dirname, '..', '..', 'venv', 'bin', 'python');
       if (fs.existsSync(venvPython)) {
+        console.log('Using virtual environment Python:', venvPython);
         return venvPython;
       }
+      console.log('Virtual environment not found, falling back to system Python');
       return 'python3';
     }
     
