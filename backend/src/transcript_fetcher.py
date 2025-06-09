@@ -366,14 +366,15 @@ def get_transcript(video_id):
     return result
 
 if __name__ == "__main__":
-    # Handle test flag
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+    # Handle test flag first
+    if "--test" in sys.argv:
         print(json.dumps({
             'success': True,
             'message': 'Transcript fetcher is working correctly'
         }))
         sys.exit(0)
-    
+        
+    # Normal video ID processing
     if len(sys.argv) != 2:
         print(json.dumps({
             'success': False,
