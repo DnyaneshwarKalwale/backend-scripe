@@ -368,42 +368,33 @@ def get_transcript(video_id):
 if __name__ == "__main__":
     # Parse command line arguments
     args = sys.argv[1:]  # Remove script name from args
-    
-    # Check for test flag
-    if "--test" in args:
-        print(json.dumps({
-            'success': True,
-            'message': 'YouTube transcript fetcher test successful'
-        }))
-        sys.exit(0)
-    
+
     # Check for debug flag
     if "--debug" in args:
         DEBUG = True
         args.remove("--debug")
-    
-    # After removing flags, we should have exactly one argument (video_id)
+
+    # We should have exactly one argument (video_id)
     if len(args) != 1:
         print(json.dumps({
             'success': False,
-            'error': 'Usage: transcript_fetcher.py [--debug] [--test] VIDEO_ID'
+            'error': 'Usage: transcript_fetcher.py [--debug] VIDEO_ID'
         }))
         sys.exit(1)
-    
-    # Only process video if not in test mode
-    if "--test" not in sys.argv:
-        video_id = args[0]
-        result = get_transcript(video_id)
-        try:
-            json_result = json.dumps(result)
-            print(json_result)
-        except UnicodeEncodeError as e:
-            if 'transcript' in result and result['success']:
-                result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
-                print(json.dumps(result))
-            else:
-                print(json.dumps({
-                    'success': False,
-                    'error': f"Encoding error: {str(e)}",
-                    'video_id': video_id
-                }))
+
+    # Process video ID
+    video_id = args[0]
+    result = get_transcript(video_id)
+    try:
+        json_result = json.dumps(result)
+        print(json_result)
+    except UnicodeEncodeError as e:
+        if 'transcript' in result and result['success']:
+            result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
+            print(json.dumps(result))
+        else:
+            print(json.dumps({
+                'success': False,
+                'error': f"Encoding error: {str(e)}",
+                'video_id': video_id
+            }))
