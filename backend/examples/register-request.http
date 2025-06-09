@@ -1,5 +1,5 @@
 ### Register a new user
-POST https://api.brandout.ai/api/auth/register
+POST http://localhost:5000/api/auth/register
 Content-Type: application/json
 
 {
@@ -10,7 +10,7 @@ Content-Type: application/json
 }
 
 ### Login with email and password
-POST https://api.brandout.ai/api/auth/login
+POST http://localhost:5000/api/auth/login
 Content-Type: application/json
 
 {
@@ -19,11 +19,11 @@ Content-Type: application/json
 }
 
 ### Get current user (replace YOUR_JWT_TOKEN with actual token)
-GET https://api.brandout.ai/api/auth/me
+GET http://localhost:5000/api/auth/me
 Authorization: Bearer YOUR_JWT_TOKEN
 
 ### Save onboarding preferences (replace YOUR_JWT_TOKEN with actual token)
-POST https://api.brandout.ai/api/onboarding
+POST http://localhost:5000/api/onboarding
 Content-Type: application/json
 Authorization: Bearer YOUR_JWT_TOKEN
 
@@ -36,4 +36,4 @@ Authorization: Bearer YOUR_JWT_TOKEN
 }
 
 ### Verify health check endpoint
-GET https://api.brandout.ai/health 
+GET http://localhost:5000/health 
