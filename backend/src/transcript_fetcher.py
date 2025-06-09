@@ -366,41 +366,44 @@ def get_transcript(video_id):
     return result
 
 if __name__ == "__main__":
-    # Remove debug flag if present
-    if len(sys.argv) > 1 and sys.argv[1] == "--debug":
-        DEBUG = True
-        sys.argv.pop(1)
-
-    # Handle test flag
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        debug_print("Running in test mode")
+    # Parse command line arguments
+    args = sys.argv[1:]  # Remove script name from args
+    
+    # Check for test flag
+    if "--test" in args:
         print(json.dumps({
             'success': True,
-            'message': 'YouTube transcript fetcher is working correctly',
-            'debug': DEBUG
+            'message': 'YouTube transcript fetcher test successful'
         }))
         sys.exit(0)
-
-    # Process video ID
-    if len(sys.argv) != 2:
+    
+    # Check for debug flag
+    if "--debug" in args:
+        DEBUG = True
+        args.remove("--debug")
+    
+    # After removing flags, we should have exactly one argument (video_id)
+    if len(args) != 1:
         print(json.dumps({
             'success': False,
-            'error': 'Missing video ID. Usage: transcript_fetcher.py VIDEO_ID'
+            'error': 'Usage: transcript_fetcher.py [--debug] [--test] VIDEO_ID'
         }))
         sys.exit(1)
-
-    video_id = sys.argv[1]
-    result = get_transcript(video_id)
-    try:
-        json_result = json.dumps(result)
-        print(json_result)
-    except UnicodeEncodeError as e:
-        if 'transcript' in result and result['success']:
-            result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
-            print(json.dumps(result))
-        else:
-            print(json.dumps({
-                'success': False,
-                'error': f"Encoding error: {str(e)}",
-                'video_id': video_id
-            }))
+    
+    # Only process video if not in test mode
+    if "--test" not in sys.argv:
+        video_id = args[0]
+        result = get_transcript(video_id)
+        try:
+            json_result = json.dumps(result)
+            print(json_result)
+        except UnicodeEncodeError as e:
+            if 'transcript' in result and result['success']:
+                result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
+                print(json.dumps(result))
+            else:
+                print(json.dumps({
+                    'success': False,
+                    'error': f"Encoding error: {str(e)}",
+                    'video_id': video_id
+                }))
