@@ -373,20 +373,18 @@ if __name__ == "__main__":
         }))
         sys.exit(1)
     
-        video_id = sys.argv[1]
+    video_id = sys.argv[1]
     result = get_transcript(video_id)
-    # Ensure encoding issues don't break the JSON output
     try:
         json_result = json.dumps(result)
         print(json_result)
     except UnicodeEncodeError as e:
-        # If encoding issues occur, try to sanitize the transcript
         if 'transcript' in result and result['success']:
             result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
             print(json.dumps(result))
-    else:
+        else:
             print(json.dumps({
                 'success': False,
                 'error': f"Encoding error: {str(e)}",
                 'video_id': video_id
-            })) 
+            }))
