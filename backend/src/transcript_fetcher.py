@@ -366,22 +366,29 @@ def get_transcript(video_id):
     return result
 
 if __name__ == "__main__":
-    # Handle test flag first
-    if "--test" in sys.argv:
+    # Remove debug flag if present
+    if len(sys.argv) > 1 and sys.argv[1] == "--debug":
+        DEBUG = True
+        sys.argv.pop(1)
+
+    # Handle test flag
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        debug_print("Running in test mode")
         print(json.dumps({
             'success': True,
-            'message': 'Transcript fetcher is working correctly'
+            'message': 'YouTube transcript fetcher is working correctly',
+            'debug': DEBUG
         }))
         sys.exit(0)
-        
-    # Normal video ID processing
+
+    # Process video ID
     if len(sys.argv) != 2:
         print(json.dumps({
             'success': False,
             'error': 'Missing video ID. Usage: transcript_fetcher.py VIDEO_ID'
         }))
         sys.exit(1)
-    
+
     video_id = sys.argv[1]
     result = get_transcript(video_id)
     try:
