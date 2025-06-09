@@ -43,14 +43,14 @@ async function installYoutubeTranscriptApi() {
     try {
       console.log(`Installing with Python from virtual environment: ${pythonExecutable}`);
       const { stdout, stderr } = await execPromise(`"${pythonExecutable}" -m pip install youtube-transcript-api`);
-      console.log('Installation output:', stdout);
-      if (stderr) {
-        console.error('Installation stderr:', stderr);
-      }
-      return true;
+        console.log('Installation output:', stdout);
+        if (stderr) {
+          console.error('Installation stderr:', stderr);
+        }
+        return true;
     } catch (error) {
       console.error('Error installing with virtual environment Python:', error);
-      return false;
+        return false;
     }
   } catch (error) {
     console.error('Error during installation:', error);

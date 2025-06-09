@@ -1407,7 +1407,7 @@ app.listen(PORT, async () => {
       if (stderr) {
         console.error('Error testing youtube-transcript-api:', stderr);
       } else {
-        console.log('youtube-transcript-api setup completed successfully');
+      console.log('youtube-transcript-api setup completed successfully');
       }
     } catch (testError) {
       console.error('Error testing transcript fetcher:', testError);
