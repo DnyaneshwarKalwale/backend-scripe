@@ -15,7 +15,7 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://localhost:5173'],
+  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
   credentials: true
 }));
 
