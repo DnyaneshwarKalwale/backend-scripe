@@ -30,6 +30,7 @@ const adminNotificationRoutes = require('./routes/adminNotificationRoutes');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const axios = require('axios');
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
@@ -67,13 +68,15 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
+    'https://app.brandout.ai', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
-    'http://localhost:8080'     // New production domain      // New API domain
+    'https://app.brandout.ai',      // New production domain
+    'https://api.brandout.ai'       // New API domain
 ];
 
 app.use(cors({
@@ -948,6 +951,8 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       let uploadDate = "";
       
       try {
+        // First try using yt-dlp metadata
+        console.log('Attempting to fetch metadata with yt-dlp...');
         const { stdout: metadataOutput } = await execPromise(metadataCommand);
         const metadata = JSON.parse(metadataOutput);
         
@@ -959,10 +964,65 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         viewCount = metadata.view_count || 0;
         uploadDate = metadata.upload_date || "";
         
-        console.log(`Video metadata fetched successfully for ${videoId}, duration: ${duration}`);
-      } catch (metadataError) {
-        console.error('Error fetching video metadata:', metadataError);
-        // Continue with transcript extraction even if metadata fails
+        console.log(`Video metadata fetched successfully with yt-dlp for ${videoId}, duration: ${duration}`);
+      } catch (ytdlpError) {
+        console.error('Error fetching metadata with yt-dlp:', ytdlpError);
+        
+        // Fallback 1: Try using direct YouTube page scraping
+        try {
+          console.log('Attempting to fetch metadata via page scraping...');
+          const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          };
+          
+          const response = await axios.get(videoUrl, { headers });
+          const html = response.data;
+          
+          // Extract duration using multiple patterns
+          let durationSeconds;
+          const patterns = [
+            /"lengthSeconds":"(\d+)"/,
+            /approxDurationMs":"(\d+)"/,
+            /duration_seconds":(\d+)/
+          ];
+          
+          for (const pattern of patterns) {
+            const match = html.match(pattern);
+            if (match) {
+              durationSeconds = pattern.includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
+              duration = formatDuration(durationSeconds);
+              console.log(`Duration found via pattern ${pattern}: ${duration}`);
+              break;
+            }
+          }
+          
+          // Extract other metadata
+          const titleMatch = html.match(/"title":"([^"]+)"/);
+          if (titleMatch) title = titleMatch[1];
+          
+          const channelMatch = html.match(/"channelName":"([^"]+)"/);
+          if (channelMatch) channelName = channelMatch[1];
+          
+          const viewMatch = html.match(/"viewCount":"(\d+)"/);
+          if (viewMatch) viewCount = parseInt(viewMatch[1]);
+          
+          const thumbnailMatch = html.match(/"thumbnails":\[{"url":"([^"]+)"/);
+          if (thumbnailMatch) thumbnail = thumbnailMatch[1];
+          
+          console.log(`Metadata fetched via scraping for ${videoId}, duration: ${duration}`);
+        } catch (scrapingError) {
+          console.error('Error fetching metadata via scraping:', scrapingError);
+          
+          // Fallback 2: Try using a simple thumbnail-based approach
+          try {
+            console.log('Using basic metadata approach...');
+            thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+            // Keep other values as default/N/A
+            console.log('Basic metadata approach completed');
+          } catch (basicError) {
+            console.error('Error in basic metadata approach:', basicError);
+          }
+        }
       }
       
       // Then proceed with transcript extraction
