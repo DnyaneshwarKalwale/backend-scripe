@@ -936,10 +936,23 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     }
     
     // Command for yt-dlp to extract subtitles
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" "${videoUrl}"`;
+    const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+    const cookiesPath = path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt');
+    
+    // Verify cookies file exists
+    if (!fs.existsSync(cookiesPath)) {
+      console.error('YouTube cookies file not found at:', cookiesPath);
+      return res.status(500).json({
+        success: false,
+        message: 'YouTube cookies file not found. Please ensure cookies are properly configured.',
+        error: 'Missing cookies file'
+      });
+    }
+    
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${cookiesPath}" --paths "transcripts" --user-agent "${userAgent}" "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `${ytDlpCommand} -J "${videoUrl}"`;
+    const metadataCommand = `${ytDlpCommand} -J --cookies "${cookiesPath}" --user-agent "${userAgent}" "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
@@ -951,9 +964,13 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       let uploadDate = "";
       
       try {
-        // First try using yt-dlp metadata
         console.log('Attempting to fetch metadata with yt-dlp...');
-        const { stdout: metadataOutput } = await execPromise(metadataCommand);
+        const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand);
+        
+        if (metadataError) {
+          console.error('yt-dlp metadata stderr:', metadataError);
+        }
+        
         const metadata = JSON.parse(metadataOutput);
         
         // Extract relevant metadata
@@ -968,14 +985,31 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       } catch (ytdlpError) {
         console.error('Error fetching metadata with yt-dlp:', ytdlpError);
         
-        // Fallback 1: Try using direct YouTube page scraping
+        // Fallback 1: Try using direct YouTube page scraping with cookies
         try {
           console.log('Attempting to fetch metadata via page scraping...');
           const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': userAgent,
+            'Cookie': fs.readFileSync(cookiesPath, 'utf8')
+              .split('\n')
+              .filter(line => line && !line.startsWith('#'))
+              .map(line => {
+                const [domain, , path, secure, expiry, name, value] = line.split('\t');
+                if (domain.includes('youtube.com')) {
+                  return `${name}=${value}`;
+                }
+                return null;
+              })
+              .filter(Boolean)
+              .join('; ')
           };
           
-          const response = await axios.get(videoUrl, { headers });
+          const response = await axios.get(videoUrl, { 
+            headers,
+            timeout: 10000,
+            maxRedirects: 5
+          });
+          
           const html = response.data;
           
           // Extract duration using multiple patterns
