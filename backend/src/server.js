@@ -31,6 +31,7 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 const axios = require('axios');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
@@ -68,15 +69,15 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'https://app.brandout.ai', 
+    'http://localhost:8080', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
-    'https://app.brandout.ai',      // New production domain
-    'https://api.brandout.ai'       // New API domain
+    'http://localhost:8080',      // New production domain
+    'http://localhost:5000'       // New API domain
 ];
 
 app.use(cors({
@@ -755,6 +756,7 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
+app.use('/api/stripe', stripeRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/carousels', carouselRoutes);
 app.use('/api/fonts', fontRoutes);
@@ -767,6 +769,8 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 // Admin notification routes
 app.use('/api/admin/notifications', require('./routes/adminNotificationRoutes'));
+
+app.use('/api/upload', uploadRoutes);
 
 // Add carousel route handler for YouTube videos
 app.post('/api/youtube-carousels', async (req, res) => {
@@ -1439,6 +1443,7 @@ app.delete('/api/carousel-contents/:id', async (req, res) => {
 
 // Register routes
 app.use('/api/user-limits', userLimitRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
