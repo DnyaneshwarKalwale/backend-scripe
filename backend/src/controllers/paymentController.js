@@ -3,16 +3,7 @@ const UserLimit = require('../models/userLimitModel');
 const PDFDocument = require('pdfkit');
 const { isAdmin } = require('../middleware/authMiddleware');
 const PaymentMethod = require('../models/paymentMethodModel');
-
-// Initialize Stripe only if API key is available
-let stripe;
-try {
-  if (process.env.STRIPE_SECRET_KEY) {
-    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-  }
-} catch (error) {
-  console.warn('Stripe initialization failed:', error.message);
-}
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // @desc    Get user's payment methods
 // @route   GET /api/payments/methods
@@ -21,9 +12,10 @@ const getPaymentMethods = async (req, res) => {
   try {
     const paymentMethods = await PaymentMethod.find({ userId: req.user.id });
     
+    // Return empty array if no methods found
     res.status(200).json({
       success: true,
-      data: paymentMethods
+      data: paymentMethods || []
     });
   } catch (error) {
     console.error('Error fetching payment methods:', error);
@@ -118,10 +110,11 @@ const getPaymentHistory = async (req, res) => {
     const transactions = await PaymentTransaction.find({ userId: req.user.id })
       .sort({ createdAt: -1 });
     
+    // Return empty array if no transactions found
     res.status(200).json({
       success: true,
       data: {
-        transactions
+        transactions: transactions || []
       }
     });
   } catch (error) {
@@ -150,26 +143,10 @@ const downloadInvoice = async (req, res) => {
       });
     }
 
-    // If there's a Stripe payment intent ID, fetch the invoice from Stripe
-    if (transaction.stripePaymentIntentId) {
-      const paymentIntent = await stripe.paymentIntents.retrieve(transaction.stripePaymentIntentId);
-      if (paymentIntent.invoice) {
-        const invoice = await stripe.invoices.retrieve(paymentIntent.invoice);
-        return res.status(200).json({
-          success: true,
-          data: {
-            invoiceUrl: invoice.invoice_pdf
-          }
-        });
-      }
-    }
-
-    // If no Stripe invoice, generate a simple one
-    // You would implement your own invoice generation logic here
+    // Return transaction data that can be used to generate an invoice on the frontend
     res.status(200).json({
       success: true,
       data: {
-        // Return transaction data that can be used to generate an invoice on the frontend
         transaction
       }
     });
