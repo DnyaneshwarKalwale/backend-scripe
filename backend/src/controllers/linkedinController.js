@@ -1081,6 +1081,158 @@ const saveScrapedLinkedInPosts = asyncHandler(async (req, res) => {
   }
 });
 
+// Add a new function to handle LinkedIn connection for Google users
+const handleGoogleUserLinkedInConnection = asyncHandler(async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    
+    if (!user) {
+      res.status(400);
+      throw new Error('User not found');
+    }
+    
+    // Check if this is a Google user
+    if (user.authMethod !== 'google') {
+      res.status(400);
+      throw new Error('This endpoint is only for Google-authenticated users');
+    }
+    
+    // Get LinkedIn data from the request
+    const { linkedinId, linkedinAccessToken, linkedinRefreshToken, tokenExpiry } = req.body;
+    
+    // Update user with LinkedIn connection data
+    user.linkedinId = linkedinId;
+    user.linkedinAccessToken = linkedinAccessToken;
+    user.linkedinRefreshToken = linkedinRefreshToken;
+    user.linkedinTokenExpiry = new Date(tokenExpiry);
+    user.linkedinConnected = true;
+    
+    await user.save();
+    
+    res.status(200).json({
+      success: true,
+      message: 'LinkedIn successfully connected to Google account',
+      data: {
+        linkedinConnected: true,
+        linkedinId
+      }
+    });
+  } catch (error) {
+    console.error('Error connecting LinkedIn to Google account:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to connect LinkedIn account'
+    });
+  }
+});
+
+// Modify the existing LinkedIn callback handler to support both direct login and connection
+const handleLinkedInCallback = asyncHandler(async (req, res) => {
+  try {
+    // Get the login type from session or query params
+    const loginType = req.session.loginType || req.query.loginType || 'direct';
+    
+    // Get the LinkedIn authorization code
+    const { code } = req.query;
+    
+    if (!code) {
+      throw new Error('No authorization code received from LinkedIn');
+    }
+    
+    // Exchange code for access token
+    const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
+      params: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: process.env.LINKEDIN_REDIRECT_URI,
+        client_id: process.env.LINKEDIN_CLIENT_ID,
+        client_secret: process.env.LINKEDIN_CLIENT_SECRET
+      }
+    });
+    
+    const { access_token, refresh_token, expires_in } = tokenResponse.data;
+    
+    // Get user profile from LinkedIn
+    const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
+      headers: {
+        'Authorization': `Bearer ${access_token}`
+      }
+    });
+    
+    const linkedinId = profileResponse.data.id;
+    
+    // If this is a connection request from a Google user
+    if (loginType === 'google_connect') {
+      // Find the Google user by their ID (stored in session)
+      const googleUserId = req.session.googleUserId;
+      
+      if (!googleUserId) {
+        throw new Error('No Google user ID found in session');
+      }
+      
+      const user = await User.findById(googleUserId);
+      
+      if (!user) {
+        throw new Error('Google user not found');
+      }
+      
+      // Update user with LinkedIn connection
+      user.linkedinId = linkedinId;
+      user.linkedinAccessToken = access_token;
+      user.linkedinRefreshToken = refresh_token;
+      user.linkedinTokenExpiry = new Date(Date.now() + expires_in * 1000);
+      user.linkedinConnected = true;
+      
+      await user.save();
+      
+      // Redirect to dashboard with success message
+      res.redirect('/dashboard?linkedin=connected');
+    } else {
+      // Handle normal LinkedIn login/registration
+      let user = await User.findOne({ linkedinId });
+      
+      if (!user) {
+        // Create new user
+        user = await User.create({
+          linkedinId,
+          authMethod: 'linkedin',
+          linkedinAccessToken: access_token,
+          linkedinRefreshToken: refresh_token,
+          linkedinTokenExpiry: new Date(Date.now() + expires_in * 1000),
+          linkedinConnected: true,
+          // Add other user fields from LinkedIn profile
+          firstName: profileResponse.data.localizedFirstName,
+          lastName: profileResponse.data.localizedLastName,
+          // ... other fields
+        });
+      } else {
+        // Update existing user
+        user.linkedinAccessToken = access_token;
+        user.linkedinRefreshToken = refresh_token;
+        user.linkedinTokenExpiry = new Date(Date.now() + expires_in * 1000);
+        user.linkedinConnected = true;
+        await user.save();
+      }
+      
+      // Generate JWT token
+      const token = generateToken(user._id);
+      
+      // Set cookie and redirect
+      res.cookie('jwt', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      });
+      
+      res.redirect('/dashboard');
+    }
+  } catch (error) {
+    console.error('LinkedIn callback error:', error);
+    res.redirect('/login?error=linkedin_auth_failed');
+  }
+});
+
 module.exports = {
   getLinkedInProfile,
   getUserPosts,
@@ -1090,5 +1242,7 @@ module.exports = {
   uploadImageToLinkedIn,
   deleteLinkedInPost,
   scrapeLinkedInProfile,
-  saveScrapedLinkedInPosts
+  saveScrapedLinkedInPosts,
+  handleGoogleUserLinkedInConnection,
+  handleLinkedInCallback
 }; 

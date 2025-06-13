@@ -16,9 +16,9 @@ const userSchema = mongoose.Schema(
     },
     email: {
       type: String,
-      // Email is not required for OAuth users, but we'll generate a placeholder
-      // required: [true, 'Please add an email'],
+      required: true,
       unique: true,
+      lowercase: true,
       match: [
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
         'Please add a valid email',
@@ -26,7 +26,7 @@ const userSchema = mongoose.Schema(
     },
     password: {
       type: String,
-      // Not required for OAuth users
+      required: true,
     },
     website: {
       type: String,
@@ -115,7 +115,19 @@ const userSchema = mongoose.Schema(
         },
         stripePaymentMethodId: String
       }
-    ]
+    ],
+    stripeCustomerId: {
+      type: String,
+      required: false
+    },
+    linkedinConnected: {
+      type: Boolean,
+      default: false
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
   },
   {
     timestamps: true,
@@ -124,18 +136,16 @@ const userSchema = mongoose.Schema(
 
 // Middleware to hash password before save
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('password') || !this.password) {
-    return next();
+  if (!this.isModified('password')) {
+    next();
   }
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
 // Method to compare passwords
 userSchema.methods.matchPassword = async function (enteredPassword) {
-  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
@@ -198,4 +208,6 @@ userSchema.methods.generateEmailVerificationOTP = function () {
   return otp;
 };
 
-module.exports = mongoose.model('User', userSchema); 
+const User = mongoose.model('User', userSchema);
+
+module.exports = User; 

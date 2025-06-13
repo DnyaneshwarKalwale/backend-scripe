@@ -5,6 +5,7 @@ const { errorHandler } = require('./middleware/errorMiddleware');
 const userRoutes = require('./routes/userRoutes');
 const carouselRoutes = require('./routes/carouselRoutes');
 const stripeRoutes = require('./routes/stripeRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 const { connectDB } = require('./config/db');
 
 // Set up Express app
@@ -15,7 +16,7 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://localhost:5173'],
   credentials: true
 }));
 
@@ -48,6 +49,7 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/api/users', userRoutes);
 app.use('/api/carousels', carouselRoutes);
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Default route
 app.get('/', (req, res) => {
@@ -55,4 +57,6 @@ app.get('/', (req, res) => {
 });
 
 // Error handler middleware
-app.use(errorHandler); 
+app.use(errorHandler);
+
+module.exports = app; 

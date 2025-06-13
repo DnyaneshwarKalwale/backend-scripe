@@ -1,5 +1,186 @@
 const PaymentTransaction = require('../models/paymentTransactionModel');
+const UserLimit = require('../models/userLimitModel');
+const PDFDocument = require('pdfkit');
 const { isAdmin } = require('../middleware/authMiddleware');
+const PaymentMethod = require('../models/paymentMethodModel');
+
+// Initialize Stripe only if API key is available
+let stripe;
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  }
+} catch (error) {
+  console.warn('Stripe initialization failed:', error.message);
+}
+
+// @desc    Get user's payment methods
+// @route   GET /api/payments/methods
+// @access  Private
+const getPaymentMethods = async (req, res) => {
+  try {
+    const paymentMethods = await PaymentMethod.find({ userId: req.user.id });
+    
+    res.status(200).json({
+      success: true,
+      data: paymentMethods
+    });
+  } catch (error) {
+    console.error('Error fetching payment methods:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment methods'
+    });
+  }
+};
+
+// @desc    Add a new payment method
+// @route   POST /api/payments/methods
+// @access  Private
+const addPaymentMethod = async (req, res) => {
+  try {
+    const { type, lastFour, expiryDate, brand, email, isDefault } = req.body;
+
+    // If this is set as default, unset any existing default
+    if (isDefault) {
+      await PaymentMethod.updateMany(
+        { userId: req.user.id },
+        { $set: { isDefault: false } }
+      );
+    }
+
+    const paymentMethod = await PaymentMethod.create({
+      userId: req.user.id,
+      type,
+      lastFour,
+      expiryDate,
+      brand,
+      email,
+      isDefault
+    });
+
+    res.status(201).json({
+      success: true,
+      data: paymentMethod
+    });
+  } catch (error) {
+    console.error('Error adding payment method:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add payment method'
+    });
+  }
+};
+
+// @desc    Set default payment method
+// @route   PUT /api/payments/methods/:id/default
+// @access  Private
+const setDefaultPaymentMethod = async (req, res) => {
+  try {
+    // Unset current default
+    await PaymentMethod.updateMany(
+      { userId: req.user.id },
+      { $set: { isDefault: false } }
+    );
+
+    // Set new default
+    const paymentMethod = await PaymentMethod.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.id },
+      { $set: { isDefault: true } },
+      { new: true }
+    );
+
+    if (!paymentMethod) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment method not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: paymentMethod
+    });
+  } catch (error) {
+    console.error('Error setting default payment method:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to set default payment method'
+    });
+  }
+};
+
+// @desc    Get payment history
+// @route   GET /api/payments/history
+// @access  Private
+const getPaymentHistory = async (req, res) => {
+  try {
+    const transactions = await PaymentTransaction.find({ userId: req.user.id })
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        transactions
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching payment history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment history'
+    });
+  }
+};
+
+// @desc    Download invoice
+// @route   GET /api/payments/invoices/:id/download
+// @access  Private
+const downloadInvoice = async (req, res) => {
+  try {
+    const transaction = await PaymentTransaction.findOne({
+      _id: req.params.id,
+      userId: req.user.id
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    // If there's a Stripe payment intent ID, fetch the invoice from Stripe
+    if (transaction.stripePaymentIntentId) {
+      const paymentIntent = await stripe.paymentIntents.retrieve(transaction.stripePaymentIntentId);
+      if (paymentIntent.invoice) {
+        const invoice = await stripe.invoices.retrieve(paymentIntent.invoice);
+        return res.status(200).json({
+          success: true,
+          data: {
+            invoiceUrl: invoice.invoice_pdf
+          }
+        });
+      }
+    }
+
+    // If no Stripe invoice, generate a simple one
+    // You would implement your own invoice generation logic here
+    res.status(200).json({
+      success: true,
+      data: {
+        // Return transaction data that can be used to generate an invoice on the frontend
+        transaction
+      }
+    });
+  } catch (error) {
+    console.error('Error downloading invoice:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download invoice'
+    });
+  }
+};
 
 // @desc    Get user's payment transaction history
 // @route   GET /api/payments/history
@@ -46,20 +227,110 @@ exports.getUserPaymentHistory = async (req, res) => {
   }
 };
 
-// @desc    Get payment transaction details by ID
-// @route   GET /api/payments/:transactionId
+// @desc    Download invoice PDF
+// @route   GET /api/payments/invoices/:invoiceId/download
 // @access  Private
+exports.downloadInvoicePDF = async (req, res) => {
+  try {
+    // If Stripe is not initialized, return error
+    if (!stripe) {
+      return res.status(503).json({
+        success: false,
+        message: 'Payment service not available'
+      });
+    }
+
+    const { invoiceId } = req.params;
+    
+    // Get invoice from Stripe
+    const invoice = await stripe.invoices.retrieve(invoiceId);
+    
+    // Check if invoice belongs to user
+    if (invoice.customer !== req.user.stripeCustomerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this invoice'
+      });
+    }
+    
+    // Create PDF
+    const doc = new PDFDocument();
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=invoice-${invoiceId}.pdf`);
+    
+    // Pipe PDF to response
+    doc.pipe(res);
+    
+    // Add content to PDF
+    doc.fontSize(25).text('Invoice', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Invoice ID: ${invoice.id}`);
+    doc.text(`Date: ${new Date(invoice.created * 1000).toLocaleDateString()}`);
+    doc.text(`Amount: $${(invoice.amount_paid / 100).toFixed(2)}`);
+    doc.text(`Status: ${invoice.status}`);
+    
+    // Finalize PDF
+    doc.end();
+  } catch (error) {
+    console.error('Error downloading invoice:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to download invoice'
+    });
+  }
+};
+
+// @desc    Download billing history PDF
+// @route   GET /api/payments/history/download
+// @access  Private
+exports.downloadBillingHistory = async (req, res) => {
+  try {
+    // Get all transactions for user
+    const transactions = await PaymentTransaction.find({ userId: req.user.id })
+      .sort({ createdAt: -1 });
+    
+    // Create PDF
+    const doc = new PDFDocument();
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=billing-history.pdf');
+    
+    // Pipe PDF to response
+    doc.pipe(res);
+    
+    // Add content to PDF
+    doc.fontSize(25).text('Billing History', { align: 'center' });
+    doc.moveDown();
+    
+    transactions.forEach(transaction => {
+      doc.fontSize(12).text(`Transaction ID: ${transaction.transactionId}`);
+      doc.text(`Date: ${transaction.createdAt.toLocaleDateString()}`);
+      doc.text(`Amount: $${transaction.amount.toFixed(2)}`);
+      doc.text(`Status: ${transaction.paymentStatus}`);
+      doc.text(`Type: ${transaction.paymentType}`);
+      doc.moveDown();
+    });
+    
+    // Finalize PDF
+    doc.end();
+  } catch (error) {
+    console.error('Error downloading billing history:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to download billing history'
+    });
+  }
+};
+
+// @desc    Get transaction by ID
+// @route   GET /api/payments/transactions/:id
+// @access  Private/Admin
 exports.getTransactionById = async (req, res) => {
   try {
-    const { transactionId } = req.params;
-    const userId = req.user.id;
-    
-    // Find the transaction
-    const transaction = await PaymentTransaction.findOne({ 
-      transactionId,
-      // Only allow access to transaction if it belongs to the user or user is admin
-      ...(req.user.role !== 'admin' && { userId })
-    });
+    const transaction = await PaymentTransaction.findById(req.params.id);
     
     if (!transaction) {
       return res.status(404).json({
@@ -73,91 +344,37 @@ exports.getTransactionById = async (req, res) => {
       data: transaction
     });
   } catch (error) {
-    console.error('Error fetching transaction details:', error);
+    console.error('Error fetching transaction:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to retrieve transaction details'
+      message: 'Failed to retrieve transaction'
     });
   }
 };
 
-// @desc    Get all payment transactions (admin only)
-// @route   GET /api/payments/admin/all
+// @desc    Get all transactions (admin only)
+// @route   GET /api/payments/transactions
 // @access  Private/Admin
 exports.getAllTransactions = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      sortBy = 'createdAt', 
-      sortOrder = -1,
-      userId,
-      paymentType,
-      paymentStatus,
-      startDate,
-      endDate
-    } = req.query;
+    const { page = 1, limit = 10 } = req.query;
     
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const transactions = await PaymentTransaction.find()
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
     
-    // Create sort object
-    const sort = {};
-    sort[sortBy] = parseInt(sortOrder);
-    
-    // Build filter object
-    const filter = {};
-    
-    if (userId) filter.userId = userId;
-    if (paymentType) filter.paymentType = paymentType;
-    if (paymentStatus) filter.paymentStatus = paymentStatus;
-    
-    // Add date range filter if provided
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) {
-        // Add one day to include the full end date
-        const endDateObj = new Date(endDate);
-        endDateObj.setDate(endDateObj.getDate() + 1);
-        filter.createdAt.$lte = endDateObj;
-      }
-    }
-    
-    // Find transactions with filters
-    const transactions = await PaymentTransaction.find(filter)
-      .sort(sort)
-      .skip(skip)
-      .limit(parseInt(limit));
-    
-    // Get total count for pagination
-    const totalCount = await PaymentTransaction.countDocuments(filter);
-    
-    // Get summary stats
-    const stats = await PaymentTransaction.aggregate([
-      { $match: filter },
-      { $group: {
-        _id: null,
-        totalAmount: { $sum: '$amount' },
-        count: { $sum: 1 },
-        avgAmount: { $avg: '$amount' }
-      }}
-    ]);
+    const count = await PaymentTransaction.countDocuments();
     
     return res.status(200).json({
       success: true,
       data: {
         transactions,
         pagination: {
-          total: totalCount,
+          total: count,
           page: parseInt(page),
           limit: parseInt(limit),
-          pages: Math.ceil(totalCount / parseInt(limit))
-        },
-        stats: stats.length > 0 ? stats[0] : {
-          totalAmount: 0,
-          count: 0,
-          avgAmount: 0
+          pages: Math.ceil(count / limit)
         }
       }
     });
@@ -171,76 +388,44 @@ exports.getAllTransactions = async (req, res) => {
 };
 
 // @desc    Get user spending summary
-// @route   GET /api/payments/summary
-// @access  Private
+// @route   GET /api/payments/spending-summary
+// @access  Private/Admin
 exports.getUserSpendingSummary = async (req, res) => {
   try {
-    const userId = req.user.id;
-    
-    // Get overall spending statistics
-    const overall = await PaymentTransaction.aggregate([
-      { $match: { userId, paymentStatus: 'completed' } },
-      { $group: {
-        _id: null,
-        totalSpent: { $sum: '$amount' },
-        transactionCount: { $sum: 1 },
-        firstPurchase: { $min: '$createdAt' },
-        lastPurchase: { $max: '$createdAt' }
-      }}
-    ]);
-    
-    // Get spending by category/type
-    const byType = await PaymentTransaction.aggregate([
-      { $match: { userId, paymentStatus: 'completed' } },
-      { $group: {
-        _id: '$paymentType',
-        totalSpent: { $sum: '$amount' },
-        count: { $sum: 1 }
-      }},
-      { $sort: { totalSpent: -1 } }
-    ]);
-    
-    // Get monthly spending for the last 6 months
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    
-    const monthlySpending = await PaymentTransaction.aggregate([
-      { 
-        $match: { 
-          userId, 
-          paymentStatus: 'completed',
-          createdAt: { $gte: sixMonthsAgo }
-        } 
-      },
+    const summary = await PaymentTransaction.aggregate([
       {
         $group: {
-          _id: { 
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' }
-          },
+          _id: '$userId',
           totalSpent: { $sum: '$amount' },
-          count: { $sum: 1 }
+          transactionCount: { $sum: 1 },
+          lastTransaction: { $max: '$createdAt' }
         }
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
+      }
     ]);
     
     return res.status(200).json({
       success: true,
-      data: {
-        overall: overall.length > 0 ? overall[0] : {
-          totalSpent: 0,
-          transactionCount: 0
-        },
-        byType,
-        monthlySpending
-      }
+      data: summary
     });
   } catch (error) {
-    console.error('Error fetching spending summary:', error);
+    console.error('Error generating spending summary:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to retrieve spending summary'
+      message: 'Failed to generate spending summary'
     });
   }
+};
+
+module.exports = {
+  getPaymentMethods,
+  addPaymentMethod,
+  setDefaultPaymentMethod,
+  getPaymentHistory,
+  downloadInvoice,
+  downloadInvoicePDF,
+  downloadBillingHistory,
+  getUserPaymentHistory,
+  getTransactionById,
+  getAllTransactions,
+  getUserSpendingSummary
 }; 
