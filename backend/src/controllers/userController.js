@@ -4,11 +4,14 @@ const Onboarding = require('../models/onboardingModel');
 const generateToken = require('../utils/generateToken');
 const UserLimit = require('../models/userLimitModel');
 const PaymentTransaction = require('../models/paymentTransactionModel');
+const Notification = require('../models/notificationModel');
+const stripe = require('../config/stripe');
 
 // Initialize Stripe only if API key is available
-let stripe;
+let stripeInitialized = false;
 try {
   if (process.env.STRIPE_SECRET_KEY) {
+    stripeInitialized = true;
     stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
   }
 } catch (error) {
@@ -33,7 +36,7 @@ const registerUser = async (req, res) => {
 
     let stripeCustomerId;
     // Create Stripe customer if Stripe is initialized
-    if (stripe) {
+    if (stripeInitialized) {
       try {
         const customer = await stripe.customers.create({
           email,
@@ -166,7 +169,7 @@ const updateUserProfile = async (req, res) => {
   }
   
       // Update Stripe customer if available and if email or name changed
-      if (stripe && user.stripeCustomerId && (req.body.email || req.body.firstName || req.body.lastName)) {
+      if (stripeInitialized && user.stripeCustomerId && (req.body.email || req.body.firstName || req.body.lastName)) {
         try {
           await stripe.customers.update(user.stripeCustomerId, {
             email: user.email,
@@ -331,19 +334,24 @@ const changePassword = asyncHandler(async (req, res) => {
 // @desc    Delete user account
 // @route   DELETE /api/users/account
 // @access  Private
-const deleteAccount = async (req, res) => {
+const deleteAccount = asyncHandler(async (req, res) => {
   try {
-  const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id);
 
-  if (!user) {
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
 
+    // Set account for deletion in 10 days
+    user.deletionScheduledAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000); // 10 days from now
+    user.accountStatus = 'pending_deletion';
+    await user.save();
+
     // Delete Stripe customer if exists and Stripe is initialized
-    if (stripe && user.stripeCustomerId) {
+    if (stripeInitialized && user.stripeCustomerId) {
       try {
         await stripe.customers.del(user.stripeCustomerId);
       } catch (error) {
@@ -352,39 +360,84 @@ const deleteAccount = async (req, res) => {
       }
     }
 
-    // Delete all user's payment transactions
-    await PaymentTransaction.deleteMany({ userId: user._id });
+    // Delete all user's data in parallel for better performance
+    await Promise.all([
+      PaymentTransaction.deleteMany({ userId: user._id }),
+      UserLimit.deleteMany({ userId: user._id }),
+      Notification.deleteMany({ user: user._id })
+    ]);
 
-    // Delete user's subscription/limits
-    await UserLimit.deleteMany({ userId: user._id });
-
-    // Delete user's OAuth connections
+    // Handle OAuth disconnection
     if (user.linkedinConnected) {
       try {
-        // Add LinkedIn token revocation logic here if needed
         user.linkedinConnected = false;
         user.linkedinAccessToken = undefined;
         user.linkedinRefreshToken = undefined;
+        user.linkedinTokenExpiry = undefined;
         await user.save();
       } catch (error) {
         console.error('Error revoking LinkedIn access:', error);
-        // Continue with account deletion even if OAuth revocation fails
       }
-  }
+    }
 
-    // Finally, delete the user
-  await user.remove();
+    if (user.googleId) {
+      try {
+        user.googleId = undefined;
+        await user.save();
+      } catch (error) {
+        console.error('Error removing Google connection:', error);
+      }
+    }
 
     return res.status(200).json({
-    success: true,
-      message: 'Account deleted successfully'
-  });
+      success: true,
+      message: 'Your account has been scheduled for deletion. You have 10 days to recover your account by logging in. After this period, your account will be permanently deleted.'
+    });
   } catch (error) {
     console.error('Error deleting account:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete account'
+      message: 'Failed to delete account',
+      error: error.message
+    });
+  }
 });
+
+// @desc    Cancel account deletion
+// @route   POST /api/users/account/cancel-deletion
+// @access  Private
+const cancelAccountDeletion = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.accountStatus !== 'pending_deletion') {
+      return res.status(400).json({
+        success: false,
+        message: 'Account is not scheduled for deletion'
+      });
+    }
+
+    user.deletionScheduledAt = undefined;
+    user.accountStatus = 'active';
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Account deletion cancelled successfully'
+    });
+  } catch (error) {
+    console.error('Error cancelling account deletion:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to cancel account deletion'
+    });
   }
 };
 
@@ -446,5 +499,6 @@ module.exports = {
   updateOnboarding,
   changePassword,
   deleteAccount,
+  cancelAccountDeletion,
   updateAutoPay
 }; 

@@ -1,13 +1,15 @@
 const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
-  userId: {
+  user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: function() {
-      // userId is required unless this is a broadcast notification
-      return !this.metadata || !this.metadata.isBroadcast;
-    }
+    required: true
+  },
+  type: {
+    type: String,
+    required: true,
+    enum: ['payment', 'subscription', 'system', 'profile']
   },
   title: {
     type: String,
@@ -17,18 +19,12 @@ const notificationSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  type: {
-    type: String,
-    enum: ['welcome', 'subscription', 'limit', 'carousel', 'feature', 'offer', 'general'],
-    default: 'general'
-  },
   read: {
     type: Boolean,
     default: false
   },
   link: {
-    type: String,
-    default: null
+    type: String
   },
   imageUrl: {
     type: String,
@@ -53,15 +49,13 @@ const notificationSchema = new mongoose.Schema({
   metadata: {
     type: Object,
     default: null
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   }
+}, {
+  timestamps: true
 });
 
 // Create indexes for faster querying
-notificationSchema.index({ userId: 1, read: 1 });
+notificationSchema.index({ user: 1, read: 1 });
 notificationSchema.index({ createdAt: -1 });
 
 // Add virtual for timeAgo
