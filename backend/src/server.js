@@ -32,6 +32,7 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 const axios = require('axios');
 const uploadRoutes = require('./routes/uploadRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
