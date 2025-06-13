@@ -81,7 +81,7 @@ const allowedOrigins = [
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
     'https://app.brandout.ai',      // New production domain
-    'https://api.brandout.ai'       // New API domain
+    'http://localhost:5000'       // New API domain
 ];
 
 app.use(cors({
