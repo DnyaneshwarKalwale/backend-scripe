@@ -3,69 +3,207 @@ const User = require('../models/userModel');
 const Onboarding = require('../models/onboardingModel');
 const generateToken = require('../utils/generateToken');
 const UserLimit = require('../models/userLimitModel');
+const PaymentTransaction = require('../models/paymentTransactionModel');
+
+// Initialize Stripe only if API key is available
+let stripe;
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  }
+} catch (error) {
+  console.warn('Stripe initialization failed:', error.message);
+}
+
+// @desc    Register user
+// @route   POST /api/users/register
+// @access  Public
+const registerUser = async (req, res) => {
+  try {
+    const { firstName, lastName, email, password } = req.body;
+
+    // Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists'
+      });
+    }
+
+    let stripeCustomerId;
+    // Create Stripe customer if Stripe is initialized
+    if (stripe) {
+      try {
+        const customer = await stripe.customers.create({
+          email,
+          name: `${firstName} ${lastName}`.trim()
+        });
+        stripeCustomerId = customer.id;
+      } catch (error) {
+        console.error('Error creating Stripe customer:', error);
+        // Continue without Stripe customer
+      }
+    }
+
+    // Create user
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      stripeCustomerId
+    });
+
+    // Create initial user limits
+    await UserLimit.create({
+      userId: user._id,
+      limit: 0,
+      count: 0,
+      planId: 'trial',
+      planName: 'Trial',
+      status: 'active'
+    });
+
+    if (user) {
+      return res.status(201).json({
+        success: true,
+        data: {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          token: generateToken(user._id)
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error registering user:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to register user'
+    });
+  }
+};
+
+// @desc    Login user
+// @route   POST /api/users/login
+// @access  Public
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find user
+    const user = await User.findOne({ email });
+
+    // Check password
+    if (user && (await user.matchPassword(password))) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          token: generateToken(user._id)
+        }
+      });
+    } else {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+  } catch (error) {
+    console.error('Error logging in user:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to login'
+    });
+  }
+};
+
+// @desc    Get user profile
+// @route   GET /api/users/profile
+// @access  Private
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('-password');
+    if (user) {
+      return res.status(200).json({
+        success: true,
+        data: user
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch profile'
+    });
+  }
+};
 
 // @desc    Update user profile
 // @route   PUT /api/users/profile
 // @access  Private
-const updateUserProfile = asyncHandler(async (req, res) => {
+const updateUserProfile = async (req, res) => {
+  try {
   const user = await User.findById(req.user._id);
 
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  // Only update fields that were sent in the request
-  if (req.body.firstName) {
-    user.firstName = req.body.firstName;
-  }
-  
-  if (req.body.lastName) {
-    user.lastName = req.body.lastName;
-  }
-  
-  if (req.body.email && user.email !== req.body.email) {
-    // Check if email already exists
-    const emailExists = await User.findOne({ email: req.body.email });
-    if (emailExists) {
-      res.status(400);
-      throw new Error('Email already in use');
-    }
-    
-    user.email = req.body.email;
-    // If email changed, we should mark it as not verified
-    user.isEmailVerified = false;
-  }
+    if (user) {
+      user.firstName = req.body.firstName || user.firstName;
+      user.lastName = req.body.lastName || user.lastName;
+      user.email = req.body.email || user.email;
   
   if (req.body.password) {
     user.password = req.body.password;
   }
   
-  // Add website and mobileNumber fields to user profile update
-  if (req.body.website !== undefined) {
-    user.website = req.body.website;
-  }
-  
-  if (req.body.mobileNumber !== undefined) {
-    user.mobileNumber = req.body.mobileNumber;
+      // Update Stripe customer if available and if email or name changed
+      if (stripe && user.stripeCustomerId && (req.body.email || req.body.firstName || req.body.lastName)) {
+        try {
+          await stripe.customers.update(user.stripeCustomerId, {
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`.trim()
+          });
+        } catch (error) {
+          console.error('Error updating Stripe customer:', error);
+          // Continue without Stripe update
+        }
   }
 
   const updatedUser = await user.save();
 
-  res.status(200).json({
+      return res.status(200).json({
+        success: true,
+        data: {
     _id: updatedUser._id,
     firstName: updatedUser.firstName,
     lastName: updatedUser.lastName,
     email: updatedUser.email,
-    isEmailVerified: updatedUser.isEmailVerified,
-    profilePicture: updatedUser.profilePicture,
-    language: updatedUser.language,
-    website: updatedUser.website,
-    mobileNumber: updatedUser.mobileNumber,
-    role: updatedUser.role,
-    token: generateToken(updatedUser._id),
+          token: generateToken(updatedUser._id)
+        }
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update profile'
   });
-});
+  }
+};
 
 // @desc    Update onboarding settings and mark as complete
 // @route   POST /api/users/update-onboarding
@@ -191,24 +329,64 @@ const changePassword = asyncHandler(async (req, res) => {
 });
 
 // @desc    Delete user account
-// @route   DELETE /api/users/delete-account
+// @route   DELETE /api/users/account
 // @access  Private
-const deleteAccount = asyncHandler(async (req, res) => {
+const deleteAccount = async (req, res) => {
+  try {
   const user = await User.findById(req.user._id);
 
   if (!user) {
-    res.status(404);
-    throw new Error('User not found');
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Delete Stripe customer if exists and Stripe is initialized
+    if (stripe && user.stripeCustomerId) {
+      try {
+        await stripe.customers.del(user.stripeCustomerId);
+      } catch (error) {
+        console.error('Error deleting Stripe customer:', error);
+        // Continue with account deletion even if Stripe deletion fails
+      }
+    }
+
+    // Delete all user's payment transactions
+    await PaymentTransaction.deleteMany({ userId: user._id });
+
+    // Delete user's subscription/limits
+    await UserLimit.deleteMany({ userId: user._id });
+
+    // Delete user's OAuth connections
+    if (user.linkedinConnected) {
+      try {
+        // Add LinkedIn token revocation logic here if needed
+        user.linkedinConnected = false;
+        user.linkedinAccessToken = undefined;
+        user.linkedinRefreshToken = undefined;
+        await user.save();
+      } catch (error) {
+        console.error('Error revoking LinkedIn access:', error);
+        // Continue with account deletion even if OAuth revocation fails
+      }
   }
 
-  // Delete user
+    // Finally, delete the user
   await user.remove();
 
-  res.status(200).json({
+    return res.status(200).json({
     success: true,
-    message: 'Account deleted successfully',
+      message: 'Account deleted successfully'
   });
+  } catch (error) {
+    console.error('Error deleting account:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete account'
 });
+  }
+};
 
 // @desc    Update user auto-pay settings
 // @route   POST /api/users/subscription/auto-pay
@@ -261,6 +439,9 @@ const updateAutoPay = async (req, res) => {
 };
 
 module.exports = {
+  registerUser,
+  loginUser,
+  getUserProfile,
   updateUserProfile,
   updateOnboarding,
   changePassword,

@@ -1,23 +1,25 @@
 const express = require('express');
 const { 
+  registerUser,
+  loginUser,
+  getUserProfile,
   updateUserProfile,
-  updateOnboarding,
-  changePassword,
   deleteAccount,
   updateAutoPay
 } = require('../controllers/userController');
-const { protect, checkEmailVerified } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Protect all routes
-router.use(protect);
+// Public routes
+router.post('/register', registerUser);
+router.post('/login', loginUser);
 
-// User routes
-router.put('/profile', checkEmailVerified, updateUserProfile);
-router.post('/update-onboarding', updateOnboarding);
-router.put('/change-password', checkEmailVerified, changePassword);
-router.delete('/delete-account', checkEmailVerified, deleteAccount);
+// Protected routes
+router.use(protect);
+router.get('/profile', getUserProfile);
+router.put('/profile', updateUserProfile);
+router.delete('/account', deleteAccount);
 router.post('/subscription/auto-pay', updateAutoPay);
 
 module.exports = router; 
