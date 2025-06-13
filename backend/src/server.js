@@ -19,6 +19,7 @@ const postRoutes = require('./routes/postRoutes');
 const carouselRoutes = require('./routes/carouselRoutes');
 const fontRoutes = require('./routes/fontRoutes');
 const stripeRoutes = require('./routes/stripeRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
 const fs = require('fs');
@@ -32,13 +33,15 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 const axios = require('axios');
 const uploadRoutes = require('./routes/uploadRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
 
 // Import the transcript API setup script
 const setupTranscriptApi = require('../setup_transcript_api');
+
+// Import cron jobs
+const accountDeletionJob = require('./cron/accountDeletion');
 
 // Load environment variables
 dotenv.config();
@@ -70,15 +73,15 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'http://localhost:8080', 
+    'https://app.brandout.ai', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
-    'http://localhost:8080',      // New production domain
-    'http://localhost:5000'       // New API domain
+    'https://app.brandout.ai',      // New production domain
+    'https://api.brandout.ai'       // New API domain
 ];
 
 app.use(cors({
@@ -757,20 +760,15 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/youtube', youtubeRoutes);
-app.use('/api/stripe', stripeRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/carousels', carouselRoutes);
 app.use('/api/fonts', fontRoutes);
-app.use('/api/cron', cronRoutes);
-app.use('/api/user-limits', userLimitRoutes);
 app.use('/api/stripe', stripeRoutes);
-// Add notification routes
+app.use('/api/payments', paymentRoutes);
+app.use('/api/user-limits', userLimitRoutes);
+app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/notifications', require('./routes/notificationRoutes'));
-// Admin routes
-app.use('/api/admin', require('./routes/adminRoutes'));
-// Admin notification routes
-app.use('/api/admin/notifications', require('./routes/adminNotificationRoutes'));
-
+app.use('/api/cron', cronRoutes);
 app.use('/api/upload', uploadRoutes);
 
 // Add carousel route handler for YouTube videos
@@ -1524,4 +1522,7 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('Error initializing scheduler service:', err);
   }
+
+  // Start cron jobs
+  accountDeletionJob.start();
 }); 

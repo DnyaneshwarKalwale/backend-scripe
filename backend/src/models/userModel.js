@@ -26,7 +26,9 @@ const userSchema = mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: function() {
+        return this.authMethod === 'email'; // Password only required for email auth
+      }
     },
     website: {
       type: String,
@@ -39,6 +41,15 @@ const userSchema = mongoose.Schema(
     isEmailVerified: {
       type: Boolean,
       default: false,
+    },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'suspended', 'pending_deletion', 'deleted'],
+      default: 'active'
+    },
+    deletionScheduledAt: {
+      type: Date,
+      default: null
     },
     emailVerificationToken: String,
     emailVerificationExpire: Date,
@@ -136,16 +147,30 @@ const userSchema = mongoose.Schema(
 
 // Middleware to hash password before save
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) {
-    next();
+  // Only hash the password if it's been modified (or is new) and exists
+  if (!this.isModified('password') || !this.password) {
+    return next();
   }
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+
+  // Check for account deletion
+  if (this.accountStatus === 'pending_deletion' && this.deletionScheduledAt) {
+    const now = new Date();
+    if (now > this.deletionScheduledAt) {
+      await this.model('User').deleteOne({ _id: this._id });
+      return next(new Error('Account has been permanently deleted'));
+    }
+  }
+  next();
 });
 
 // Method to compare passwords
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  if (!this.password) {
+    return false; // If no password set (OAuth user), always return false
+  }
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

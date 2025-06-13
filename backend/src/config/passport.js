@@ -67,16 +67,18 @@ module.exports = (passport) => {
 
           // If user doesn't exist, create new user
           if (!user) {
-            user = await User.create({
+            const newUser = {
               googleId: profile.id,
               firstName: profile.name.givenName || profile.displayName.split(' ')[0],
               lastName: profile.name.familyName || '',
-              email: generatedEmail, // Use generated email if actual email isn't available
-              isEmailVerified: email ? true : false, // Only verify if actual email was provided
+              email: generatedEmail,
+              isEmailVerified: email ? true : false,
               profilePicture: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
               authMethod: 'google',
               onboardingCompleted: false,
-            });
+            };
+
+            user = await User.create(newUser);
           }
 
           return done(null, user);
@@ -209,19 +211,21 @@ module.exports = (passport) => {
             }
             
             try {
-            user = await User.create({
+              const newUser = {
                 linkedinId: profile.id,
-              firstName,
-              lastName,
+                firstName,
+                lastName,
                 email,
-                isEmailVerified: true, // LinkedIn emails are verified
+                isEmailVerified: true,
                 profilePicture,
                 authMethod: 'linkedin',
-              onboardingCompleted: false,
+                onboardingCompleted: false,
                 linkedinAccessToken: accessToken,
                 linkedinRefreshToken: refreshToken,
                 linkedinTokenExpiry: tokenExpiryTime
-            });
+              };
+
+              user = await User.create(newUser);
               console.log('LinkedIn auth: New user created successfully');
             } catch (createError) {
               console.error('LinkedIn auth: Error creating user:', createError.message);
@@ -232,7 +236,6 @@ module.exports = (passport) => {
           return done(null, user);
         } catch (error) {
           console.error('LinkedIn OAuth Error:', error);
-          // Add more detailed error logging
           if (error.response) {
             console.error('LinkedIn API Error Response:', error.response.data);
           }

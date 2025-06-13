@@ -20,9 +20,19 @@ const getLinkedInBasicProfile = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     
-    if (!user || !user.linkedinId) {
-      res.status(400);
-      throw new Error('LinkedIn account not connected');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    if (!user.linkedinConnected || !user.linkedinId) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'LinkedIn account not connected'
+      });
     }
     
     // Generate username from user's name if not available
@@ -35,23 +45,26 @@ const getLinkedInBasicProfile = asyncHandler(async (req, res) => {
       name: `${user.firstName} ${user.lastName || ''}`.trim(),
       profileImage: user.profilePicture || 'https://via.placeholder.com/150',
       bio: `LinkedIn professional connected with Scripe.`,
-      location: "Not available", // We don't have this stored
+      location: "Not available",
       url: `https://linkedin.com/in/${username}`,
       joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
-      connections: 0, // Not available without API
-      followers: 0, // Not available without API
-      verified: true // This profile is verified since it's from our database
+      connections: 0,
+      followers: 0,
+      verified: true
     };
     
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: linkedinProfile,
       usingRealData: true
     });
   } catch (error) {
     console.error('LinkedIn Basic Profile Error:', error);
-    res.status(500);
-    throw new Error(error.message || 'Error fetching LinkedIn basic profile');
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching LinkedIn basic profile',
+      error: error.message
+    });
   }
 });
 
@@ -64,66 +77,54 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     
-    if (!user || !user.linkedinId) {
-      res.status(400);
-      throw new Error('LinkedIn account not connected');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    if (!user.linkedinConnected || !user.linkedinId) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'LinkedIn account not connected'
+      });
     }
     
     // Check if we have a valid access token
     if (!user.linkedinAccessToken) {
-      console.error('No LinkedIn access token found for user:', user._id);
-      throw new Error('LinkedIn access token not found. Please reconnect your LinkedIn account.');
+      return res.status(200).json({
+        success: false,
+        message: 'LinkedIn access token not found. Please reconnect your LinkedIn account.'
+      });
     }
     
     // Check if token has expired
     const now = new Date();
     if (user.linkedinTokenExpiry && user.linkedinTokenExpiry < now) {
-      console.error('LinkedIn token expired:', user.linkedinTokenExpiry);
-      throw new Error('LinkedIn access token has expired. Please reconnect your LinkedIn account.');
+      return res.status(200).json({
+        success: false,
+        message: 'LinkedIn access token has expired. Please reconnect your LinkedIn account.'
+      });
     }
-    
-    console.log(`Attempting to fetch real LinkedIn profile data for user ${user._id}`);
-    console.log(`User LinkedIn ID: ${user.linkedinId}`);
-    console.log(`Token expiry: ${user.linkedinTokenExpiry}`);
     
     try {
       // Try to fetch real data from LinkedIn API
-      console.log('Calling LinkedIn userInfo endpoint...');
       const userInfoResponse = await axios.get(LINKEDIN_USERINFO_URL, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
-      }).catch(error => {
-        console.error('LinkedIn userInfo API error:', error.message);
-        if (error.response) {
-          console.error('Response status:', error.response.status);
-          console.error('Response data:', JSON.stringify(error.response.data));
-        }
-        throw error;
       });
       
-      console.log('LinkedIn API userInfo response successful');
-      
-      // Try to get profile details with additional fields
-      console.log('Calling LinkedIn profile endpoint...');
       const profileResponse = await axios.get(`${LINKEDIN_PROFILE_URL}?projection=(id,firstName,lastName,profilePicture,headline,vanityName)`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
-      }).catch(error => {
-        console.error('LinkedIn profile API error:', error.message);
-        if (error.response) {
-          console.error('Response status:', error.response.status);
-          console.error('Response data:', JSON.stringify(error.response.data));
-        }
-        throw error;
       });
       
-      console.log('LinkedIn API profile response successful');
-      
-      // Build profile from API responses
       const username = profileResponse.data.vanityName || 
                        userInfoResponse.data.given_name?.toLowerCase() + userInfoResponse.data.family_name?.toLowerCase();
       
@@ -136,95 +137,49 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         location: userInfoResponse.data.address || "Global",
         url: `https://linkedin.com/in/${username}`,
         joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
-        connections: 500, // LinkedIn doesn't easily provide this count via API
-        followers: 1000, // LinkedIn doesn't easily provide this count via API
+        connections: 500,
+        followers: 1000,
         verified: true
       };
       
-      console.log('Built LinkedIn profile successfully');
-      
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: linkedinProfile,
         usingRealData: true
       });
     } catch (apiError) {
-      console.error('LinkedIn API Error:', apiError.message);
+      // If API call fails, return basic profile
+      const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
       
-      let errorDetails = apiError.message;
-      let errorType = 'api_error';
+      const linkedinProfile = {
+        id: user.linkedinId,
+        username: username,
+        name: `${user.firstName} ${user.lastName || ''}`.trim(),
+        profileImage: user.profilePicture || 'https://via.placeholder.com/150',
+        bio: `LinkedIn professional connected with Scripe.`,
+        location: "Global",
+        url: `https://linkedin.com/in/${username}`,
+        joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
+        connections: 0,
+        followers: 0,
+        verified: false
+      };
       
-      if (apiError.response) {
-        console.error('Error status:', apiError.response.status);
-        console.error('Error details:', apiError.response?.data || 'No response data');
-        
-        // Determine specific error type
-        if (apiError.response.status === 401) {
-          errorType = 'token_expired';
-          errorDetails = 'Your LinkedIn access token has expired. Please reconnect your account.';
-          
-          // Update user record to clear LinkedIn tokens
-          if (user) {
-            console.log(`Token expired or revoked for user ${user._id}. Clearing all LinkedIn tokens.`);
-            user.linkedinAccessToken = null;
-            user.linkedinRefreshToken = null;
-            user.linkedinTokenExpiry = new Date(Date.now() - 1000); // Set to past time
-            await user.save();
-            
-            // Check for specific LinkedIn revocation error
-            const errorData = apiError.response.data;
-            if (errorData && (
-                (errorData.serviceErrorCode === 65601) || 
-                (errorData.code === 'REVOKED_ACCESS_TOKEN')
-              )) {
-              errorType = 'token_revoked';
-              errorDetails = 'Your LinkedIn access token has been revoked. Please reconnect your account.';
-            }
-          }
-        } else if (apiError.response.status === 403) {
-          errorType = 'permission_denied';
-          errorDetails = 'LinkedIn API access denied. You may need additional permissions.';
-        } else if (apiError.response.status === 404) {
-          errorType = 'not_found';
-          errorDetails = 'LinkedIn resource not found. The API endpoint may have changed.';
-        } else if (apiError.response.status >= 500) {
-          errorType = 'linkedin_server_error';
-          errorDetails = 'LinkedIn servers are experiencing issues. Please try again later.';
-        }
-      }
-      
-      console.error(`LinkedIn API access failed (${errorType}). Falling back to sample data`);
-      
-      // If API call fails, fall back to sample data
-    const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
-    
-    const linkedinProfile = {
-      id: user.linkedinId,
-      username: username,
-      name: `${user.firstName} ${user.lastName || ''}`.trim(),
-      profileImage: user.profilePicture || 'https://via.placeholder.com/150',
-        bio: `LinkedIn professional connected with Scripe. Generating amazing content with AI.`,
-      location: "Global",
-      url: `https://linkedin.com/in/${username}`,
-      joinedDate: "January 2022",
-      connections: 512,
-      followers: 1024,
-      verified: false
-    };
-    
-    res.status(200).json({
-      success: true,
+      return res.status(200).json({
+        success: true,
         data: linkedinProfile,
         usingRealData: false,
-        error: 'Failed to fetch real data from LinkedIn API. Using sample data instead.',
-        errorType: errorType,
-        errorDetails: errorDetails
+        message: 'Using basic profile data due to API error',
+        error: apiError.message
       });
     }
   } catch (error) {
     console.error('LinkedIn Profile Error:', error);
-    res.status(500);
-    throw new Error(error.message || 'Error fetching LinkedIn profile');
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching LinkedIn profile',
+      error: error.message
+    });
   }
 });
 
