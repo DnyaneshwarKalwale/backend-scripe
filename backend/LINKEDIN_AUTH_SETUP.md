@@ -1,6 +1,6 @@
 # Setting Up LinkedIn Authentication for Render Deployment
 
-LinkedIn has specific requirements for OAuth callback URLs. This guide shows how to configure LinkedIn authentication for the Render-deployed backend at http://localhost:5000.
+LinkedIn has specific requirements for OAuth callback URLs. This guide shows how to configure LinkedIn authentication for the Render-deployed backend at https://api.brandout.ai.
 
 ## Required Configuration in LinkedIn Developer Portal
 
@@ -14,7 +14,7 @@ LinkedIn has specific requirements for OAuth callback URLs. This guide shows how
 
 4. Once created, set up the Auth section:
    - Add the following redirect URL:
-     - `http://localhost:5000/api/auth/linkedin/callback`
+     - `https://api.brandout.ai/api/auth/linkedin/callback`
    - Request the following OAuth 2.0 scopes:
      - `openid` - for OpenID Connect authentication
      - `profile` - to access basic profile information
@@ -37,7 +37,7 @@ LinkedIn has specific requirements for OAuth callback URLs. This guide shows how
    ```
    LINKEDIN_CLIENT_ID=77rawlclal56f1
    LINKEDIN_CLIENT_SECRET=WPL_AP1.GLiYKT7Fr5tWSTfk.c5so8g==
-   LINKEDIN_CALLBACK_URL=http://localhost:5000/api/auth/linkedin/callback
+   LINKEDIN_CALLBACK_URL=https://api.brandout.ai/api/auth/linkedin/callback
    FRONTEND_URL=https://deluxe-cassata-51d628.netlify.app
    ```
 
@@ -59,12 +59,12 @@ For quick local testing without setting up a real LinkedIn application:
 1. Start your backend and frontend servers locally
 2. Use the mock LinkedIn auth endpoint by visiting:
    ```
-   http://localhost:5000/api/auth/mock-linkedin-auth
+   https://api.brandout.ai/api/auth/mock-linkedin-auth
    ```
    
    You can also customize the mock user with query parameters:
    ```
-   http://localhost:5000/api/auth/mock-linkedin-auth?name=John%20Doe&email=john@example.com&linkedinId=custom123&profileImage=https://example.com/image.jpg
+   https://api.brandout.ai/api/auth/mock-linkedin-auth?name=John%20Doe&email=john@example.com&linkedinId=custom123&profileImage=https://example.com/image.jpg
    ```
 
 ## Troubleshooting
@@ -73,7 +73,7 @@ Common LinkedIn OAuth issues:
 
 1. **"Invalid redirect URL"**:
    - Ensure the exact callback URL is listed in your LinkedIn app settings
-   - Verify that `http://localhost:5000/api/auth/linkedin/callback` is exactly as shown in your LinkedIn Developer Portal
+   - Verify that `https://api.brandout.ai/api/auth/linkedin/callback` is exactly as shown in your LinkedIn Developer Portal
 
 2. **"Missing required parameter: scope"**:
    - Ensure your application correctly requests the required scopes
@@ -111,7 +111,7 @@ If you're encountering scope-related errors, follow these steps:
 4. **Verify app setup:**
    - Make sure your App is using the correct Client ID: `77rawlclal56f1`
    - Make sure your App is using the correct Client Secret
-   - Make sure your callback URL is exactly: `http://localhost:5000/api/auth/linkedin/callback`
+   - Make sure your callback URL is exactly: `https://api.brandout.ai/api/auth/linkedin/callback`
 
 5. **Request app verification if needed:**
    - Some LinkedIn API scopes may require app verification
