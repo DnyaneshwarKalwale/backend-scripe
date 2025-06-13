@@ -35,18 +35,16 @@ const registerUser = async (req, res) => {
     }
 
     let stripeCustomerId;
-    // Create Stripe customer if Stripe is initialized
-    if (stripeInitialized) {
-      try {
-        const customer = await stripe.customers.create({
-          email,
-          name: `${firstName} ${lastName}`.trim()
-        });
-        stripeCustomerId = customer.id;
-      } catch (error) {
-        console.error('Error creating Stripe customer:', error);
-        // Continue without Stripe customer
-      }
+    // Create Stripe customer if Stripe is available
+    try {
+      const customer = await stripe.customers.create({
+        email,
+        name: `${firstName} ${lastName}`.trim()
+      });
+      stripeCustomerId = customer.id;
+    } catch (error) {
+      console.error('Error creating Stripe customer:', error);
+      // Continue without Stripe customer
     }
 
     // Create user

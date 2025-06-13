@@ -102,7 +102,7 @@ async function testApiEndpoint() {
   console.log('\n=== Testing API Endpoint ===');
   
   // The server URL - adjust as needed
-  const baseUrl = process.env.BASE_URL || 'https://api.brandout.ai';
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
   console.log(`Testing API at: ${baseUrl}`);
   
   // Test videos
