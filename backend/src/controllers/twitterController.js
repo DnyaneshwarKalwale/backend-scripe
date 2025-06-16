@@ -3,6 +3,7 @@ const User = require('../models/userModel');
 const axios = require('axios');
 const { getTranslation } = require('../utils/translations');
 const Tweet = require('../models/tweetModel');
+const { TwitterApi } = require('twitter-api-v2');
 
 // Twitter API v2 base URL
 const TWITTER_API_BASE_URL = 'https://api.twitter.com/2';
@@ -1083,6 +1084,91 @@ const processMedia = (tweet) => {
   return media;
 };
 
+const getTweets = asyncHandler(async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    if (!username) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Twitter username or profile URL is required' 
+      });
+    }
+
+    // Process the username/URL to get the correct username
+    let twitterUsername = username;
+    
+    // If it's a URL, extract the username
+    if (twitterUsername.includes('twitter.com/') || twitterUsername.includes('x.com/')) {
+      twitterUsername = twitterUsername.split('/').pop();
+    }
+    
+    // Remove @ symbol if present
+    twitterUsername = twitterUsername.replace('@', '');
+    
+    // Remove any trailing slashes
+    twitterUsername = twitterUsername.replace(/\/$/, '');
+    
+    console.log(`Fetching tweets for Twitter user: ${twitterUsername}`);
+
+    // Initialize the Twitter API client
+    const client = new TwitterApi({
+      appKey: process.env.TWITTER_API_KEY,
+      appSecret: process.env.TWITTER_API_SECRET,
+      accessToken: process.env.TWITTER_ACCESS_TOKEN,
+      accessSecret: process.env.TWITTER_ACCESS_SECRET,
+    });
+
+    // Get user details
+    const user = await client.v2.userByUsername(twitterUsername, {
+      'user.fields': ['profile_image_url', 'description', 'public_metrics']
+    });
+
+    if (!user.data) {
+      return res.status(404).json({
+        success: false,
+        error: 'Twitter user not found'
+      });
+    }
+
+    // Get user's tweets
+    const tweets = await client.v2.userTimeline(user.data.id, {
+      max_results: 30,
+      'tweet.fields': ['created_at', 'public_metrics', 'entities', 'attachments'],
+      'media.fields': ['url', 'preview_image_url', 'type'],
+      expansions: ['attachments.media_keys']
+    });
+
+    // Process tweets
+    const processedTweets = tweets.data.data.map(tweet => {
+      // ... existing tweet processing code ...
+    });
+
+    res.status(200).json({
+      success: true,
+      profileData: {
+        name: user.data.name,
+        username: user.data.username,
+        description: user.data.description,
+        profileImageUrl: user.data.profile_image_url,
+        metrics: user.data.public_metrics
+      },
+      posts: processedTweets,
+      totalPosts: processedTweets.length,
+      message: processedTweets.length > 0 ? 
+        `Found ${processedTweets.length} recent tweets` : 
+        'No tweets found for this user.'
+    });
+  } catch (error) {
+    console.error('Error fetching tweets:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch tweets',
+      message: error.message
+    });
+  }
+});
+
 module.exports = {
   getTwitterProfile,
   getUserTweets,
@@ -1092,5 +1178,6 @@ module.exports = {
   getSavedTweetsByUser,
   getSavedUsers,
   deleteTweet,
-  deleteTweetsByUser
+  deleteTweetsByUser,
+  getTweets
 }; 

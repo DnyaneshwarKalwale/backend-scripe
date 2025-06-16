@@ -9,6 +9,9 @@
     "check-scheduled": "node src/utils/checkScheduled.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "apify-client": "^2.12.4",
     "axios": "^1.4.0",
@@ -43,7 +46,13 @@
     "twitter-api-v2": "^1.15.0",
     "xml2js": "^0.6.2",
     "youtubei.js": "^13.3.0",
-    "ytdl-core": "^4.11.4"
+    "ytdl-core": "^4.11.4",
+    "apicache": "^1.6.3",
+    "compression": "^1.7.4",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "puppeteer": "^22.0.0",
+    "youtube-transcript": "^1.0.6"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

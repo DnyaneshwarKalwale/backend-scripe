@@ -334,9 +334,9 @@ const changePassword = asyncHandler(async (req, res) => {
 // @access  Private
 const deleteAccount = asyncHandler(async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user._id);
 
-    if (!user) {
+  if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
@@ -388,7 +388,7 @@ const deleteAccount = asyncHandler(async (req, res) => {
     }
 
     return res.status(200).json({
-      success: true,
+    success: true,
       message: 'Your account has been scheduled for deletion. You have 10 days to recover your account by logging in. After this period, your account will be permanently deleted.'
     });
   } catch (error) {
@@ -419,7 +419,7 @@ const cancelAccountDeletion = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Account is not scheduled for deletion'
-      });
+  });
     }
 
     user.deletionScheduledAt = undefined;

@@ -92,59 +92,56 @@ const getChannelVideos = async (req, res) => {
           timeout: 10000
         });
         
-        // Extract channel ID
+        // Extract channel ID using multiple methods
+        let channelIdFound = false;
+        
+        // Method 1: Look for channelId in meta tags
+        const metaMatch = response.data.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
+        if (metaMatch && metaMatch[1]) {
+          channelId = metaMatch[1];
+          channelIdFound = true;
+          console.log(`Found channel ID using meta tag: ${channelId}`);
+        }
+        
+        // Method 2: Look for channelId in JSON data
+        if (!channelIdFound) {
         const channelIdMatch = response.data.match(/"channelId":"([^"]+)"/);
-        if (!channelIdMatch || !channelIdMatch[1]) {
-          // Alternative methods - try different regex patterns
-          const altMatch = response.data.match(/channel\/([^"]+)"/);
-          if (altMatch && altMatch[1]) {
-            // Verify the extracted ID is not 'client' and has a proper channel ID format
-            const extractedId = altMatch[1];
-            if (extractedId !== 'client' && extractedId.length > 10) {
-              channelId = extractedId;
-              console.log(`Found channel ID using alt method: ${channelId}`);
-            } else {
-              console.log(`Invalid channel ID found: ${extractedId}, trying other methods`);
-              // Try third alternative - look for externalId
+          if (channelIdMatch && channelIdMatch[1]) {
+            channelId = channelIdMatch[1];
+            channelIdFound = true;
+            console.log(`Found channel ID in JSON data: ${channelId}`);
+          }
+        }
+        
+        // Method 3: Look for externalId
+        if (!channelIdFound) {
               const externalIdMatch = response.data.match(/"externalId":"([^"]+)"/);
               if (externalIdMatch && externalIdMatch[1]) {
                 channelId = externalIdMatch[1];
+            channelIdFound = true;
                 console.log(`Found channel ID using externalId: ${channelId}`);
-              } else {
-                // Meta tag method as final fallback
-                const metaMatch = response.data.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
-                if (metaMatch && metaMatch[1]) {
-                  channelId = metaMatch[1];
-                  console.log(`Found channel ID using meta tag: ${channelId}`);
-                } else {
+          }
+        }
+        
+        // Method 4: Look for channel ID in URL patterns
+        if (!channelIdFound) {
+          const urlMatch = response.data.match(/channel\/([^"]+)"/);
+          if (urlMatch && urlMatch[1] && urlMatch[1] !== 'client' && urlMatch[1].length > 10) {
+            channelId = urlMatch[1];
+            channelIdFound = true;
+            console.log(`Found channel ID in URL pattern: ${channelId}`);
+          }
+        }
+        
+        if (!channelIdFound) {
                   console.error('Could not extract valid channel ID from page');
                   return res.status(404).json({ 
                     success: false, 
                     message: 'Channel not found or could not extract valid channel ID' 
                   });
                 }
-              }
-            }
-          } else {
-            // Second alternative - meta tags
-            const metaMatch = response.data.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
-            if (metaMatch && metaMatch[1]) {
-              channelId = metaMatch[1];
-              console.log(`Found channel ID using meta tag: ${channelId}`);
-            } else {
-              console.error('Could not extract channel ID from page');
-              return res.status(404).json({ 
-                success: false, 
-                message: 'Channel not found or could not extract channel ID' 
-              });
-            }
-          }
-        } else {
-          channelId = channelIdMatch[1];
-          console.log(`Found channel ID: ${channelId}`);
-        }
         
-        // Also try to extract channel name from the page
+        // Extract channel name from the page
         let channelNameFromPage = "";
         const channelNameMatch = response.data.match(/"channelName":"([^"]+)"/);
         if (channelNameMatch && channelNameMatch[1]) {
@@ -158,19 +155,11 @@ const getChannelVideos = async (req, res) => {
         }
       } catch (fetchError) {
         console.error('Error fetching channel data:', fetchError);
-        
-        // Special case for popular channels often targeted
-        if (channelHandle === '@mortal' || channelHandle === 'mortal') {
-          // Hardcoded channelId for Mortal as a fallback
-          channelId = 'UCGzQZ_CQgPASpz4Vs5SG33g';
-          console.log(`Using hardcoded channel ID for ${channelHandle}: ${channelId}`);
-        } else {
           return res.status(500).json({ 
             success: false, 
             message: 'Failed to fetch channel data',
             error: fetchError.message
           });
-        }
       }
     }
       

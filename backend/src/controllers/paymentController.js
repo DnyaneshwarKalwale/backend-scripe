@@ -87,21 +87,21 @@ const setDefaultPaymentMethod = async (req, res) => {
       { user: req.user.id },
       { isDefault: false }
     );
-
+    
     // Set the selected payment method as default
     const paymentMethod = await PaymentMethod.findOneAndUpdate(
       { _id: id, user: req.user.id },
       { isDefault: true },
       { new: true }
     );
-
+    
     if (!paymentMethod) {
       return res.status(404).json({
         success: false,
         message: 'Payment method not found'
       });
     }
-
+    
     res.json({
       success: true,
       data: paymentMethod
@@ -122,7 +122,7 @@ const getPaymentHistory = async (req, res) => {
   try {
     const transactions = await PaymentTransaction.find({ user: req.user.id })
       .sort({ createdAt: -1 });
-
+    
     res.json({
       success: true,
       data: {
@@ -162,7 +162,7 @@ const downloadInvoice = async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=invoice-${id}.pdf`);
 
     doc.pipe(res);
-
+    
     // Add content to PDF
     doc.fontSize(25).text('Invoice', 100, 80);
     doc.fontSize(12).text(`Invoice ID: ${transaction._id}`, 100, 120);

@@ -149,24 +149,24 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
       });
     } catch (apiError) {
       // If API call fails, return basic profile
-      const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
-      
-      const linkedinProfile = {
-        id: user.linkedinId,
-        username: username,
-        name: `${user.firstName} ${user.lastName || ''}`.trim(),
-        profileImage: user.profilePicture || 'https://via.placeholder.com/150',
+    const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
+    
+    const linkedinProfile = {
+      id: user.linkedinId,
+      username: username,
+      name: `${user.firstName} ${user.lastName || ''}`.trim(),
+      profileImage: user.profilePicture || 'https://via.placeholder.com/150',
         bio: `LinkedIn professional connected with Scripe.`,
-        location: "Global",
-        url: `https://linkedin.com/in/${username}`,
+      location: "Global",
+      url: `https://linkedin.com/in/${username}`,
         joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
         connections: 0,
         followers: 0,
-        verified: false
-      };
-      
+      verified: false
+    };
+    
       return res.status(200).json({
-        success: true,
+      success: true,
         data: linkedinProfile,
         usingRealData: false,
         message: 'Using basic profile data due to API error',
@@ -193,10 +193,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
  */
 const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath, isCloudinaryUrl = false) => {
   try {
-    console.log('Starting LinkedIn image upload process for:', imagePath);
-    
     // Step 1: Register upload with LinkedIn
-    console.log('Registering image upload with LinkedIn...');
     const registerResponse = await axios.post(
       `${LINKEDIN_API_BASE_URL}/assets?action=registerUpload`,
       {
@@ -224,12 +221,7 @@ const uploadImageToLinkedIn = async (accessToken, userUrn, imagePath, isCloudina
     const uploadUrl = registerResponse.data.value.uploadMechanism["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"].uploadUrl;
     const assetUrn = registerResponse.data.value.asset;
 
-    console.log('Upload URL:', uploadUrl);
-    console.log('Asset URN:', assetUrn);
-
     // Step 3: Upload the image binary to LinkedIn
-    console.log('Uploading image to LinkedIn...', imagePath);
-    
     let imageBuffer;
     
     // Handle Cloudinary URL
@@ -800,7 +792,7 @@ const scrapeLinkedInProfile = asyncHandler(async (req, res) => {
     if (!username) {
       return res.status(400).json({ 
         success: false,
-        error: 'LinkedIn username is required' 
+        error: 'LinkedIn username or profile URL is required' 
       });
     }
 
@@ -809,8 +801,23 @@ const scrapeLinkedInProfile = asyncHandler(async (req, res) => {
       token: process.env.APIFY_API_TOKEN || 'apify_api_VXCyhcCwpMUgVD2oQRqqLPewsQ14IH3dhZCb',
     });
 
-    // Format the LinkedIn profile URL
-    const profileUrl = `https://www.linkedin.com/in/${username}/`;
+    // Process the username/URL to get the correct profile URL
+    let profileUrl = username;
+    
+    // If it's not already a full URL, format it
+    if (!profileUrl.startsWith('http')) {
+      // Check if it's a company profile
+      if (username.includes('company/')) {
+        profileUrl = `https://www.linkedin.com/company/${username.replace('company/', '')}/`;
+      } else {
+        profileUrl = `https://www.linkedin.com/in/${username}/`;
+      }
+    }
+    
+    // Ensure the URL is properly formatted
+    if (!profileUrl.endsWith('/')) {
+      profileUrl += '/';
+    }
     
     console.log(`Scraping LinkedIn profile: ${profileUrl}`);
     
@@ -938,7 +945,7 @@ const scrapeLinkedInProfile = asyncHandler(async (req, res) => {
           profileUrl: author.linkedinUrl,
           avatar: author.avatar?.url,
           publicIdentifier: author.publicIdentifier,
-          username: username
+          username: username.replace(/^https?:\/\/[^\/]+\/(?:in|company)\//, '').replace(/\/$/, '')
         };
       }
     }

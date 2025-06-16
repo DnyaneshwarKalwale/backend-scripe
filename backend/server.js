@@ -13,6 +13,10 @@ const paymentRoutes = require('./src/routes/paymentRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const adminNotificationRoutes = require('./src/routes/adminNotificationRoutes');
 const twitterRoutes = require('./src/routes/twitterRoutes');
+const rateLimit = require('express-rate-limit');
+const apicache = require('apicache');
+const compression = require('compression');
+const helmet = require('helmet');
 
 // Load env variables
 dotenv.config();
@@ -20,9 +24,47 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
-// Middleware
-app.use(cors());
+// Security middleware
+app.use(helmet());
+
+// Enable compression
+app.use(compression());
+
+// Initialize cache
+const cache = apicache.middleware;
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+
+// Apply rate limiting to all routes
+app.use(limiter);
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://app.brandout.ai', 'https://brandout.ai']
+    : ['https://app.brandout.ai', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Cache successful GET requests for 5 minutes
+app.use(cache('5 minutes', (req, res) => {
+  // Only cache GET requests
+  return req.method === 'GET';
+}));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 // Routes
 app.use('/api/users', userRoutes);
