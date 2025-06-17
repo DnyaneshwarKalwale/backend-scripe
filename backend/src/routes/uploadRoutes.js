@@ -46,26 +46,6 @@ const chunkStorage = multer.diskStorage({
 const upload = multer({ storage: storage });
 const chunkUpload = multer({ storage: chunkStorage });
 
-// Add CORS headers for upload routes
-router.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Requested-With');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
-
 // Regular upload endpoint
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
@@ -73,29 +53,14 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    console.log('Received file:', {
-      filename: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    });
-
     // Upload to Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
       folder: 'uploads',
       resource_type: 'auto'
     });
 
-    console.log('Cloudinary upload result:', result);
-
     // Delete temporary file
     fs.unlinkSync(req.file.path);
-
-    // Set CORS headers in the response
-    const origin = req.headers.origin;
-    if (origin) {
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-    res.header('Access-Control-Allow-Credentials', 'true');
 
     res.json({
       url: result.url,
@@ -115,46 +80,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         console.error('Error cleaning up temp file:', cleanupError);
       }
     }
-
-    // Set CORS headers even in error response
-    const origin = req.headers.origin;
-    if (origin) {
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-    res.header('Access-Control-Allow-Credentials', 'true');
-
     res.status(500).json({ error: 'Failed to upload file' });
   }
-});
-
-// Error handling middleware for upload routes
-router.use((err, req, res, next) => {
-  console.error('Upload route error:', err);
-  
-  // Set CORS headers even in error responses
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle multer errors
-  if (err.name === 'MulterError') {
-    return res.status(400).json({
-      error: 'File upload error',
-      details: err.message
-    });
-  }
-  
-  // Handle other errors
-  res.status(500).json({
-    error: 'Internal server error',
-    details: err.message
-  });
 });
 
 // Chunked upload endpoint
