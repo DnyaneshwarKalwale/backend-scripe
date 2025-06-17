@@ -4,6 +4,7 @@ const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 const { ApifyClient } = require('apify-client');
+const LinkedInPost = require('../models/linkedinPostModel');
 
 // LinkedIn API base URLs
 const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
@@ -1043,6 +1044,75 @@ const saveScrapedLinkedInPosts = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Save LinkedIn posts to database
+ * @route POST /api/linkedin/save-posts
+ * @access Public
+ */
+const saveLinkedInPosts = asyncHandler(async (req, res) => {
+  try {
+    const { posts, profileData } = req.body;
+    
+    if (!posts || !Array.isArray(posts) || posts.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Posts array is required and cannot be empty' 
+      });
+    }
+
+    if (!profileData) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Profile data is required' 
+      });
+    }
+
+    // Create a new LinkedInPost document for each post
+    const savedPosts = await Promise.all(posts.map(async (post) => {
+      const newPost = new LinkedInPost({
+        postId: post.id,
+        content: post.content,
+        date: post.date,
+        dateRelative: post.dateRelative,
+        likes: post.likes || 0,
+        comments: post.comments || 0,
+        shares: post.shares || 0,
+        reactions: post.reactions || 0,
+        url: post.url,
+        author: post.author,
+        authorHeadline: post.authorHeadline,
+        authorAvatar: post.authorAvatar,
+        authorProfile: post.authorProfile,
+        media: post.media || [],
+        videos: post.videos || [],
+        documents: post.documents || [],
+        type: post.type || 'post',
+        isRepost: post.isRepost || false,
+        originalPost: post.originalPost || null,
+        profileData: profileData,
+        savedAt: new Date()
+      });
+
+      return await newPost.save();
+    }));
+
+    res.status(200).json({ 
+      success: true, 
+      message: `Successfully saved ${savedPosts.length} LinkedIn posts`,
+      count: savedPosts.length,
+      savedAt: new Date(),
+      posts: savedPosts
+    });
+  } catch (error) {
+    console.error('Error saving LinkedIn posts:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to save LinkedIn posts',
+      message: error.message
+    });
+  }
+});
+
 // Add a new function to handle LinkedIn connection for Google users
 const handleGoogleUserLinkedInConnection = asyncHandler(async (req, res) => {
   try {
@@ -1205,6 +1275,7 @@ module.exports = {
   deleteLinkedInPost,
   scrapeLinkedInProfile,
   saveScrapedLinkedInPosts,
+  saveLinkedInPosts,
   handleGoogleUserLinkedInConnection,
   handleLinkedInCallback
 }; 

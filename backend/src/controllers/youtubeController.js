@@ -35,9 +35,10 @@ const getChannelVideos = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Channel name or URL is required' });
     }
 
-    // Extract channel handle/name from input
+    // Extract channel name/ID from input
     let channelHandle = channelName;
     let channelId = null;
+    let exactChannelName = null;
     
     // Check if input is already a channel ID
     if (channelName.startsWith('UC') && channelName.length === 24) {
@@ -91,21 +92,33 @@ const getChannelVideos = async (req, res) => {
           },
           timeout: 10000
         });
+
+        const htmlContent = response.data;
         
         // Extract channel ID using multiple methods
         let channelIdFound = false;
         
-        // Method 1: Look for channelId in meta tags
-        const metaMatch = response.data.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
+        // Method 1: Look for browseId (most reliable)
+        const browseIdMatch = htmlContent.match(/"browseId":"([^"]+)"/);
+        if (browseIdMatch && browseIdMatch[1] && browseIdMatch[1].startsWith('UC')) {
+          channelId = browseIdMatch[1];
+          channelIdFound = true;
+          console.log(`Found channel ID using browseId: ${channelId}`);
+        }
+
+        // Method 2: Look for channelId in meta tags
+        if (!channelIdFound) {
+          const metaMatch = htmlContent.match(/<meta\s+itemprop="channelId"\s+content="([^"]+)">/);
         if (metaMatch && metaMatch[1]) {
           channelId = metaMatch[1];
           channelIdFound = true;
           console.log(`Found channel ID using meta tag: ${channelId}`);
+          }
         }
         
-        // Method 2: Look for channelId in JSON data
+        // Method 3: Look for channelId in JSON data
         if (!channelIdFound) {
-        const channelIdMatch = response.data.match(/"channelId":"([^"]+)"/);
+          const channelIdMatch = htmlContent.match(/"channelId":"([^"]+)"/);
           if (channelIdMatch && channelIdMatch[1]) {
             channelId = channelIdMatch[1];
             channelIdFound = true;
@@ -113,23 +126,13 @@ const getChannelVideos = async (req, res) => {
           }
         }
         
-        // Method 3: Look for externalId
+        // Method 4: Look for externalId
         if (!channelIdFound) {
-              const externalIdMatch = response.data.match(/"externalId":"([^"]+)"/);
+          const externalIdMatch = htmlContent.match(/"externalId":"([^"]+)"/);
               if (externalIdMatch && externalIdMatch[1]) {
                 channelId = externalIdMatch[1];
             channelIdFound = true;
                 console.log(`Found channel ID using externalId: ${channelId}`);
-          }
-        }
-        
-        // Method 4: Look for channel ID in URL patterns
-        if (!channelIdFound) {
-          const urlMatch = response.data.match(/channel\/([^"]+)"/);
-          if (urlMatch && urlMatch[1] && urlMatch[1] !== 'client' && urlMatch[1].length > 10) {
-            channelId = urlMatch[1];
-            channelIdFound = true;
-            console.log(`Found channel ID in URL pattern: ${channelId}`);
           }
         }
         
@@ -141,18 +144,13 @@ const getChannelVideos = async (req, res) => {
                   });
                 }
         
-        // Extract channel name from the page
-        let channelNameFromPage = "";
-        const channelNameMatch = response.data.match(/"channelName":"([^"]+)"/);
+        // Try to get the exact channel name
+        const channelNameMatch = htmlContent.match(/"channelName":"([^"]+)"/);
         if (channelNameMatch && channelNameMatch[1]) {
-          channelNameFromPage = channelNameMatch[1];
-        } else {
-          // Try alternate patterns for channel name
-          const altChannelNameMatch = response.data.match(/<meta name="title" content="([^"]+)"/);
-          if (altChannelNameMatch && altChannelNameMatch[1]) {
-            channelNameFromPage = altChannelNameMatch[1];
+          exactChannelName = channelNameMatch[1];
+          console.log(`Found exact channel name: ${exactChannelName}`);
           }
-        }
+
       } catch (fetchError) {
         console.error('Error fetching channel data:', fetchError);
           return res.status(500).json({ 
@@ -175,6 +173,7 @@ const getChannelVideos = async (req, res) => {
         });
       }
       
+      // Now fetch the RSS feed
       const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
       console.log(`Fetching RSS feed from: ${rssUrl}`);
       
@@ -202,19 +201,26 @@ const getChannelVideos = async (req, res) => {
         });
       }
 
-      // Extract channel name if available
-      let channelName = "Unknown Channel";
+      // Extract channel name if not already found
+      if (!exactChannelName) {
       if (feed.feed.title) {
-        channelName = feed.feed.title;
+          exactChannelName = feed.feed.title;
       } else if (feed.feed.author && feed.feed.author.name) {
-        channelName = feed.feed.author.name;
+          exactChannelName = feed.feed.author.name;
+        }
       }
       
       // Ensure entries is an array even if there's only one video
       const entries = Array.isArray(feed.feed.entry) ? feed.feed.entry : [feed.feed.entry];
       
-      // Extract video information
-      const videos = entries.map(entry => {
+      // Extract video information with basic channel verification
+      const videos = entries
+        .filter(entry => {
+          // Basic check to ensure video is from our channel
+          const videoChannelId = entry['yt:channelId'];
+          return videoChannelId === channelId;
+        })
+        .map(entry => {
         // Extract video ID from the yt:videoId field
         const videoId = entry['yt:videoId'];
         
@@ -254,9 +260,12 @@ const getChannelVideos = async (req, res) => {
           duration: duration,
           view_count: viewCount,
           upload_date: entry.published || new Date().toISOString(),
-          channelName: channelName
+            channelName: exactChannelName || entry.author?.name || 'Unknown Channel',
+            channelId: channelId
         };
       });
+
+      console.log(`Found ${videos.length} videos from channel ${exactChannelName || channelId}`);
 
       // For videos without duration (which is most of them from RSS), try to fetch duration data
       // This can be done in batches to avoid too many requests

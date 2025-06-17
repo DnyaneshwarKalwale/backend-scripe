@@ -27,6 +27,7 @@ const cronRoutes = require('./routes/cronRoutes');
 const CarouselContent = require('./models/carouselContentModel');
 const cloudinary = require('cloudinary').v2;
 const userLimitRoutes = require('./routes/userLimitRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const adminNotificationRoutes = require('./routes/adminNotificationRoutes');
 const { exec } = require('child_process');
 const util = require('util');
@@ -770,6 +771,12 @@ app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/cron', cronRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/admin', adminRoutes);
+// Admin routes
+app.use('/api/admin', require('./routes/adminRoutes'));
+// Admin notification routes
+
+app.use('/api/admin/notifications', require('./routes/adminNotificationRoutes'));
 
 // Add carousel route handler for YouTube videos
 app.post('/api/youtube-carousels', async (req, res) => {
