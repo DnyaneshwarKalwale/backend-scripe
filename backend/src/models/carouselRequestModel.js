@@ -97,7 +97,7 @@ const carouselRequestSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  isModified: {
+  wasModified: {
     type: Boolean,
     default: false
   },

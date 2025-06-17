@@ -1,7 +1,9 @@
 const asyncHandler = require('express-async-handler');
 const CarouselRequest = require('../models/carouselRequestModel');
+const cloudinary = require('../config/cloudinary');
 const { v4: uuidv4 } = require('uuid');
 const mongoose = require('mongoose');
+const { createCarouselStatusNotification } = require('./notificationController');
 
 /**
  * @desc    Submit a new carousel request
@@ -242,8 +244,12 @@ const completeCarouselRequest = asyncHandler(async (req, res) => {
   try {
     const requestId = req.params.id;
     
+    console.log('Processing carousel request completion for ID:', requestId);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     // Check if user is admin
     if (req.user.role !== 'admin') {
+      console.log('Unauthorized access attempt by user:', req.user._id);
       return res.status(403).json({
         success: false,
         message: 'Unauthorized access'
@@ -259,38 +265,62 @@ const completeCarouselRequest = asyncHandler(async (req, res) => {
     });
     
     if (!request) {
+      console.log('Carousel request not found with ID:', requestId);
       return res.status(404).json({
         success: false,
         message: 'Carousel request not found'
       });
     }
     
-    // Get files from request
-    const files = req.files || [];
-    const adminNotes = req.body.adminNotes;
+    console.log('Found carousel request:', request._id);
     
-    // Process file uploads
-    let completedFiles = [];
+    // Get files and notes from request body
+    const { files, adminNotes } = req.body;
     
-    if (files.length > 0) {
-      // Process and save file info for local file storage
-      completedFiles = files.map(file => ({
-        url: `uploads/${file.filename}`,
-        filename: file.filename,
-        originalName: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size
-      }));
+    console.log('Received files:', JSON.stringify(files, null, 2));
+    
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      console.log('No files provided in request');
+      return res.status(400).json({
+        success: false,
+        message: 'No files were uploaded'
+      });
+    }
+
+    // Validate that each file has required fields
+    const invalidFiles = files.filter(file => !file.url || !file.filename || !file.originalName || !file.mimetype);
+    if (invalidFiles.length > 0) {
+      console.log('Invalid files found:', invalidFiles);
+      return res.status(400).json({
+        success: false,
+        message: 'Some files are missing required fields'
+      });
     }
     
-    // Update request
+    // Update request with completed files
     request.status = 'completed';
     request.adminNotes = adminNotes || request.adminNotes;
-    request.completedFiles = completedFiles;
+    request.completedFiles = files;
     request.updatedAt = new Date();
+    
+    console.log('Saving request with completed files:', JSON.stringify(request.completedFiles, null, 2));
     
     // Save changes
     await request.save();
+
+    // Create notification for user
+    try {
+      await createCarouselStatusNotification(
+        request.userId,
+        request._id,
+        'completed',
+        request.title
+      );
+      console.log('Created completion notification for user:', request.userId);
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      // Don't fail the request if notification fails
+    }
     
     // Return success
     res.status(200).json({
