@@ -81,13 +81,23 @@ router.get(
 // Direct LinkedIn OAuth route (without Passport)
 router.get('/linkedin-direct', (req, res) => {
   try {
+    // Store connection type and Google user ID in session for callback processing
+    const connectType = req.query.type;
+    const googleUserId = req.query.googleUserId;
+    
+    if (connectType === 'google_connect' && googleUserId) {
+      req.session.connectType = 'google_connect';
+      req.session.googleUserId = googleUserId;
+      console.log('Storing Google user LinkedIn connection request:', { googleUserId, connectType });
+    }
+    
     // Generate LinkedIn authorization URL with OpenID Connect scopes
     console.log('Generating LinkedIn authorization URL with OpenID Connect');
     console.log('Using client ID:', process.env.LINKEDIN_CLIENT_ID.substring(0, 3) + '...');
-    console.log('Using callback URL:', process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'https://api.brandout.ai'}/api/auth/linkedin-direct/callback`);
+    console.log('Using callback URL:', process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`);
     
     // Use a specific callback URL for direct auth
-    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'https://api.brandout.ai'}/api/auth/linkedin-direct/callback`;
+    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
     
     // Using OpenID Connect scopes: openid, profile, email, and w_member_social for posting
     const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=openid%20profile%20email%20w_member_social&state=${Math.random().toString(36).substring(2, 15)}`;
@@ -118,7 +128,7 @@ router.get('/linkedin-direct/callback', async (req, res) => {
   
   try {
     // Use a specific callback URL for direct auth
-    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'https://api.brandout.ai'}/api/auth/linkedin-direct/callback`;
+    const callbackUrl = process.env.LINKEDIN_DIRECT_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/linkedin-direct/callback`;
     
     console.log('Received authorization code, exchanging for access token');
     // Exchange authorization code for access token
@@ -155,7 +165,70 @@ router.get('/linkedin-direct/callback', async (req, res) => {
     // Extract data from LinkedIn response
     const { sub: linkedinId, email, given_name: firstName, family_name: lastName, picture } = userInfoResponse.data;
     
-    // Find or create user
+    // Check if this is a Google user connecting LinkedIn
+    const connectType = req.session.connectType;
+    const googleUserId = req.session.googleUserId;
+    
+    if (connectType === 'google_connect' && googleUserId) {
+      console.log('Processing LinkedIn connection for Google user:', googleUserId);
+      
+      // Find the Google user
+      const user = await User.findById(googleUserId);
+      
+      if (!user) {
+        console.error('Google user not found:', googleUserId);
+        return res.redirect(`${process.env.FRONTEND_URL}/dashboard?error=user_not_found`);
+      }
+      
+             // Update Google user with LinkedIn information
+       user.linkedinId = linkedinId;
+       user.linkedinAccessToken = access_token;
+       user.linkedinRefreshToken = refresh_token;
+       user.linkedinTokenExpiry = tokenExpiryTime;
+       user.linkedinConnected = true;
+       
+       // Keep authMethod as 'google' but log that LinkedIn is now connected
+       console.log(`Google user now has LinkedIn connected. AuthMethod remains "${user.authMethod}" but linkedinConnected is now true`);
+       
+       // Mark onboarding as completed if not already
+       if (!user.onboardingCompleted) {
+         console.log('Marking onboarding as completed for Google user connecting LinkedIn');
+         user.onboardingCompleted = true;
+       }
+       
+       // Update profile information to use LinkedIn data (if user chooses to)
+       // Update name if LinkedIn has different name
+       if (firstName && firstName !== user.firstName) {
+         console.log(`Updating user name from "${user.firstName}" to "${firstName}"`);
+         user.firstName = firstName;
+       }
+       if (lastName && lastName !== user.lastName) {
+         console.log(`Updating user last name from "${user.lastName}" to "${lastName}"`);
+         user.lastName = lastName;
+       }
+       
+       // Update profile picture to LinkedIn's if it exists and is different
+       if (picture && picture !== user.profilePicture) {
+         console.log('Updating profile picture to LinkedIn version');
+         user.profilePicture = picture;
+       }
+      
+      await user.save();
+      
+      // Clear session data
+      delete req.session.connectType;
+      delete req.session.googleUserId;
+      
+      console.log('Google user successfully connected to LinkedIn');
+      
+      // Generate new token with updated user data
+      const token = user.getSignedJwtToken();
+      
+      // Redirect to frontend with the user's token and indicate LinkedIn was connected
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/social-callback?token=${token}&onboarding=false&linkedin_connected=true`);
+    }
+    
+    // Handle regular LinkedIn authentication (not Google user connection)
     let user = await User.findOne({ linkedinId });
     
     // If not found by LinkedIn ID, try to find by email
@@ -173,6 +246,7 @@ router.get('/linkedin-direct/callback', async (req, res) => {
         user.linkedinAccessToken = access_token;
         user.linkedinRefreshToken = refresh_token;
         user.linkedinTokenExpiry = tokenExpiryTime;
+        user.linkedinConnected = true;
         
         if (!user.profilePicture && picture) {
           user.profilePicture = picture;
@@ -189,6 +263,7 @@ router.get('/linkedin-direct/callback', async (req, res) => {
       user.linkedinAccessToken = access_token;
       user.linkedinRefreshToken = refresh_token;
       user.linkedinTokenExpiry = tokenExpiryTime;
+      user.linkedinConnected = true;
       await user.save();
       
       console.log(`LinkedIn tokens updated for user ${user._id}, new expiry: ${tokenExpiryTime}`);
@@ -213,7 +288,8 @@ router.get('/linkedin-direct/callback', async (req, res) => {
         onboardingCompleted: false,
         linkedinAccessToken: access_token,
         linkedinRefreshToken: refresh_token,
-        linkedinTokenExpiry: tokenExpiryTime
+        linkedinTokenExpiry: tokenExpiryTime,
+        linkedinConnected: true
       });
       
       console.log(`New user created with LinkedIn ID ${linkedinId} and ID ${user._id}`);

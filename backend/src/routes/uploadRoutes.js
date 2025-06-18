@@ -18,11 +18,11 @@ cloudinary.config({
 const uploadCorsOptions = {
   origin: function(origin, callback) {
     const allowedOrigins = [
-      'https://app.brandout.ai',
+      'http://localhost:8080',
       'http://localhost:3000',
       'http://localhost:5173',
       'https://brandout.vercel.app',
-      'https://api.brandout.ai'
+      'http://localhost:5000'
     ];
     
     // Allow requests with no origin (like mobile apps, curl requests)

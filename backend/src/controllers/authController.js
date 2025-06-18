@@ -341,6 +341,9 @@ const getMe = asyncHandler(async (req, res) => {
       onboardingCompleted: user.onboardingCompleted,
       role: user.role,
       authMethod: user.authMethod,
+      linkedinConnected: user.linkedinConnected,
+      linkedinId: user.linkedinId,
+      googleId: user.googleId,
     },
   });
 });
