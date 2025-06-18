@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const savedPostSchema = new mongoose.Schema({
   userId: {
     type: String,
-    required: true,
-    index: true
+    required: true
   },
   platform: {
     type: String,
@@ -21,9 +20,29 @@ const savedPostSchema = new mongoose.Schema({
   }
 });
 
-// Create compound index for faster queries
-savedPostSchema.index({ userId: 1, platform: 1 });
+// Drop any existing indexes
+savedPostSchema.pre('save', async function(next) {
+  try {
+    await this.collection.dropIndexes();
+  } catch (error) {
+    console.log('No indexes to drop');
+  }
+  next();
+});
+
+// Create new compound index for uniqueness
+savedPostSchema.index({ 
+  userId: 1, 
+  platform: 1,
+  'postData.id': 1
+}, { 
+  unique: true,
+  name: 'unique_post_per_user'  // Give it a specific name
+});
 
 const SavedPost = mongoose.model('SavedPost', savedPostSchema);
+
+// Ensure indexes are created
+SavedPost.createIndexes().catch(console.error);
 
 module.exports = SavedPost; 

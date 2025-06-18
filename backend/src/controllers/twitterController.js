@@ -805,12 +805,15 @@ const saveTweets = async (req, res) => {
     // Save each tweet
     for (const tweet of tweetsToProcess) {
       // Check if tweet already exists
-      const existingTweet = await Tweet.findOne({ id: tweet.id });
+      const existingTweet = await Tweet.findOne({ 
+        id: tweet.id,
+        savedBy: saveUsername 
+      });
       
       // Handle duplicate tweets based on options
       if (existingTweet) {
         if (skipDuplicates) {
-          // Skip this tweet if it's a duplicate
+          // Skip this tweet if it's a duplicate for this user
           skippedTweets.push(existingTweet);
           continue;
         } else if (preserveExisting) {
@@ -827,7 +830,7 @@ const saveTweets = async (req, res) => {
           if (tweet.media) updateFields.media = tweet.media;
           
           const updatedTweet = await Tweet.findOneAndUpdate(
-            { id: tweet.id },
+            { id: tweet.id, savedBy: saveUsername },
             updateFields,
             { new: true }
           );
@@ -845,7 +848,7 @@ const saveTweets = async (req, res) => {
       };
       
       const savedTweet = await Tweet.findOneAndUpdate(
-        { id: tweet.id },
+        { id: tweet.id, savedBy: saveUsername },
         tweetToSave,
         { new: true, upsert: true }
       );

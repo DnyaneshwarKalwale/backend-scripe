@@ -122,8 +122,9 @@ router.post('/scrape-profile', [
   linkedinController.scrapeLinkedInProfile(req, res);
 });
 
-// Save scraped LinkedIn posts (public endpoint - no auth required for now)
+// Save scraped LinkedIn posts
 router.post('/save-scraped-posts', [
+  protect,
   check('posts', 'Posts array is required').isArray().notEmpty(),
   check('profileData', 'Profile data is required').notEmpty()
 ], (req, res) => {
@@ -133,6 +134,11 @@ router.post('/save-scraped-posts', [
   }
   
   linkedinController.saveScrapedLinkedInPosts(req, res);
+});
+
+// Get saved LinkedIn posts
+router.get('/saved-posts', protect, (req, res) => {
+  linkedinController.getSavedLinkedInPosts(req, res);
 });
 
 // LinkedIn OAuth routes

@@ -4,6 +4,7 @@ const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 const { ApifyClient } = require('apify-client');
+const SavedPost = require('../models/savedPost');
 
 // LinkedIn API base URLs
 const LINKEDIN_API_BASE_URL = 'https://api.linkedin.com/v2';
@@ -972,11 +973,11 @@ const scrapeLinkedInProfile = asyncHandler(async (req, res) => {
 /**
  * Save scraped LinkedIn posts to database
  * @route POST /api/linkedin/save-scraped-posts
- * @access Public
+ * @access Private
  */
 const saveScrapedLinkedInPosts = asyncHandler(async (req, res) => {
   try {
-    const { posts, profileData, userId } = req.body;
+    const { posts, profileData } = req.body;
     
     if (!posts || !Array.isArray(posts) || posts.length === 0) {
       return res.status(400).json({ 
@@ -992,52 +993,128 @@ const saveScrapedLinkedInPosts = asyncHandler(async (req, res) => {
       });
     }
 
-    // For now, we'll save to a simple JSON file since we don't have a database model
-    // In a real application, you'd save this to a proper database
-    const fs = require('fs');
-    const path = require('path');
+    // Get the authenticated user's ID from the request
+    const authenticatedUserId = req.user._id.toString();
     
-    // Create data directory if it doesn't exist
-    const dataDir = path.join(process.cwd(), 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    // Process and save each post
+    const savedPosts = [];
+    const skippedPosts = [];
+    const timestamp = new Date();
+    
+    // Drop old indexes if they exist
+    try {
+      await SavedPost.collection.dropIndex('userId_1_source_1_postId_1');
+    } catch (error) {
+      // Index might not exist, that's fine
     }
     
-    // Create filename based on profile and timestamp
-    const timestamp = new Date().toISOString();
-    const filename = `linkedin_posts_${profileData.username}_${Date.now()}.json`;
-    const filepath = path.join(dataDir, filename);
+    // Ensure our new index is created
+    await SavedPost.collection.createIndex(
+      { userId: 1, platform: 1, 'postData.id': 1 },
+      { unique: true, name: 'unique_post_per_user' }
+    );
     
-    // Prepare data to save
-    const dataToSave = {
-      profileData,
-      posts: posts.map(post => ({
-        ...post,
-        savedAt: timestamp,
-        userId: userId || 'anonymous'
-      })),
-      savedAt: timestamp,
-      userId: userId || 'anonymous',
-      totalPosts: posts.length
-    };
+    // First, find all existing posts for this user to avoid duplicates
+    const existingPosts = await SavedPost.find({
+      userId: authenticatedUserId,
+      platform: 'linkedin',
+      'postData.id': { $in: posts.map(p => p.id) }
+    });
     
-    // Save to file
-    fs.writeFileSync(filepath, JSON.stringify(dataToSave, null, 2));
+    const existingPostIds = new Set(existingPosts.map(p => p.postData.id));
     
-    console.log(`Saved ${posts.length} LinkedIn posts to ${filepath}`);
+    // Process each post
+    for (const post of posts) {
+      try {
+        // Skip if no ID
+        if (!post.id || typeof post.id !== 'string') {
+          console.warn('Skipping post without valid ID');
+          continue;
+        }
+        
+        // Skip if already exists
+        if (existingPostIds.has(post.id)) {
+          skippedPosts.push(post.id);
+          continue;
+        }
+
+        // Create new post document
+        const savedPost = await SavedPost.create({
+          userId: authenticatedUserId,
+          platform: 'linkedin',
+          postData: {
+            id: post.id,
+            content: post.content || '',
+            date: post.date,
+            dateRelative: post.dateRelative,
+            likes: post.likes || 0,
+            comments: post.comments || 0,
+            shares: post.shares || 0,
+            reactions: post.reactions || 0,
+            url: post.url,
+            author: post.author,
+            authorHeadline: post.authorHeadline,
+            authorAvatar: post.authorAvatar,
+            authorProfile: post.authorProfile,
+            media: post.media || [],
+            videos: post.videos || [],
+            documents: post.documents || [],
+            type: post.type || 'post',
+            isRepost: post.isRepost || false,
+            originalPost: post.originalPost || null,
+            savedAt: timestamp
+          },
+          createdAt: timestamp
+        });
+
+        if (savedPost) {
+          savedPosts.push(savedPost);
+        }
+      } catch (error) {
+        console.error(`Error saving LinkedIn post ${post.id}:`, error);
+        // Don't add to skippedPosts here since we already handle duplicates above
+      }
+    }
     
     res.status(200).json({ 
       success: true, 
-      message: `Successfully saved ${posts.length} LinkedIn posts`,
-      count: posts.length,
-      savedAt: timestamp,
-      filename: filename
+      message: `Successfully saved ${savedPosts.length} LinkedIn posts`,
+      count: savedPosts.length,
+      skippedCount: skippedPosts.length,
+      savedAt: timestamp
     });
   } catch (error) {
     console.error('Error saving scraped LinkedIn posts:', error);
     res.status(500).json({ 
       success: false,
       error: 'Failed to save LinkedIn posts',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get saved LinkedIn posts
+ * @route GET /api/linkedin/saved-posts
+ * @access Private
+ */
+const getSavedLinkedInPosts = asyncHandler(async (req, res) => {
+  try {
+    const posts = await SavedPost.find({
+      userId: req.user._id,
+      platform: 'linkedin'
+    }).sort({ 'postData.savedAt': -1 });
+
+    res.status(200).json({
+      success: true,
+      data: posts.map(post => post.postData),
+      count: posts.length
+    });
+  } catch (error) {
+    console.error('Error fetching saved LinkedIn posts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch saved LinkedIn posts',
       message: error.message
     });
   }
@@ -1206,5 +1283,6 @@ module.exports = {
   scrapeLinkedInProfile,
   saveScrapedLinkedInPosts,
   handleGoogleUserLinkedInConnection,
-  handleLinkedInCallback
+  handleLinkedInCallback,
+  getSavedLinkedInPosts
 }; 
