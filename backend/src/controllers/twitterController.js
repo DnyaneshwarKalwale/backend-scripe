@@ -715,8 +715,17 @@ const saveTweets = async (req, res) => {
       });
     }
 
+    // Get authenticated user ID
+    const authenticatedUserId = req.user?.id || req.user?._id?.toString();
+    if (!authenticatedUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to save tweets'
+      });
+    }
+
     // Log the incoming request
-    console.log(`Saving ${tweets.length} tweets for user ${username || 'anonymous'}`);
+    console.log(`Saving ${tweets.length} tweets for authenticated user ${authenticatedUserId} (Twitter: ${username || 'anonymous'})`);
 
     const savedTweets = [];
     const skippedTweets = [];
@@ -804,10 +813,10 @@ const saveTweets = async (req, res) => {
     
     // Save each tweet
     for (const tweet of tweetsToProcess) {
-      // Check if tweet already exists
+      // Check if tweet already exists for this authenticated user
       const existingTweet = await Tweet.findOne({ 
         id: tweet.id,
-        savedBy: saveUsername 
+        userId: authenticatedUserId 
       });
       
       // Handle duplicate tweets based on options
@@ -830,7 +839,7 @@ const saveTweets = async (req, res) => {
           if (tweet.media) updateFields.media = tweet.media;
           
           const updatedTweet = await Tweet.findOneAndUpdate(
-            { id: tweet.id, savedBy: saveUsername },
+            { id: tweet.id, userId: authenticatedUserId },
             updateFields,
             { new: true }
           );
@@ -840,15 +849,16 @@ const saveTweets = async (req, res) => {
         // If not preserving or skipping, we'll overwrite below
       }
       
-      // Ensure the tweet has a savedBy field and current timestamp
+      // Ensure the tweet has proper user association and current timestamp
       const tweetToSave = {
         ...tweet,
-        savedBy: saveUsername,
+        savedBy: saveUsername,        // Keep for backwards compatibility
+        userId: authenticatedUserId,  // Primary user association
         savedAt: new Date()
       };
       
       const savedTweet = await Tweet.findOneAndUpdate(
-        { id: tweet.id, savedBy: saveUsername },
+        { id: tweet.id, userId: authenticatedUserId },
         tweetToSave,
         { new: true, upsert: true }
       );
@@ -959,18 +969,26 @@ const deleteTweet = async (req, res) => {
     }
     
     // Get user info from token/auth
-    const userId = req.user?.id || req.user?._id || 'anonymous';
+    const userId = req.user?.id || req.user?._id?.toString() || 'anonymous';
     
-    // Delete only tweets saved by this user
+    // Delete only tweets saved by this user ID (check multiple potential fields)
     const tweet = await Tweet.findOneAndDelete({ 
       id,
       $or: [
-        { savedBy: userId },
-        { userId: userId }
+        { savedBy: userId },         // if savedBy stores user ID
+        { userId: userId },          // if userId field exists
+        { 'userId': userId },        // alternative userId format
+        { 'user.id': userId },       // if nested in user object
+        { 'author.userId': userId }  // if nested in author object
       ]
     });
     
     if (!tweet) {
+      console.log(`Tweet ${id} not found for user ${userId}`);
+      // Let's try a broader search to see what tweets exist
+      const allTweetsWithId = await Tweet.find({ id }).select('id savedBy userId author user');
+      console.log('Found tweets with this ID:', allTweetsWithId);
+      
       return res.status(404).json({
         success: false,
         message: `Tweet with ID ${id} not found or not owned by current user`
