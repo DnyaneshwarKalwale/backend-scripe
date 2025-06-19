@@ -84,3 +84,4 @@ if (hasErrors) {
   console.log('2. Try the direct LinkedIn login from your frontend');
   console.log('3. Check server logs for any errors during the authentication process');
 } 
+//this is test script for linkedin config
