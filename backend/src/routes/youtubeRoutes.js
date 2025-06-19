@@ -674,9 +674,6 @@ router.use((req, res, next) => {
       console.log(`YouTube Routes: Origin ${origin} accessing API`);
       res.header('Access-Control-Allow-Origin', origin);
     }
-  } else {
-    // No origin header (direct API call)
-    res.header('Access-Control-Allow-Origin', '*');
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -706,8 +703,6 @@ router.use((err, req, res, next) => {
       console.log(`Error handler: Origin ${origin} accessing API`);
       res.header('Access-Control-Allow-Origin', origin);
     }
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
