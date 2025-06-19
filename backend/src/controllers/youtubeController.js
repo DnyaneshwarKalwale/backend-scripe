@@ -328,72 +328,98 @@ const getChannelVideos = async (req, res) => {
             try {
               const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
               
-              // Use yt-dlp to get video metadata including duration with bot detection bypass
-              const command = `${ytDlpCommand} --dump-json --no-download --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --referer "https://www.youtube.com/" --add-header "Accept-Language:en-US,en;q=0.9" --extractor-args "youtube:player_client=web" "${videoUrl}"`;
-              console.log(`Getting duration for ${video.id} using: ${command}`);
+              // Use multiple bypass strategies for aggressive bot detection
+              const bypassStrategies = [
+                // Strategy 1: Mobile client bypass
+                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=android" "${videoUrl}"`,
+                
+                // Strategy 2: iOS client bypass  
+                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=ios" "${videoUrl}"`,
+                
+                // Strategy 3: TV client bypass
+                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=tv_embedded" "${videoUrl}"`,
+                
+                // Strategy 4: Original web bypass
+                `${ytDlpCommand} --dump-json --no-download --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --referer "https://www.youtube.com/" --extractor-args "youtube:player_client=web" "${videoUrl}"`
+              ];
               
-              const { stdout } = await execPromise(command, { timeout: 20000 });
-              const metadata = JSON.parse(stdout);
+              let durationExtracted = false;
               
-              if (metadata.duration) {
-                video.duration = formatDuration(metadata.duration);
-                console.log(`✅ Successfully extracted duration for ${video.id}: ${video.duration}`);
-              } else {
-                console.log(`⚠️ No duration found in metadata for ${video.id}, trying fallback`);
-                // Try fallback method immediately
-                throw new Error('No duration in metadata');
+              for (let i = 0; i < bypassStrategies.length && !durationExtracted; i++) {
+                try {
+                  const command = bypassStrategies[i];
+                  console.log(`Getting duration for ${video.id} using strategy ${i + 1}: ${command.split(' ').slice(-2).join(' ')}`);
+                  
+                  const { stdout } = await execPromise(command, { timeout: 20000 });
+                  const metadata = JSON.parse(stdout);
+                  
+                  if (metadata.duration) {
+                    video.duration = formatDuration(metadata.duration);
+                    console.log(`✅ Successfully extracted duration for ${video.id}: ${video.duration}`);
+                    durationExtracted = true;
+                    break;
+                  } else {
+                    console.log(`⚠️ No duration found in metadata for ${video.id} with strategy ${i + 1}`);
+                  }
+                } catch (strategyError) {
+                  console.log(`❌ Strategy ${i + 1} failed for ${video.id}: ${strategyError.message}`);
+                  // Continue to next strategy
+                }
               }
-            } catch (error) {
-              console.log(`❌ Failed to fetch duration for video ${video.id} with yt-dlp: ${error.message}`);
               
-              // Fallback to page scraping method
-              try {
-                console.log(`🔄 Trying fallback page scraping for ${video.id}`);
-                const headers = {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                  'Accept-Language': 'en-US,en;q=0.9',
-                  'Accept-Encoding': 'gzip, deflate, br',
-                  'Referer': 'https://www.youtube.com/',
-                  'Connection': 'keep-alive',
-                  'Upgrade-Insecure-Requests': '1'
-                };
-                const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
-                const response = await axios.get(videoUrl, { headers, timeout: 10000 });
+              // If all yt-dlp strategies failed, try fallback page scraping
+              if (!durationExtracted) {
+                console.log(`🔄 All yt-dlp strategies failed for ${video.id}, trying fallback page scraping`);
                 
-                // Try multiple patterns for duration extraction
-                const patterns = [
-                  /"lengthSeconds":"(\d+)"/,
-                  /"duration":"PT(\d+)M(\d+)S"/,
-                  /"duration":(\d+)/,
-                  /lengthSeconds&quot;:&quot;(\d+)&quot;/
-                ];
-                
-                for (const pattern of patterns) {
-                  const match = response.data.match(pattern);
-                  if (match) {
-                    let seconds;
-                    if (pattern.source.includes('PT')) {
-                      // ISO 8601 duration format PT#M#S
-                      const minutes = parseInt(match[1], 10) || 0;
-                      const secs = parseInt(match[2], 10) || 0;
-                      seconds = (minutes * 60) + secs;
-                    } else {
-                      seconds = parseInt(match[1], 10);
-                    }
-                    
-                    if (seconds && seconds > 0) {
-                      video.duration = formatDuration(seconds);
-                      console.log(`✅ Fallback: extracted duration for ${video.id}: ${video.duration}`);
-                      break;
+                try {
+                  const headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Referer': 'https://www.youtube.com/',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1'
+                  };
+                  const response = await axios.get(videoUrl, { headers, timeout: 10000 });
+                  
+                  // Try multiple patterns for duration extraction
+                  const patterns = [
+                    /"lengthSeconds":"(\d+)"/,
+                    /"duration":"PT(\d+)M(\d+)S"/,
+                    /"duration":(\d+)/,
+                    /lengthSeconds&quot;:&quot;(\d+)&quot;/
+                  ];
+                  
+                  for (const pattern of patterns) {
+                    const match = response.data.match(pattern);
+                    if (match) {
+                      let seconds;
+                      if (pattern.source.includes('PT')) {
+                        // ISO 8601 duration format PT#M#S
+                        const minutes = parseInt(match[1], 10) || 0;
+                        const secs = parseInt(match[2], 10) || 0;
+                        seconds = (minutes * 60) + secs;
+                      } else {
+                        seconds = parseInt(match[1], 10);
+                      }
+                      
+                      if (seconds && seconds > 0) {
+                        video.duration = formatDuration(seconds);
+                        console.log(`✅ Fallback: extracted duration for ${video.id}: ${video.duration}`);
+                        break;
+                      }
                     }
                   }
+                } catch (fallbackError) {
+                  console.log(`❌ Fallback duration extraction also failed for ${video.id}: ${fallbackError.message}`);
+                  // Keep the default N/A if both methods fail
+                  console.log(`⚠️ Video ${video.id} will show duration as "N/A"`);
                 }
-              } catch (fallbackError) {
-                console.log(`❌ Fallback duration extraction also failed for ${video.id}: ${fallbackError.message}`);
-                // Keep the default N/A if both methods fail
-                console.log(`⚠️ Video ${video.id} will show duration as "N/A"`);
               }
+            } catch (error) {
+              console.log(`❌ General error processing ${video.id}: ${error.message}`);
+              // Video will keep default N/A duration
             }
           }));
           
