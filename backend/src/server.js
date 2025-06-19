@@ -75,14 +75,14 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'https://app.brandout.ai', 
+    'http://localhost:8080', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
-  'https://api.brandout.ai',       // API domain
+  'http://localhost:5000',       // API domain
   // Add more flexible patterns
   'https://brandout.ai',
   'https://www.brandout.ai'
@@ -1239,6 +1239,12 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     const execPromise = util.promisify(exec);
     const os = require('os');
     
+    // Import proxy configuration
+    const { getYtDlpProxyOptions, getHttpProxyConfig, logProxyStatus } = require('./config/proxy');
+    
+    // Log proxy status
+    logProxyStatus();
+    
     // Create directory for transcripts if it doesn't exist
     const transcriptsDir = path.join(process.cwd(), 'transcripts');
     if (!fs.existsSync(transcriptsDir)) {
@@ -1336,10 +1342,13 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       });
     }
     
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${cookiesPath}" --paths "transcripts" --user-agent "${userAgent}" "${videoUrl}"`;
+    // Build proxy options for yt-dlp
+    const proxyOptions = getYtDlpProxyOptions();
+    
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${cookiesPath}" --paths "transcripts" --user-agent "${userAgent}" ${proxyOptions} "${videoUrl}"`;
     
     // Add a separate command to fetch video metadata including duration
-    const metadataCommand = `${ytDlpCommand} -J --cookies "${cookiesPath}" --user-agent "${userAgent}" "${videoUrl}"`;
+    const metadataCommand = `${ytDlpCommand} -J --cookies "${cookiesPath}" --user-agent "${userAgent}" ${proxyOptions} "${videoUrl}"`;
     
     try {
       // First fetch video metadata to get duration
@@ -1391,11 +1400,20 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
               .join('; ')
           };
           
-          const response = await axios.get(videoUrl, { 
+          // Configure axios with proxy if enabled
+          const axiosConfig = {
             headers,
             timeout: 10000,
             maxRedirects: 5
-          });
+          };
+          
+          const proxyConfig = getHttpProxyConfig();
+          if (proxyConfig) {
+            axiosConfig.proxy = proxyConfig;
+            console.log('Using proxy for axios metadata fetching');
+          }
+          
+          const response = await axios.get(videoUrl, axiosConfig);
           
           const html = response.data;
           

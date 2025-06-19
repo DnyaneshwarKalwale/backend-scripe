@@ -113,7 +113,7 @@ const sendPasswordResetEmail = async (user, resetUrl) => {
 const sendTeamInvitationEmail = async (invitation, teamName, inviter, inviteUrl) => {
   try {
     // Generate the invite URL with the token
-    const frontendUrl = process.env.FRONTEND_URL || 'https://app.brandout.ai';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
     const tokenUrl = `${frontendUrl}/invitations?token=${invitation.token}`;
     
     const subject = `You've been invited to join ${teamName} on Scripe`;

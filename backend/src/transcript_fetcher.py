@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# transcript_fetcher.py - Fetches transcripts from YouTube videos
+# transcript_fetcher.py - Fetches transcripts from YouTube videos with proxy support
 
 import sys
 import json
@@ -8,6 +8,9 @@ import os
 import http.cookiejar
 import requests
 from functools import partial
+import urllib.request
+import urllib.parse
+import urllib.error
 
 # Debug mode (when run with --debug flag)
 DEBUG = False
@@ -18,6 +21,61 @@ if len(sys.argv) > 1 and sys.argv[1] == "--debug":
 def debug_print(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs, flush=True)
+
+# Import proxy configuration
+try:
+    from config.proxy_config import get_proxy_config, get_urllib_proxy_handler, log_proxy_status, is_proxy_enabled, get_proxy_host_port
+except ImportError:
+    # Fallback configuration if config file is not available
+    debug_print("Warning: Could not import proxy config, using fallback configuration")
+    
+    PROXY_CONFIG = {
+        'host': 'res-ww.lightningproxies.net',
+        'port': '9999',
+        'username': 'nvizglwiborhznm163317-zone-lightning',
+        'password': 'nuuxkavzjt',
+        'enabled': True  # Set to False to disable proxy
+    }
+
+    def get_proxy_config():
+        """Get proxy configuration for requests."""
+        if not PROXY_CONFIG['enabled']:
+            return None
+        
+        proxy_url = f"http://{PROXY_CONFIG['username']}:{PROXY_CONFIG['password']}@{PROXY_CONFIG['host']}:{PROXY_CONFIG['port']}"
+        return {
+            'http': proxy_url,
+            'https': proxy_url
+        }
+
+    def get_urllib_proxy_handler():
+        """Get proxy handler for urllib."""
+        if not PROXY_CONFIG['enabled']:
+            return None
+        
+        proxy_url = f"http://{PROXY_CONFIG['username']}:{PROXY_CONFIG['password']}@{PROXY_CONFIG['host']}:{PROXY_CONFIG['port']}"
+        proxy_handler = urllib.request.ProxyHandler({
+            'http': proxy_url,
+            'https': proxy_url
+        })
+        return proxy_handler
+    
+    def log_proxy_status():
+        """Log proxy status."""
+        if PROXY_CONFIG['enabled']:
+            debug_print(f"[PROXY] Proxy enabled: {PROXY_CONFIG['host']}:{PROXY_CONFIG['port']}")
+        else:
+            debug_print("[PROXY] Proxy disabled")
+    
+    def is_proxy_enabled():
+        """Check if proxy is enabled."""
+        return PROXY_CONFIG['enabled']
+    
+    def get_proxy_host_port():
+        """Get proxy host and port for logging."""
+        if PROXY_CONFIG['enabled']:
+            return f"{PROXY_CONFIG['host']}:{PROXY_CONFIG['port']}"
+        return None
 
 # Load cookies from file
 def load_cookies():
@@ -39,17 +97,21 @@ try:
     from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
     from youtube_transcript_api.formatters import JSONFormatter
     
-    # Extend YouTubeTranscriptApi to use cookies
-    class CookieAwareYouTubeTranscriptApi(YouTubeTranscriptApi):
-        def __init__(self, video_id, cookie_jar=None):
+    # Extend YouTubeTranscriptApi to use cookies and proxy
+    class ProxyAwareYouTubeTranscriptApi(YouTubeTranscriptApi):
+        def __init__(self, video_id, cookie_jar=None, proxies=None):
             self.video_id = video_id
             self._cookie_jar = cookie_jar
+            self._proxies = proxies
             super().__init__()
 
         def _initialize_innertube_session(self):
             session = super()._initialize_innertube_session()
             if self._cookie_jar:
                 session.cookies = self._cookie_jar
+            if self._proxies:
+                session.proxies.update(self._proxies)
+                debug_print(f"Using proxy for YouTube Transcript API: {self._proxies['https']}")
             return session
 
     debug_print("YouTube Transcript API imported and extended successfully")
@@ -58,12 +120,12 @@ except ImportError as e:
     try_ytapi = False
 
 # Fallback method imports
-from urllib.request import urlopen, Request, build_opener, HTTPCookieProcessor
+from urllib.request import urlopen, Request, build_opener, HTTPCookieProcessor, ProxyHandler
 from urllib.parse import urlencode
 import re
 
 def get_transcript_with_api(video_id):
-    """Fetch transcript using the youtube_transcript_api library with cookie support."""
+    """Fetch transcript using the youtube_transcript_api library with cookie and proxy support."""
     try:
         debug_print(f"Using YouTube Transcript API for video ID: {video_id}")
         
@@ -71,8 +133,13 @@ def get_transcript_with_api(video_id):
         cookie_jar = load_cookies()
         debug_print("Cookies loaded for YouTube Transcript API")
         
-        # Create cookie-aware API instance
-        transcript_api = CookieAwareYouTubeTranscriptApi(video_id, cookie_jar)
+        # Get proxy configuration
+        proxies = get_proxy_config()
+        if proxies:
+            debug_print(f"Using proxy for YouTube Transcript API: {proxies['https']}")
+        
+        # Create proxy and cookie-aware API instance
+        transcript_api = ProxyAwareYouTubeTranscriptApi(video_id, cookie_jar, proxies)
         
         # Get transcript list
         debug_print("Getting transcript list...")
@@ -105,18 +172,22 @@ def get_transcript_with_api(video_id):
         
         debug_print(f"Successfully extracted transcript with {len(transcript_text)} characters")
         
-        # Try to get video metadata using cookies
+        # Try to get video metadata using cookies and proxy
         channel_title = "Unknown Channel"
         
         try:
-            # Create session with cookies
+            # Create session with cookies and proxy
             session = requests.Session()
             if cookie_jar:
                 session.cookies = cookie_jar
+            if proxies:
+                session.proxies.update(proxies)
+                debug_print("Using proxy for metadata fetching")
             
             response = session.get(
                 f"https://www.youtube.com/watch?v={video_id}",
-                headers={'User-Agent': 'Mozilla/5.0'}
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
+                timeout=30
             )
             html = response.text
             
@@ -142,7 +213,7 @@ def get_transcript_with_api(video_id):
             'is_generated': getattr(transcript, 'is_generated', False),
             'video_id': video_id,
             'channelTitle': channel_title,
-            'source': 'youtube_transcript_api'
+            'source': 'youtube_transcript_api_with_proxy' if proxies else 'youtube_transcript_api'
         }
     except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable) as e:
         debug_print(f"YouTube Transcript API specific error: {e}")
@@ -150,7 +221,7 @@ def get_transcript_with_api(video_id):
             'success': False,
             'error': str(e),
             'video_id': video_id,
-            'source': 'youtube_transcript_api'
+            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
         }
     except Exception as e:
         debug_print(f"Error in get_transcript_with_api: {e}")
@@ -160,27 +231,71 @@ def get_transcript_with_api(video_id):
             'error': str(e),
             'traceback': traceback.format_exc(),
             'video_id': video_id,
-            'source': 'youtube_transcript_api'
+            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
         }
 
 def fetch_transcript_manually(video_id):
-    """Fetch transcript for a YouTube video using basic HTTP requests (fallback method)."""
+    """Fetch transcript for a YouTube video using basic HTTP requests with proxy support (fallback method)."""
     try:
         debug_print(f"Using manual scraping for video ID: {video_id}")
         
         # Load cookies
         cookie_jar = load_cookies()
-        opener = build_opener(HTTPCookieProcessor(cookie_jar))
+        
+        # Set up opener with cookies and proxy
+        handlers = [HTTPCookieProcessor(cookie_jar)]
+        
+        # Add proxy handler if configured
+        proxy_handler = get_urllib_proxy_handler()
+        if proxy_handler:
+            handlers.append(proxy_handler)
+            debug_print("Using proxy for manual scraping")
+        
+        opener = build_opener(*handlers)
         
         # First try to get video info to check if transcripts are available
         url = f"https://www.youtube.com/watch?v={video_id}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         
         request = Request(url, headers=headers)
-        response = opener.open(request)
-        html = response.read().decode('utf-8')
+        
+        try:
+            response = opener.open(request, timeout=30)
+            # Handle gzip-compressed responses
+            raw_data = response.read()
+            
+            # Check if response is gzip-compressed
+            if raw_data[:2] == b'\x1f\x8b':  # gzip magic number
+                import gzip
+                html = gzip.decompress(raw_data).decode('utf-8')
+                debug_print("Decompressed gzip response")
+            else:
+                html = raw_data.decode('utf-8')
+        except urllib.error.HTTPError as e:
+            debug_print(f"HTTP Error {e.code}: {e.reason}")
+            if e.code == 403:
+                return {
+                    'success': False,
+                    'error': 'Access forbidden - YouTube may be blocking requests',
+                    'video_id': video_id,
+                    'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
+                }
+            raise
+        except urllib.error.URLError as e:
+            debug_print(f"URL Error: {e.reason}")
+            return {
+                'success': False,
+                'error': f'Network error: {e.reason}',
+                'video_id': video_id,
+                'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
+            }
         
         # Extract channel name
         channel_title = "Unknown Channel"
@@ -217,7 +332,7 @@ def fetch_transcript_manually(video_id):
                 'success': False,
                 'error': 'No captions available for this video',
                 'video_id': video_id,
-                'source': 'manual_scraping'
+                'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
             }
         
         # Extract caption track info - safer approach
@@ -228,7 +343,7 @@ def fetch_transcript_manually(video_id):
                 'success': False,
                 'error': 'Could not parse caption tracks',
                 'video_id': video_id,
-                'source': 'manual_scraping'
+                'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
             }
             
         caption_info = caption_parts[0]
@@ -267,7 +382,7 @@ def fetch_transcript_manually(video_id):
                 'success': False,
                 'error': 'Could not find caption URL',
                 'video_id': video_id,
-                'source': 'manual_scraping'
+                'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
             }
         
         # Get caption data in text format
@@ -275,8 +390,16 @@ def fetch_transcript_manually(video_id):
             debug_print("Fetching captions as text...")
             caption_url = base_url + '&fmt=txt'
             request = Request(caption_url, headers=headers)
-            response = opener.open(request)
-            transcript = response.read().decode('utf-8')
+            response = opener.open(request, timeout=30)
+            
+            # Handle gzip-compressed responses
+            raw_data = response.read()
+            if raw_data[:2] == b'\x1f\x8b':  # gzip magic number
+                import gzip
+                transcript = gzip.decompress(raw_data).decode('utf-8')
+                debug_print("Decompressed gzip caption response")
+            else:
+                transcript = raw_data.decode('utf-8')
             
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters")
             return {
@@ -288,7 +411,7 @@ def fetch_transcript_manually(video_id):
                 'video_id': video_id,
                 'channelTitle': channel_title,
                 'duration': duration,
-                'source': 'manual_scraping'
+                'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
             }
         except Exception as e:
             debug_print(f"Error fetching text captions: {e}")
@@ -297,8 +420,18 @@ def fetch_transcript_manually(video_id):
                 debug_print("Trying to fetch captions as JSON...")
                 caption_url = base_url + '&fmt=json3'
                 request = Request(caption_url, headers=headers)
-                response = opener.open(request)
-                caption_data = json.loads(response.read().decode('utf-8'))
+                response = opener.open(request, timeout=30)
+                
+                # Handle gzip-compressed responses
+                raw_data = response.read()
+                if raw_data[:2] == b'\x1f\x8b':  # gzip magic number
+                    import gzip
+                    json_text = gzip.decompress(raw_data).decode('utf-8')
+                    debug_print("Decompressed gzip JSON caption response")
+                else:
+                    json_text = raw_data.decode('utf-8')
+                
+                caption_data = json.loads(json_text)
                 
                 # Extract transcript from JSON
                 transcript_pieces = []
@@ -321,7 +454,7 @@ def fetch_transcript_manually(video_id):
                     'video_id': video_id,
                     'channelTitle': channel_title,
                     'duration': duration,
-                    'source': 'manual_scraping'
+                    'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
                 }
             except Exception as json_err:
                 debug_print(f"Error fetching JSON captions: {json_err}")
@@ -329,7 +462,7 @@ def fetch_transcript_manually(video_id):
                     'success': False,
                     'error': f"Failed to parse caption data: {str(json_err)}",
                     'video_id': video_id,
-                    'source': 'manual_scraping'
+                    'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
                 }
     except Exception as e:
         debug_print(f"Error in fetch_transcript_manually: {e}")
@@ -339,12 +472,15 @@ def fetch_transcript_manually(video_id):
             'error': str(e),
             'traceback': traceback.format_exc(),
             'video_id': video_id,
-            'source': 'manual_scraping'
+            'source': 'manual_scraping_with_proxy' if get_urllib_proxy_handler() else 'manual_scraping'
         }
 
 def get_transcript(video_id):
     """Main function that tries multiple methods to get a transcript."""
     debug_print(f"Getting transcript for video ID: {video_id}")
+    
+    # Log proxy status
+    log_proxy_status()
     
     # First try the YouTube Transcript API if available
     if try_ytapi:
@@ -370,7 +506,9 @@ if __name__ == "__main__":
     if "--test" in sys.argv:
         print(json.dumps({
             'success': True,
-            'message': 'Transcript fetcher is working correctly'
+            'message': 'Transcript fetcher is working correctly',
+            'proxy_enabled': is_proxy_enabled(),
+            'proxy_host': get_proxy_host_port()
         }))
         sys.exit(0)
         
@@ -382,7 +520,7 @@ if __name__ == "__main__":
         }))
         sys.exit(1)
     
-        video_id = sys.argv[1]
+    video_id = sys.argv[1]
     result = get_transcript(video_id)
     try:
         json_result = json.dumps(result)
@@ -391,7 +529,7 @@ if __name__ == "__main__":
         if 'transcript' in result and result['success']:
             result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
             print(json.dumps(result))
-    else:
+        else:
             print(json.dumps({
                 'success': False,
                 'error': f"Encoding error: {str(e)}",

@@ -504,6 +504,12 @@ async function extractTranscriptWithYtDlp(videoId) {
   try {
     console.log(`Extracting transcript for video ${videoId} using yt-dlp directly`);
     
+    // Import proxy configuration
+    const { getYtDlpProxyOptions, logProxyStatus } = require('../config/proxy');
+    
+    // Log proxy status
+    logProxyStatus();
+    
     // Create directory for transcripts if it doesn't exist
     const transcriptsDir = path.join(process.cwd(), 'transcripts');
     if (!fs.existsSync(transcriptsDir)) {
@@ -555,8 +561,11 @@ async function extractTranscriptWithYtDlp(videoId) {
       }
     }
     
+    // Build proxy options for yt-dlp
+    const proxyOptions = getYtDlpProxyOptions();
+    
     // Command for yt-dlp to extract subtitles with correct paths
-    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" "${videoUrl}"`;
+    const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" ${proxyOptions} "${videoUrl}"`;
     
     console.log(`Running yt-dlp command: ${command}`);
     const { stdout, stderr } = await execPromise(command);
