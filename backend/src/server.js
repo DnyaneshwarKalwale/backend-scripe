@@ -34,6 +34,7 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 const axios = require('axios');
 const uploadRoutes = require('./routes/uploadRoutes');
+const savedPostsRoutes = require('./routes/savedPosts');
 
 // Import the yt-dlp download script
 const downloadYtDlp = require('../downloadYtDlp');
@@ -771,6 +772,7 @@ app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/cron', cronRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/saved-posts', savedPostsRoutes);
 app.use('/api/admin', adminRoutes);
 // Admin routes
 app.use('/api/admin', require('./routes/adminRoutes'));
