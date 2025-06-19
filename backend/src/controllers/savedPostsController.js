@@ -79,24 +79,32 @@ const getSavedPosts = asyncHandler(async (req, res) => {
 const deleteSavedPost = asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
-    const { userId } = req.body;
 
-    if (!postId || !userId) {
+    if (!postId) {
       return res.status(400).json({
         success: false,
-        error: 'PostId and userId are required'
+        error: 'PostId is required'
+      });
+    }
+
+    // Get authenticated user ID from token
+    const authenticatedUserId = req.user?.id || req.user?._id?.toString();
+    if (!authenticatedUserId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required to delete posts'
       });
     }
 
     const deletedPost = await SavedPost.findOneAndDelete({
       _id: postId,
-      userId
+      userId: authenticatedUserId
     });
 
     if (!deletedPost) {
       return res.status(404).json({
         success: false,
-        error: 'Post not found'
+        error: 'Post not found or not owned by current user'
       });
     }
 
