@@ -117,7 +117,7 @@ async function testYtDlpTranscript() {
     const testVideoId = testVideoIds[0];
     
     try {
-        const response = await fetch('http://localhost:5000/api/youtube/transcript-yt-dlp', {
+        const response = await fetch('https://api.brandout.ai/api/youtube/transcript-yt-dlp', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

@@ -75,14 +75,14 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'http://localhost:8080', 
+    'https://app.brandout.ai', 
   'http://localhost:3000',
   'http://localhost:5173',
     'https://brandout.vercel.app',
     'https://ea50-43-224-158-115.ngrok-free.app',
     'https://18cd-43-224-158-115.ngrok-free.app',
     'https://deluxe-cassata-51d628.netlify.app',
-  'http://localhost:5000',       // API domain
+  'https://api.brandout.ai',       // API domain
   // Add more flexible patterns
   'https://brandout.ai',
   'https://www.brandout.ai'
