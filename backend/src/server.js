@@ -1460,9 +1460,9 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
               }
               
               if (durationSeconds) {
-                duration = formatDuration(durationSeconds);
+              duration = formatDuration(durationSeconds);
                 console.log(`Duration found via pattern ${pattern.toString()}: ${duration}`);
-                break;
+              break;
               }
             }
           }
@@ -1545,7 +1545,7 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
           try {
             console.log('Using basic metadata approach...');
             if (!thumbnail) {
-              thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+            thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
             }
             // Keep other values as default/N/A
             console.log('Basic metadata approach completed');

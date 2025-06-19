@@ -279,24 +279,42 @@ const getChannelVideos = async (req, res) => {
 
 
         // Determine the correct yt-dlp binary based on platform
-        let ytDlpCommand;
-        const isWindows = os.platform() === 'win32';
+        // Prefer system yt-dlp over local binary for better reliability
+        let ytDlpCommand = 'yt-dlp';
         
-        if (isWindows) {
-          const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
-          ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
-        } else {
-          const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
-          if (fs.existsSync(ytDlpPath)) {
-            try {
-              await execPromise(`chmod +x "${ytDlpPath}"`);
+        // Test if system yt-dlp is available
+        try {
+          await execPromise('yt-dlp --version', { timeout: 3000 });
+          console.log('Using system yt-dlp');
+        } catch (systemError) {
+          console.log('System yt-dlp not available, trying local binary');
+          
+          const isWindows = os.platform() === 'win32';
+          
+          if (isWindows) {
+            const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
+            if (fs.existsSync(ytDlpPath)) {
               ytDlpCommand = `"${ytDlpPath}"`;
-            } catch (chmodError) {
-              console.error('Error making yt-dlp executable:', chmodError);
-              ytDlpCommand = 'yt-dlp';
+              console.log('Using local yt-dlp.exe');
+            } else {
+              console.error('No yt-dlp binary found');
+              throw new Error('yt-dlp not available');
             }
           } else {
-            ytDlpCommand = 'yt-dlp';
+            const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
+            if (fs.existsSync(ytDlpPath)) {
+              try {
+                await execPromise(`chmod +x "${ytDlpPath}"`);
+                ytDlpCommand = `"${ytDlpPath}"`;
+                console.log('Using local yt-dlp');
+              } catch (chmodError) {
+                console.error('Error making yt-dlp executable:', chmodError);
+                throw new Error('yt-dlp not available');
+              }
+            } else {
+              console.error('No yt-dlp binary found');
+              throw new Error('yt-dlp not available');
+            }
           }
         }
 
@@ -314,20 +332,23 @@ const getChannelVideos = async (req, res) => {
               const command = `${ytDlpCommand} --dump-json --no-download "${videoUrl}"`;
               console.log(`Getting duration for ${video.id} using: ${command}`);
               
-              const { stdout } = await execPromise(command, { timeout: 10000 });
+              const { stdout } = await execPromise(command, { timeout: 20000 });
               const metadata = JSON.parse(stdout);
               
               if (metadata.duration) {
                 video.duration = formatDuration(metadata.duration);
-                console.log(`Successfully extracted duration for ${video.id}: ${video.duration}`);
+                console.log(`✅ Successfully extracted duration for ${video.id}: ${video.duration}`);
               } else {
-                console.log(`No duration found in metadata for ${video.id}`);
+                console.log(`⚠️ No duration found in metadata for ${video.id}, trying fallback`);
+                // Try fallback method immediately
+                throw new Error('No duration in metadata');
               }
             } catch (error) {
-              console.log(`Failed to fetch duration for video ${video.id} with yt-dlp: ${error.message}`);
+              console.log(`❌ Failed to fetch duration for video ${video.id} with yt-dlp: ${error.message}`);
               
               // Fallback to page scraping method
               try {
+                console.log(`🔄 Trying fallback page scraping for ${video.id}`);
                 const headers = {
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 };
@@ -357,14 +378,15 @@ const getChannelVideos = async (req, res) => {
                     
                     if (seconds && seconds > 0) {
                       video.duration = formatDuration(seconds);
-                      console.log(`Fallback: extracted duration for ${video.id}: ${video.duration}`);
+                      console.log(`✅ Fallback: extracted duration for ${video.id}: ${video.duration}`);
                       break;
                     }
                   }
                 }
               } catch (fallbackError) {
-                console.log(`Fallback duration extraction also failed for ${video.id}: ${fallbackError.message}`);
+                console.log(`❌ Fallback duration extraction also failed for ${video.id}: ${fallbackError.message}`);
                 // Keep the default N/A if both methods fail
+                console.log(`⚠️ Video ${video.id} will show duration as "N/A"`);
               }
             }
           }));
