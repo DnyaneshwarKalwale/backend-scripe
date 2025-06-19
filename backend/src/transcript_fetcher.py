@@ -520,7 +520,7 @@ if __name__ == "__main__":
         }))
         sys.exit(1)
     
-    video_id = sys.argv[1]
+        video_id = sys.argv[1]
     result = get_transcript(video_id)
     try:
         json_result = json.dumps(result)
@@ -529,7 +529,7 @@ if __name__ == "__main__":
         if 'transcript' in result and result['success']:
             result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
             print(json.dumps(result))
-        else:
+    else:
             print(json.dumps({
                 'success': False,
                 'error': f"Encoding error: {str(e)}",

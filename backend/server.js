@@ -47,8 +47,8 @@ app.use(limiter);
 // CORS configuration
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://app.brandout.ai', 'https://brandout.ai']
-    : ['https://app.brandout.ai', 'http://localhost:3000'],
+    ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai']
+    : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
