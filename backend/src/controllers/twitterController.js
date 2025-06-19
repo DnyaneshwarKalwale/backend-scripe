@@ -816,7 +816,7 @@ const saveTweets = async (req, res) => {
       // Check if tweet already exists for this authenticated user
       const existingTweet = await Tweet.findOne({ 
         id: tweet.id,
-        userId: authenticatedUserId 
+        user: authenticatedUserId 
       });
       
       // Handle duplicate tweets based on options
@@ -839,7 +839,7 @@ const saveTweets = async (req, res) => {
           if (tweet.media) updateFields.media = tweet.media;
           
           const updatedTweet = await Tweet.findOneAndUpdate(
-            { id: tweet.id, userId: authenticatedUserId },
+            { id: tweet.id, user: authenticatedUserId },
             updateFields,
             { new: true }
           );
@@ -853,12 +853,12 @@ const saveTweets = async (req, res) => {
       const tweetToSave = {
         ...tweet,
         savedBy: saveUsername,        // Keep for backwards compatibility
-        userId: authenticatedUserId,  // Primary user association
+        user: authenticatedUserId,    // Primary user association
         savedAt: new Date()
       };
       
       const savedTweet = await Tweet.findOneAndUpdate(
-        { id: tweet.id, userId: authenticatedUserId },
+        { id: tweet.id, user: authenticatedUserId },
         tweetToSave,
         { new: true, upsert: true }
       );
@@ -894,7 +894,7 @@ const getSavedTweets = async (req, res) => {
       });
     }
     
-    const tweets = await Tweet.find({ userId: authenticatedUserId }).sort({ savedAt: -1 });
+    const tweets = await Tweet.find({ user: authenticatedUserId }).sort({ savedAt: -1 });
     
     res.status(200).json({
       success: true,
@@ -989,7 +989,7 @@ const deleteTweet = async (req, res) => {
     // Delete only tweets saved by this authenticated user
     const tweet = await Tweet.findOneAndDelete({ 
       id,
-      userId: authenticatedUserId
+      user: authenticatedUserId
     });
     
     if (!tweet) {
