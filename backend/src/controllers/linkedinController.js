@@ -1107,7 +1107,11 @@ const getSavedLinkedInPosts = asyncHandler(async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: posts.map(post => post.postData),
+      data: posts.map(post => ({
+        ...post.postData,
+        _id: post._id,  // Include the MongoDB document ID for deletion
+        mongoId: post._id.toString()  // Also include as string for easier access
+      })),
       count: posts.length
     });
   } catch (error) {
