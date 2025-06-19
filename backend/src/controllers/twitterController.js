@@ -882,10 +882,19 @@ const saveTweets = async (req, res) => {
   }
 };
 
-// Get all saved tweets
+// Get all saved tweets for the authenticated user
 const getSavedTweets = async (req, res) => {
   try {
-    const tweets = await Tweet.find().sort({ savedAt: -1 });
+    // Get authenticated user ID
+    const authenticatedUserId = req.user?.id || req.user?._id?.toString();
+    if (!authenticatedUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to view saved tweets'
+      });
+    }
+    
+    const tweets = await Tweet.find({ userId: authenticatedUserId }).sort({ savedAt: -1 });
     
     res.status(200).json({
       success: true,
@@ -968,26 +977,23 @@ const deleteTweet = async (req, res) => {
       });
     }
     
-    // Get user info from token/auth
-    const userId = req.user?.id || req.user?._id?.toString() || 'anonymous';
+    // Get authenticated user ID
+    const authenticatedUserId = req.user?.id || req.user?._id?.toString();
+    if (!authenticatedUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to delete tweets'
+      });
+    }
     
-    // Delete only tweets saved by this user ID (check multiple potential fields)
+    // Delete only tweets saved by this authenticated user
     const tweet = await Tweet.findOneAndDelete({ 
       id,
-      $or: [
-        { savedBy: userId },         // if savedBy stores user ID
-        { userId: userId },          // if userId field exists
-        { 'userId': userId },        // alternative userId format
-        { 'user.id': userId },       // if nested in user object
-        { 'author.userId': userId }  // if nested in author object
-      ]
+      userId: authenticatedUserId
     });
     
     if (!tweet) {
-      console.log(`Tweet ${id} not found for user ${userId}`);
-      // Let's try a broader search to see what tweets exist
-      const allTweetsWithId = await Tweet.find({ id }).select('id savedBy userId author user');
-      console.log('Found tweets with this ID:', allTweetsWithId);
+      console.log(`Tweet ${id} not found for user ${authenticatedUserId}`);
       
       return res.status(404).json({
         success: false,
