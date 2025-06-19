@@ -958,18 +958,29 @@ const deleteTweet = async (req, res) => {
       });
     }
     
-    const tweet = await Tweet.findOneAndDelete({ id });
+    // Get user info from token/auth
+    const userId = req.user?.id || req.user?._id || 'anonymous';
+    
+    // Delete only tweets saved by this user
+    const tweet = await Tweet.findOneAndDelete({ 
+      id,
+      $or: [
+        { savedBy: userId },
+        { userId: userId }
+      ]
+    });
     
     if (!tweet) {
       return res.status(404).json({
         success: false,
-        message: `Tweet with ID ${id} not found`
+        message: `Tweet with ID ${id} not found or not owned by current user`
       });
     }
     
     res.status(200).json({
       success: true,
-      data: tweet
+      data: tweet,
+      message: 'Tweet deleted successfully'
     });
   } catch (error) {
     console.error('Error deleting tweet:', error);
