@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
+const os = require('os');
 const connectDB = require('./config/db');
 const passport = require('passport');
 const session = require('express-session');
@@ -1295,6 +1296,8 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     const isCloud = process.env.RENDER || process.env.NODE_ENV === 'production';
     const isWindows = os.platform() === 'win32';
     
+    console.log(`Environment detection - isCloud: ${isCloud}, isWindows: ${isWindows}, platform: ${os.platform()}, NODE_ENV: ${process.env.NODE_ENV}`);
+    
     // Try first with local binary, then fallback to global command
     if (isWindows) {
       // Windows setup with .exe
@@ -1365,10 +1368,15 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       
       try {
         console.log('Attempting to fetch metadata with yt-dlp...');
+        console.log('yt-dlp command:', metadataCommand);
         const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand);
         
         if (metadataError) {
           console.error('yt-dlp metadata stderr:', metadataError);
+        }
+        
+        if (!metadataOutput || metadataOutput.trim() === '') {
+          throw new Error('Empty metadata output from yt-dlp');
         }
         
         const metadata = JSON.parse(metadataOutput);
@@ -1384,6 +1392,7 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         console.log(`Video metadata fetched successfully with yt-dlp for ${videoId}, duration: ${duration}`);
       } catch (ytdlpError) {
         console.error('Error fetching metadata with yt-dlp:', ytdlpError);
+        console.error('yt-dlp command that failed:', metadataCommand);
         
         // Fallback 1: Try using direct YouTube page scraping with cookies
         try {
@@ -1426,16 +1435,37 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
           const patterns = [
             /"lengthSeconds":"(\d+)"/,
             /approxDurationMs":"(\d+)"/,
-            /duration_seconds":(\d+)/
+            /duration_seconds":(\d+)/,
+            /"duration":{"simpleText":"([^"]+)"/,
+            /"lengthText":{"simpleText":"([^"]+)"/,
+            /"videoDetails":{"videoId":"[^"]+","title":"[^"]+","lengthSeconds":"(\d+)"/,
+            /ytInitialPlayerResponse.*?"lengthSeconds":"(\d+)"/,
+            /ytInitialData.*?"lengthSeconds":"(\d+)"/
           ];
           
           for (const pattern of patterns) {
             const match = html.match(pattern);
             if (match) {
-              durationSeconds = pattern.includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
-              duration = formatDuration(durationSeconds);
-              console.log(`Duration found via pattern ${pattern}: ${duration}`);
-              break;
+              if (pattern.toString().includes('simpleText')) {
+                // Handle duration in format like "4:32" or "1:23:45"
+                const timeString = match[1];
+                const timeParts = timeString.split(':').map(part => parseInt(part));
+                if (timeParts.length === 2) {
+                  // MM:SS format
+                  durationSeconds = timeParts[0] * 60 + timeParts[1];
+                } else if (timeParts.length === 3) {
+                  // HH:MM:SS format
+                  durationSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
+                }
+              } else {
+                durationSeconds = pattern.toString().includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
+              }
+              
+              if (durationSeconds) {
+                duration = formatDuration(durationSeconds);
+                console.log(`Duration found via pattern ${pattern.toString()}: ${duration}`);
+                break;
+              }
             }
           }
           
@@ -1456,10 +1486,69 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         } catch (scrapingError) {
           console.error('Error fetching metadata via scraping:', scrapingError);
           
-          // Fallback 2: Try using a simple thumbnail-based approach
+          // Fallback 2: Try using YouTube oEmbed API
+          try {
+            console.log('Attempting to fetch metadata via YouTube oEmbed API...');
+            const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`;
+            const oembedResponse = await axios.get(oembedUrl, { timeout: 5000 });
+            
+            if (oembedResponse.data) {
+              title = oembedResponse.data.title || "";
+              channelName = oembedResponse.data.author_name || "";
+              thumbnail = oembedResponse.data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+              console.log(`Basic metadata fetched via oEmbed for ${videoId}`);
+            }
+          } catch (oembedError) {
+            console.error('Error fetching metadata via oEmbed:', oembedError);
+          }
+          
+          // Fallback 3: Try using YouTube API v3 if API key is available
+          if (process.env.YOUTUBE_API_KEY && duration === "N/A") {
+            try {
+              console.log('Attempting to fetch duration via YouTube API v3...');
+              const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=contentDetails,snippet&key=${process.env.YOUTUBE_API_KEY}`;
+              const apiResponse = await axios.get(apiUrl, { timeout: 5000 });
+              
+              if (apiResponse.data.items && apiResponse.data.items.length > 0) {
+                const video = apiResponse.data.items[0];
+                
+                // Parse ISO 8601 duration format (PT4M13S -> 4:13)
+                if (video.contentDetails && video.contentDetails.duration) {
+                  const isoDuration = video.contentDetails.duration;
+                  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                  if (match) {
+                    const hours = parseInt(match[1] || 0);
+                    const minutes = parseInt(match[2] || 0);
+                    const seconds = parseInt(match[3] || 0);
+                    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+                    duration = formatDuration(totalSeconds);
+                    console.log(`Duration found via YouTube API: ${duration}`);
+                  }
+                }
+                
+                // Also get other metadata if not already available
+                if (video.snippet) {
+                  if (!title) title = video.snippet.title || "";
+                  if (!channelName) channelName = video.snippet.channelTitle || "";
+                  if (!thumbnail && video.snippet.thumbnails) {
+                    thumbnail = video.snippet.thumbnails.maxres?.url || 
+                               video.snippet.thumbnails.high?.url || 
+                               video.snippet.thumbnails.medium?.url || 
+                               `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+                  }
+                }
+              }
+            } catch (apiError) {
+              console.error('Error fetching metadata via YouTube API:', apiError);
+            }
+          }
+          
+          // Fallback 4: Try using a simple thumbnail-based approach
           try {
             console.log('Using basic metadata approach...');
-            thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+            if (!thumbnail) {
+              thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+            }
             // Keep other values as default/N/A
             console.log('Basic metadata approach completed');
           } catch (basicError) {
@@ -1467,6 +1556,9 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
           }
         }
       }
+      
+      // Log final metadata state before proceeding
+      console.log(`Final metadata for ${videoId} - Duration: ${duration}, Title: ${title ? 'Found' : 'N/A'}, Channel: ${channelName ? 'Found' : 'N/A'}`);
       
       // Then proceed with transcript extraction
       const { stdout, stderr } = await execPromise(command);
