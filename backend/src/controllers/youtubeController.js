@@ -328,8 +328,8 @@ const getChannelVideos = async (req, res) => {
             try {
               const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
               
-              // Use yt-dlp to get video metadata including duration
-              const command = `${ytDlpCommand} --dump-json --no-download "${videoUrl}"`;
+              // Use yt-dlp to get video metadata including duration with bot detection bypass
+              const command = `${ytDlpCommand} --dump-json --no-download --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --referer "https://www.youtube.com/" --add-header "Accept-Language:en-US,en;q=0.9" --extractor-args "youtube:player_client=web" "${videoUrl}"`;
               console.log(`Getting duration for ${video.id} using: ${command}`);
               
               const { stdout } = await execPromise(command, { timeout: 20000 });
@@ -351,9 +351,15 @@ const getChannelVideos = async (req, res) => {
                 console.log(`🔄 Trying fallback page scraping for ${video.id}`);
                 const headers = {
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                  'Accept-Language': 'en-US,en;q=0.9',
+                  'Accept-Encoding': 'gzip, deflate, br',
+                  'Referer': 'https://www.youtube.com/',
+                  'Connection': 'keep-alive',
+                  'Upgrade-Insecure-Requests': '1'
                 };
                 const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
-                const response = await axios.get(videoUrl, { headers, timeout: 5000 });
+                const response = await axios.get(videoUrl, { headers, timeout: 10000 });
                 
                 // Try multiple patterns for duration extraction
                 const patterns = [
