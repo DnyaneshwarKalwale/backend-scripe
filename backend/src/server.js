@@ -75,15 +75,17 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'https://app.brandout.ai', 
+  'https://app.brandout.ai', 
   'http://localhost:3000',
   'http://localhost:5173',
-    'https://brandout.vercel.app',
-    'https://ea50-43-224-158-115.ngrok-free.app',
-    'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app',
-    'https://app.brandout.ai',      // New production domain
-    'https://api.brandout.ai'       // New API domain
+  'https://brandout.vercel.app',
+  'https://ea50-43-224-158-115.ngrok-free.app',
+  'https://18cd-43-224-158-115.ngrok-free.app',
+  'https://deluxe-cassata-51d628.netlify.app',
+  'https://api.brandout.ai',       // API domain
+  // Add more flexible patterns
+  'https://brandout.ai',
+  'https://www.brandout.ai'
 ];
 
 app.use(cors({
@@ -91,17 +93,21 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl requests)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('netlify.app')) {
+    // Check if origin is in allowed list or matches patterns
+    if (allowedOrigins.indexOf(origin) !== -1 || 
+        origin.endsWith('netlify.app') || 
+        origin.endsWith('brandout.ai') ||
+        origin.includes('localhost')) {
       callback(null, true);
     } else {
       console.log(`Origin ${origin} not allowed by CORS policy`);
-      // Still allow the request to continue, just log it as potentially unauthorized
+      // For production, still allow to avoid breaking things
       callback(null, true);
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
   exposedHeaders: ['Set-Cookie']
 }));
 
