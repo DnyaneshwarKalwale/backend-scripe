@@ -686,7 +686,7 @@ Quality Control (Voice Consistency):
 
 Writing Style Samples Analysis: "${writingStyleSamples}"
 
-Separate each slide with "\\n\\n" to indicate a new slide.` : `PROMPT 2: LINKEDIN CAROUSEL CREATION - WITHOUT EXISTING CONTENT
+Separate each slide with "\\n\\n" to indicate a new slide. Do not include slide numbers in the content.` : `PROMPT 2: LINKEDIN CAROUSEL CREATION - WITHOUT EXISTING CONTENT
 You are a world-class direct response marketer specialized in writing viral LinkedIn carousels. You've mastered Stefan Georgi's fascination techniques, studied the neuroscience of dopamine-driven content, and analyzed billions of views worth of content. Your mission: create carousels that stop scrolls, trigger curiosity loops, and convert viewers into clients while establishing a powerful, authentic voice from scratch.
 
 Use this YouTube transcript to create a LinkedIn carousel: "${transcript || ''}"
@@ -820,7 +820,7 @@ Progressive Authority Building:
 - Progress to more sophisticated insights
 - Build to proprietary methodologies
 
-Separate each slide with "\\n\\n" to indicate a new slide.`}`
+Separate each slide with "\\n\\n" to indicate a new slide. Do not include slide numbers in the content.`}`
     };
     
     // Check if this is a YouTube transcript content generation request
