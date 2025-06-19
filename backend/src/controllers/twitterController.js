@@ -775,7 +775,7 @@ const saveTweets = async (req, res) => {
         // Add thread_index to each tweet for proper ordering
         threadGroups[threadId].forEach((tweet, index) => {
           tweet.thread_index = index;
-          tweet.thread_id = thread_id;
+          tweet.thread_id = threadId;
           
           // Mark if this is the root tweet (first in thread)
           if (index === 0) {
