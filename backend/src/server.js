@@ -821,7 +821,27 @@ Progressive Authority Building:
 - Progress to more sophisticated insights
 - Build to proprietary methodologies
 
-Separate each slide with "\\n\\n" to indicate a new slide.`}`
+Separate each slide with "\\n\\n" to indicate a new slide.
+
+CRITICAL FORMATTING RULES:
+- DO NOT include slide numbers (like "Slide 1", "Slide 2", etc.)
+- DO NOT include markdown separators (like "---")
+- DO NOT include section headers or labels
+- Each slide should contain ONLY the pure content that will appear on the slide
+- Use double line breaks (\\n\\n) to separate slides
+- Start each slide directly with the content, no prefixes
+
+Example format:
+🌊 From a struggling business owner in 2022 to a recognized authority in 2025.
+**How did I shift from chasing clients to having them come to me? Here's what changed!**
+
+Imagine waking up every day with **inbound leads** and sales flowing in,
+✅ **150,000** followers who trust and engage with your expertise!
+✨ This isn't just a dream; it can be your reality too.
+
+You don't have to wallow in the *red ocean* of competition.
+With the right strategy, **YOU will stand out** as the go-to expert in your field.
+How? Let's dive into my journey.`}`
     };
     
     // Check if this is a YouTube transcript content generation request
@@ -848,6 +868,9 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
         // If it's a carousel, clean up slide prefixes and any standalone "Slide X" occurrences
         let generatedContent = completion.choices[0].message.content;
         if (type === 'carousel') {
+          // First, remove any markdown separators like "---"
+          generatedContent = generatedContent.replace(/^---+$/gm, '');
+          
           // Split by double newlines to get individual slides
           const carouselSlides = generatedContent.split('\n\n').filter(s => s.trim());
           
@@ -861,8 +884,17 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
               continue;
             }
             
-            // Remove "Slide X:" prefix if it exists
-            cleanedSlides.push(current.replace(/^Slide\s*\d+[\s:.]+/i, '').trim());
+            // Remove "Slide X:" prefix if it exists (including variations like "Slide 1 -", "**Slide 1**", etc.)
+            let cleanedSlide = current
+              .replace(/^\*\*Slide\s*\d+[^\*]*\*\*[\s\-:]*(.*)$/i, '$1') // **Slide 1 - Title**
+              .replace(/^Slide\s*\d+[\s\-:]+(.*)$/i, '$1') // Slide 1 - Content or Slide 1: Content
+              .replace(/^Slide\s*\d+[\s]*(.*)$/i, '$1') // Slide 1 Content
+              .trim();
+            
+            // Only add non-empty slides
+            if (cleanedSlide) {
+              cleanedSlides.push(cleanedSlide);
+            }
           }
           
           generatedContent = cleanedSlides.join('\n\n');
