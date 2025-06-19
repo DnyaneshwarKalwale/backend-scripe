@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const TweetSchema = new mongoose.Schema({
   id: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   text: {
     type: String,
@@ -99,5 +98,8 @@ const TweetSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Create compound unique index to allow same tweet to be saved by different users
+TweetSchema.index({ id: 1, user: 1 }, { unique: true });
 
 module.exports = mongoose.model('Tweet', TweetSchema); 
