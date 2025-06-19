@@ -744,8 +744,6 @@ const saveVideoTranscript = async (req, res) => {
     });
   } catch (error) {
     console.error('Error saving transcript:', error);
-    // Ensure CORS headers are set even on error
-    res.header('Access-Control-Allow-Origin', '*');
     
     return res.status(500).json({
       success: false,
