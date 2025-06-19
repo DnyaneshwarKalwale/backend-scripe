@@ -1,7 +1,14 @@
 const axios = require('axios');
 const xml2js = require('xml2js');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 const User = require('../models/userModel');
 const SavedVideo = require('../models/savedVideo');
+
+const execPromise = promisify(exec);
 
 /**
  * Helper function to validate YouTube channel IDs
@@ -267,37 +274,105 @@ const getChannelVideos = async (req, res) => {
 
       console.log(`Found ${videos.length} videos from channel ${exactChannelName || channelId}`);
 
-      // For videos without duration (which is most of them from RSS), try to fetch duration data
-      // This can be done in batches to avoid too many requests
+      // For videos without duration (which is most of them from RSS), try to fetch duration data using yt-dlp
       try {
-        // Batch videos into groups of 10 for processing
-        const batchSize = 10;
+
+
+        // Determine the correct yt-dlp binary based on platform
+        let ytDlpCommand;
+        const isWindows = os.platform() === 'win32';
+        
+        if (isWindows) {
+          const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
+          ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
+        } else {
+          const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
+          if (fs.existsSync(ytDlpPath)) {
+            try {
+              await execPromise(`chmod +x "${ytDlpPath}"`);
+              ytDlpCommand = `"${ytDlpPath}"`;
+            } catch (chmodError) {
+              console.error('Error making yt-dlp executable:', chmodError);
+              ytDlpCommand = 'yt-dlp';
+            }
+          } else {
+            ytDlpCommand = 'yt-dlp';
+          }
+        }
+
+        // Batch videos into groups of 5 for processing (smaller batches for yt-dlp)
+        const batchSize = 5;
         for (let i = 0; i < videos.length; i += batchSize) {
           const batch = videos.slice(i, i + batchSize);
-          const videoIds = batch.map(video => video.id).join(',');
           
-          // Try to fetch video details using scraping approach (no API key needed)
-          const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          };
-          
-          // Get duration for each video in the batch using a more resilient approach
+          // Get duration for each video in the batch using yt-dlp
           await Promise.allSettled(batch.map(async (video) => {
             try {
               const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
-              const response = await axios.get(videoUrl, { headers, timeout: 5000 });
               
-              // Extract duration using regex patterns
-              const durationMatch = response.data.match(/"lengthSeconds":"(\d+)"/);
-              if (durationMatch && durationMatch[1]) {
-                const seconds = parseInt(durationMatch[1], 10);
-                video.duration = formatDuration(seconds);
+              // Use yt-dlp to get video metadata including duration
+              const command = `${ytDlpCommand} --dump-json --no-download "${videoUrl}"`;
+              console.log(`Getting duration for ${video.id} using: ${command}`);
+              
+              const { stdout } = await execPromise(command, { timeout: 10000 });
+              const metadata = JSON.parse(stdout);
+              
+              if (metadata.duration) {
+                video.duration = formatDuration(metadata.duration);
+                console.log(`Successfully extracted duration for ${video.id}: ${video.duration}`);
+              } else {
+                console.log(`No duration found in metadata for ${video.id}`);
               }
             } catch (error) {
-              console.log(`Failed to fetch duration for video ${video.id}: ${error.message}`);
-              // Keep the default N/A if fetch fails
+              console.log(`Failed to fetch duration for video ${video.id} with yt-dlp: ${error.message}`);
+              
+              // Fallback to page scraping method
+              try {
+                const headers = {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                };
+                const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+                const response = await axios.get(videoUrl, { headers, timeout: 5000 });
+                
+                // Try multiple patterns for duration extraction
+                const patterns = [
+                  /"lengthSeconds":"(\d+)"/,
+                  /"duration":"PT(\d+)M(\d+)S"/,
+                  /"duration":(\d+)/,
+                  /lengthSeconds&quot;:&quot;(\d+)&quot;/
+                ];
+                
+                for (const pattern of patterns) {
+                  const match = response.data.match(pattern);
+                  if (match) {
+                    let seconds;
+                    if (pattern.source.includes('PT')) {
+                      // ISO 8601 duration format PT#M#S
+                      const minutes = parseInt(match[1], 10) || 0;
+                      const secs = parseInt(match[2], 10) || 0;
+                      seconds = (minutes * 60) + secs;
+                    } else {
+                      seconds = parseInt(match[1], 10);
+                    }
+                    
+                    if (seconds && seconds > 0) {
+                      video.duration = formatDuration(seconds);
+                      console.log(`Fallback: extracted duration for ${video.id}: ${video.duration}`);
+                      break;
+                    }
+                  }
+                }
+              } catch (fallbackError) {
+                console.log(`Fallback duration extraction also failed for ${video.id}: ${fallbackError.message}`);
+                // Keep the default N/A if both methods fail
+              }
             }
           }));
+          
+          // Add a small delay between batches to avoid overwhelming the system
+          if (i + batchSize < videos.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       } catch (durationError) {
         console.error('Error fetching video durations:', durationError);
