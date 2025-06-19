@@ -821,27 +821,7 @@ Progressive Authority Building:
 - Progress to more sophisticated insights
 - Build to proprietary methodologies
 
-Separate each slide with "\\n\\n" to indicate a new slide.
-
-CRITICAL FORMATTING RULES:
-- DO NOT include slide numbers (like "Slide 1", "Slide 2", etc.)
-- DO NOT include markdown separators (like "---")
-- DO NOT include section headers or labels
-- Each slide should contain ONLY the pure content that will appear on the slide
-- Use double line breaks (\\n\\n) to separate slides
-- Start each slide directly with the content, no prefixes
-
-Example format:
-🌊 From a struggling business owner in 2022 to a recognized authority in 2025.
-**How did I shift from chasing clients to having them come to me? Here's what changed!**
-
-Imagine waking up every day with **inbound leads** and sales flowing in,
-✅ **150,000** followers who trust and engage with your expertise!
-✨ This isn't just a dream; it can be your reality too.
-
-You don't have to wallow in the *red ocean* of competition.
-With the right strategy, **YOU will stand out** as the go-to expert in your field.
-How? Let's dive into my journey.`}`
+Separate each slide with "\\n\\n" to indicate a new slide.`}`
     };
     
     // Check if this is a YouTube transcript content generation request
@@ -868,9 +848,6 @@ How? Let's dive into my journey.`}`
         // If it's a carousel, clean up slide prefixes and any standalone "Slide X" occurrences
         let generatedContent = completion.choices[0].message.content;
         if (type === 'carousel') {
-          // First, remove any markdown separators like "---"
-          generatedContent = generatedContent.replace(/^---+$/gm, '');
-          
           // Split by double newlines to get individual slides
           const carouselSlides = generatedContent.split('\n\n').filter(s => s.trim());
           
@@ -884,21 +861,80 @@ How? Let's dive into my journey.`}`
               continue;
             }
             
-            // Remove "Slide X:" prefix if it exists (including variations like "Slide 1 -", "**Slide 1**", etc.)
-            let cleanedSlide = current
-              .replace(/^\*\*Slide\s*\d+[^\*]*\*\*[\s\-:]*(.*)$/i, '$1') // **Slide 1 - Title**
-              .replace(/^Slide\s*\d+[\s\-:]+(.*)$/i, '$1') // Slide 1 - Content or Slide 1: Content
-              .replace(/^Slide\s*\d+[\s]*(.*)$/i, '$1') // Slide 1 Content
-              .trim();
+            // Skip slides that are just separators (---)
+            if (/^-{3,}$/.test(current)) {
+              continue;
+            }
             
-            // Only add non-empty slides
-            if (cleanedSlide) {
+            // Remove "Slide X:" prefix if it exists and clean up any remaining separators
+            let cleanedSlide = current.replace(/^Slide\s*\d+[\s:.]+/i, '').trim();
+            cleanedSlide = cleanedSlide.replace(/^-{3,}$/gm, '').trim(); // Remove separator lines
+            cleanedSlide = cleanedSlide.replace(/\n\s*-{3,}\s*\n/g, '\n').trim(); // Remove separators between content
+            
+            if (cleanedSlide) { // Only add non-empty slides
               cleanedSlides.push(cleanedSlide);
             }
           }
           
           generatedContent = cleanedSlides.join('\n\n');
           console.log(`Generated carousel with ${cleanedSlides.length} cleaned slides`);
+        }
+        
+        // Auto-save the generated content
+        if (req.body.videoId && req.body.videoTitle) {
+          try {
+            const { v4: uuidv4 } = require('uuid');
+            const contentId = uuidv4();
+            const userId = req.body.userId || 'anonymous'; // Get userId from request body
+            
+            const contentData = {
+              id: contentId,
+              title: req.body.videoTitle || 'Generated Content',
+              content: generatedContent,
+              type: type,
+              videoId: req.body.videoId,
+              videoTitle: req.body.videoTitle,
+              createdAt: new Date()
+            };
+            
+            // Save to database
+            const newContent = new CarouselContent({
+              id: contentData.id,
+              userId: userId,
+              title: contentData.title,
+              content: contentData.content,
+              type: contentData.type,
+              videoId: contentData.videoId,
+              videoTitle: contentData.videoTitle,
+              createdAt: contentData.createdAt,
+              updatedAt: new Date()
+            });
+            
+            await newContent.save();
+            console.log(`Auto-saved generated content with ID: ${contentId} for user: ${userId}`);
+            
+            return res.json({ 
+              content: generatedContent,
+              model: completion.model,
+              usage: completion.usage,
+              type: type,
+              success: true,
+              autoSaved: true,
+              savedContentId: contentId
+            });
+          } catch (saveError) {
+            console.error('Error auto-saving content:', saveError);
+            // Still return the content even if save fails
+            return res.json({ 
+              content: generatedContent,
+              model: completion.model,
+              usage: completion.usage,
+              type: type,
+              success: true,
+              autoSaved: false,
+              saveError: saveError.message
+            });
+          }
         }
         
         return res.json({ 
