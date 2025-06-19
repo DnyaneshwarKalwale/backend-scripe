@@ -13,6 +13,8 @@ const paymentRoutes = require('./src/routes/paymentRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const adminNotificationRoutes = require('./src/routes/adminNotificationRoutes');
 const twitterRoutes = require('./src/routes/twitterRoutes');
+const linkedinRoutes = require('./src/routes/linkedinRoutes');
+const youtubeRoutes = require('./src/routes/youtubeRoutes');
 const rateLimit = require('express-rate-limit');
 const apicache = require('apicache');
 const compression = require('compression');
@@ -75,6 +77,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/twitter', twitterRoutes);
+app.use('/api/linkedin', linkedinRoutes);
+app.use('/api/youtube', youtubeRoutes);
 
 // Schedule subscription check job to run at midnight every day
 cron.schedule('0 0 * * *', () => {

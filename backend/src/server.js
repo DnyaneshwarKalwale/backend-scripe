@@ -828,6 +828,10 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
     if (type && transcript && SECURE_PROMPTS[type]) {
       try {
         console.log(`Generating ${type} content from YouTube transcript with model: ${model}`);
+        console.log(`Writing style samples provided: ${writingStyleSamples ? 'Yes' : 'No'}`);
+        if (writingStyleSamples) {
+          console.log(`Writing style samples length: ${writingStyleSamples.length} characters`);
+        }
         
         // Use the secure prompts stored on the server
         const completion = await openai.chat.completions.create({
