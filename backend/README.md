@@ -29,6 +29,7 @@ A NodeJS backend for the Scripe application that generates LinkedIn content with
 ## Environment Setup  new env create and added 
 
 Create a `.env` file in the root directory with the following variables:
+new changes added
 
 ```
 PORT=5000
