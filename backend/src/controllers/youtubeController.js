@@ -640,17 +640,6 @@ const deleteSavedVideo = async (req, res) => {
  * @access  Public
  */
 const saveVideoTranscript = async (req, res) => {
-  // Set CORS headers explicitly
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
-  res.header('Access-Control-Allow-Credentials', 'true');
-
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.status(204).send();
-  }
-
   try {
     const { video, videoId, transcript, formattedTranscript, language, is_generated, userId, duration, channelTitle } = req.body;
     
