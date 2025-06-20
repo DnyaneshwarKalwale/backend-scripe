@@ -213,69 +213,7 @@ router.post('/save-transcript', saveVideoTranscript);
  * @desc    Save a video with its transcript all at once
  * @access  Public
  */
-router.post('/save-video-transcript', async (req, res) => {
-  try {
-    const { videoId, transcript, userId, videoTitle, channelTitle } = req.body;
-
-    if (!videoId || !transcript || !userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'VideoId, transcript, and userId are required'
-      });
-    }
-
-    // Create transcript file path
-    const transcriptPath = path.join(process.cwd(), 'transcripts', `${videoId}.json`);
-    
-    // Save transcript to file
-    const transcriptData = {
-      videoId,
-      transcript,
-      videoTitle: videoTitle || 'Unknown Title',
-      channelTitle: channelTitle || 'Unknown Channel',
-      savedAt: new Date().toISOString(),
-      userId
-    };
-
-    try {
-      await fs.promises.mkdir(path.dirname(transcriptPath), { recursive: true });
-      await fs.promises.writeFile(transcriptPath, JSON.stringify(transcriptData, null, 2));
-      console.log(`Saved transcript to file for video ${videoId}`);
-    } catch (fileError) {
-      console.error('Error saving transcript file:', fileError);
-      // Continue even if file save fails - we'll still save to DB
-    }
-
-    // Save to database
-    const savedVideo = await SavedVideo.findOneAndUpdate(
-      { videoId, userId },
-      {
-        videoId,
-        transcript,
-        videoTitle: videoTitle || 'Unknown Title',
-        channelTitle: channelTitle || 'Unknown Channel',
-        userId
-      },
-      { upsert: true, new: true }
-    );
-
-    console.log(`Successfully saved transcript for video ${videoId} to database`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Transcript saved successfully',
-      data: savedVideo
-    });
-
-  } catch (error) {
-    console.error('Error saving transcript:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error saving transcript',
-      error: error.message
-    });
-  }
-});
+router.post('/save-video-transcript', saveVideoTranscript);
 
 /**
  * @route   GET /api/youtube/saved/:userId
@@ -711,9 +649,62 @@ async function extractTranscriptWithYtDlp(videoId) {
   }
 }
 
-// Keep only the specific error handling logic
+// Setup CORS handlers specifically for YouTube routes
+router.use((req, res, next) => {
+  // Get the origin
+  const origin = req.headers.origin;
+  
+  // Dynamically set Access-Control-Allow-Origin
+  if (origin) {
+    // Allow Netlify origins explicitly
+    if (origin.endsWith('netlify.app') || 
+        origin === 'https://deluxe-cassata-51d628.netlify.app' ||
+        origin.includes('localhost')) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      // For other origins, still allow them but log
+      console.log(`YouTube Routes: Origin ${origin} accessing API`);
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    // No origin header (direct API call)
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// Error handling middleware specific to YouTube routes
 router.use((err, req, res, next) => {
   console.error('YouTube API error:', err);
+  
+  // Set CORS headers even when errors occur
+  const origin = req.headers.origin;
+  if (origin) {
+    // For Netlify domains and localhost, use the specific origin
+    if (origin.endsWith('netlify.app') || 
+        origin === 'https://deluxe-cassata-51d628.netlify.app' || 
+        origin.includes('localhost')) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      console.log(`Error handler: Origin ${origin} accessing API`);
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   // Handle payload too large errors specifically
   if (err.type === 'entity.too.large') {

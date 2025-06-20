@@ -1,34 +1,62 @@
 const express = require('express');
+const cors = require('cors');
+const path = require('path');
 const { errorHandler } = require('./middleware/errorMiddleware');
-const connectDB = require('./config/db');
+const userRoutes = require('./routes/userRoutes');
+const carouselRoutes = require('./routes/carouselRoutes');
+const stripeRoutes = require('./routes/stripeRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const { connectDB } = require('./config/db');
 
-// Connect to database
-connectDB();
-
+// Set up Express app
 const app = express();
 
-// Body parser middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// Connect to database susss
+connectDB();
+
+// Middleware
+app.use(cors({
+  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+  credentials: true
+}));
 
 // Special handling for Stripe webhook route to access raw body for signature verification
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '10mb' }));
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
+// Add middleware to expose the raw body for signature verification
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    req.rawBody = req.body;
+  }
+  next();
+});
+
+// Standard middleware for other routes
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Ensure uploads directory exists
+const fs = require('fs');
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(uploadsDir));
 
 // Routes
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/youtube', require('./routes/youtubeRoutes'));
-app.use('/api/twitter', require('./routes/twitterRoutes'));
-app.use('/api/linkedin', require('./routes/linkedinRoutes'));
-app.use('/api/carousel', require('./routes/carouselRoutes'));
-app.use('/api/admin', require('./routes/adminRoutes'));
-app.use('/api/stripe', require('./routes/stripeRoutes'));
-app.use('/api/user-limits', require('./routes/userLimitsRoutes'));
-app.use('/api/carousel-contents', require('./routes/carouselContentRoutes'));
-app.use('/api/carousel-requests', require('./routes/carouselRequestRoutes'));
-app.use('/api/notifications', require('./routes/notificationRoutes'));
-app.use('/api/admin-notifications', require('./routes/adminNotificationRoutes'));
+app.use('/api/users', userRoutes);
+app.use('/api/carousels', carouselRoutes);
+app.use('/api/stripe', stripeRoutes);
+app.use('/api/payments', paymentRoutes);
 
-// Error handler
-app.use(errorHandler);
+// Default route
+app.get('/', (req, res) => {
+  res.json({ message: 'API is running' });
+});
+
+// Error handler middleware
+app.use(errorHandler); 
 
 module.exports = app; 
