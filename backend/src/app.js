@@ -11,7 +11,7 @@ const { connectDB } = require('./config/db');
 // Set up Express app
 const app = express();
 
-// Connect to database
+// Connect to database susss
 connectDB();
 
 // Middleware
