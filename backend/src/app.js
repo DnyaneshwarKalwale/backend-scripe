@@ -14,29 +14,19 @@ const app = express();
 // Connect to database susss
 connectDB();
 
-// CORS Configuration - Must be before any routes
+// CORS Configuration
 const corsOptions = {
-  origin: function(origin, callback) {
-    const allowedOrigins = ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'];
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      return callback(new Error('CORS policy violation'), false);
-    }
-    return callback(null, true);
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true,
-  maxAge: 86400, // 24 hours
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  maxAge: 86400 // 24 hours
 };
 
-// Apply CORS middleware before any other middleware or routes
+// Apply CORS before other middleware
 app.use(cors(corsOptions));
 
-// Handle preflight requests for all routes
+// Handle preflight requests
 app.options('*', cors(corsOptions));
 
 // Special handling for Stripe webhook route to access raw body for signature verification
@@ -75,33 +65,7 @@ app.get('/', (req, res) => {
   res.json({ message: 'API is running' });
 });
 
-// Add CORS headers to all responses
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://app.brandout.ai');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  next();
-});
-
-// Error handling middleware - should be last
-app.use((err, req, res, next) => {
-  // Add CORS headers to error responses too
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://app.brandout.ai');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-  
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal server error'
-  });
-});
+// Error handler middleware
+app.use(errorHandler); 
 
 module.exports = app; 

@@ -1,53 +1,27 @@
 // Error handling middleware
 const errorHandler = (err, req, res, next) => {
-  // Always send CORS headers
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Allow-Origin');
-  
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
+  // Get error status and message
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
 
-  // Log the error for debugging
+  // Ensure CORS headers are set even during errors
+  res.header("Access-Control-Allow-Origin", req.headers.origin);
+  res.header("Access-Control-Allow-Credentials", true);
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin");
+
+  // Log error for debugging
   console.error('Error:', {
-    message: err.message,
-    stack: err.stack,
-    status: err.status,
-    origin: req.headers.origin,
-    method: req.method,
-    path: req.path
+    status: statusCode,
+    message: message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 
-  // Handle specific error types
-  if (err.name === 'ValidationError') {
-    return res.status(400).json({
-      success: false,
-      message: err.message
-    });
-  }
-
-  if (err.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid token'
-    });
-  }
-
-  if (err.name === 'CORSError') {
-    return res.status(403).json({
-      success: false,
-      message: 'CORS policy violation',
-      error: err.message
-    });
-  }
-
-  // Default error response
-  res.status(err.status || 500).json({
+  // Send error response
+  res.status(statusCode).json({
     success: false,
-    message: err.message || 'Internal server error'
+    message: message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 };
 

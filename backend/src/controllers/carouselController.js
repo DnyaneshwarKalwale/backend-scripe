@@ -455,29 +455,6 @@ const deleteCarouselRequest = asyncHandler(async (req, res) => {
   }
 });
 
-// Get carousel contents
-const getCarouselContents = async (req, res) => {
-  try {
-    const { userId } = req.query;
-    
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'User ID is required'
-      });
-    }
-
-    // ... rest of the existing code ...
-  } catch (error) {
-    console.error('Error fetching carousel contents:', error);
-    res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || 'Failed to fetch carousel contents',
-      error: error.toString()
-    });
-  }
-};
-
 // Export controller functions
 module.exports = {
   getCarousels,
@@ -491,6 +468,5 @@ module.exports = {
   getCarouselRequestById,
   updateCarouselRequestStatus,
   deleteCarouselRequest,
-  completeCarouselRequest,
-  getCarouselContents
+  completeCarouselRequest
 }; 

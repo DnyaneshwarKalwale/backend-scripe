@@ -74,48 +74,64 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
-const corsOptions = {
-  origin: true, // Allow all origins temporarily for debugging
+const allowedOrigins = [
+    'https://app.brandout.ai', 
+  'http://localhost:3000',
+  'http://localhost:5173',
+    'https://brandout.vercel.app',
+    'https://ea50-43-224-158-115.ngrok-free.app',
+    'https://18cd-43-224-158-115.ngrok-free.app',
+    'https://deluxe-cassata-51d628.netlify.app',
+  'https://api.brandout.ai',       // API domain
+  // Add more flexible patterns
+  'https://brandout.ai',
+  'https://www.brandout.ai'
+];
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list or matches patterns
+    if (allowedOrigins.indexOf(origin) !== -1 || 
+        origin.endsWith('netlify.app') || 
+        origin.endsWith('brandout.ai') ||
+        origin.includes('localhost')) {
+      callback(null, true);
+    } else {
+      console.log(`Origin ${origin} not allowed by CORS policy`);
+      // For production, still allow to avoid breaking things
+      callback(null, true);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-Requested-With', 
-    'Accept', 
-    'Origin', 
-    'Access-Control-Allow-Origin',
-    'Access-Control-Allow-Headers',
-    'Access-Control-Allow-Methods',
-    'Access-Control-Allow-Credentials'
-  ],
-  exposedHeaders: ['set-cookie', 'Set-Cookie'],
-  maxAge: 86400, // 24 hours
-  preflightContinue: false,
-  optionsSuccessStatus: 204
-};
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
+  exposedHeaders: ['Set-Cookie']
+}));
 
-// Apply CORS middleware before any other middleware
-app.use(cors(corsOptions));
+// Ensure OPTIONS requests are handled properly
+app.options('*', cors());
 
-// Handle preflight requests for all routes
-app.options('*', cors(corsOptions));
-
-// Add CORS error handling middleware
-app.use((err, req, res, next) => {
-  if (err.name === 'CORSError') {
-    console.error('CORS Error:', {
-      origin: req.headers.origin,
-      method: req.method,
-      path: req.path
-    });
-    return res.status(403).json({
-      success: false,
-      message: 'CORS policy violation',
-      error: err.message
-    });
+// Add robust CORS error handling
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
   }
-  next(err);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle preflight 
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
 });
 
 // Regular middleware
@@ -1915,23 +1931,4 @@ app.listen(PORT, async () => {
 
   // Start cron jobs
   accountDeletionJob.start();
-});
-
-// Handle CORS errors
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-  if (err.code === 'CORS_ERROR') {
-    console.error('CORS Error:', {
-      origin: err.origin,
-      method: err.method,
-      headers: err.headers
-    });
-  }
-  // Don't exit the process, just log the error
-});
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
-  // Don't exit the process, just log the error
 }); 

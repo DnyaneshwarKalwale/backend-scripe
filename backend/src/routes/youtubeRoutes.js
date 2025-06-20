@@ -71,7 +71,7 @@ async function getPythonExecutablePath() {
       try {
         await fs.promises.access(venvPath);
         return venvPath;
-        } catch {
+      } catch {
         return 'python';  // Fallback to system Python
       }
     } else {
@@ -114,26 +114,8 @@ router.post('/transcript', async (req, res) => {
         message: 'YouTube video ID is required' 
       });
     }
-    
+
     console.log(`Fetching transcript for video ID: ${videoId}`);
-    
-    // Check if transcript already exists in cache/storage
-    const transcriptPath = path.join(process.cwd(), 'transcripts', `${videoId}.json`);
-    try {
-      const existingTranscript = await fs.promises.readFile(transcriptPath, 'utf8');
-      const parsedTranscript = JSON.parse(existingTranscript);
-      console.log(`Found cached transcript for video ${videoId}`);
-      return res.json({
-        success: true,
-        transcript: parsedTranscript.transcript,
-        source: 'cache',
-        language: parsedTranscript.language || 'en',
-        channelTitle: parsedTranscript.channelTitle || 'Unknown Channel',
-        videoTitle: parsedTranscript.videoTitle || 'Unknown Title'
-      });
-    } catch (err) {
-      console.log(`No cached transcript found for ${videoId}, fetching fresh...`);
-    }
     
     // Call the Python script which now uses YouTube Transcript API with proxy (primary method)
     const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
@@ -169,16 +151,8 @@ router.post('/transcript', async (req, res) => {
       }
       
       if (result.success) {
-        // Save transcript to file system for future use
-        try {
-          await fs.promises.writeFile(transcriptPath, JSON.stringify(result, null, 2));
-          console.log(`Saved transcript to file system for video ${videoId}`);
-        } catch (saveError) {
-          console.error(`Error saving transcript to file system: ${saveError.message}`);
-        }
-        
         console.log(`Successfully fetched transcript for video ${videoId} using ${result.source || 'YouTube Transcript API'}`);
-        return res.json({
+        res.json({
           success: true,
           transcript: result.transcript,
           source: result.source || 'YouTube Transcript API',
@@ -189,16 +163,16 @@ router.post('/transcript', async (req, res) => {
       } else {
         console.log(`Failed to fetch transcript for video ${videoId}:`, result.error || 'Unknown error');
         // Fall back to backup method
-        return await fetchBackupTranscript(videoId, res);
+        fetchBackupTranscript(videoId, res);
       }
     } catch (error) {
       console.error('Error running Python script:', error);
       // Fall back to backup method
-      return await fetchBackupTranscript(videoId, res);
+      fetchBackupTranscript(videoId, res);
     }
   } catch (error) {
     console.error('Error in transcript route:', error);
-    return res.status(500).json({ 
+    res.status(500).json({ 
       success: false, 
       message: 'Server error fetching transcript',
       error: error.message
@@ -239,7 +213,69 @@ router.post('/save-transcript', saveVideoTranscript);
  * @desc    Save a video with its transcript all at once
  * @access  Public
  */
-router.post('/save-video-transcript', saveVideoTranscript);
+router.post('/save-video-transcript', async (req, res) => {
+  try {
+    const { videoId, transcript, userId, videoTitle, channelTitle } = req.body;
+
+    if (!videoId || !transcript || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'VideoId, transcript, and userId are required'
+      });
+    }
+
+    // Create transcript file path
+    const transcriptPath = path.join(process.cwd(), 'transcripts', `${videoId}.json`);
+    
+    // Save transcript to file
+    const transcriptData = {
+      videoId,
+      transcript,
+      videoTitle: videoTitle || 'Unknown Title',
+      channelTitle: channelTitle || 'Unknown Channel',
+      savedAt: new Date().toISOString(),
+      userId
+    };
+
+    try {
+      await fs.promises.mkdir(path.dirname(transcriptPath), { recursive: true });
+      await fs.promises.writeFile(transcriptPath, JSON.stringify(transcriptData, null, 2));
+      console.log(`Saved transcript to file for video ${videoId}`);
+    } catch (fileError) {
+      console.error('Error saving transcript file:', fileError);
+      // Continue even if file save fails - we'll still save to DB
+    }
+
+    // Save to database
+    const savedVideo = await SavedVideo.findOneAndUpdate(
+      { videoId, userId },
+      {
+        videoId,
+        transcript,
+        videoTitle: videoTitle || 'Unknown Title',
+        channelTitle: channelTitle || 'Unknown Channel',
+        userId
+      },
+      { upsert: true, new: true }
+    );
+
+    console.log(`Successfully saved transcript for video ${videoId} to database`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Transcript saved successfully',
+      data: savedVideo
+    });
+
+  } catch (error) {
+    console.error('Error saving transcript:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error saving transcript',
+      error: error.message
+    });
+  }
+});
 
 /**
  * @route   GET /api/youtube/saved/:userId
@@ -298,11 +334,11 @@ router.get('/transcript', async (req, res) => {
         language_code: scraperApiResult.language_code,
         is_generated: scraperApiResult.is_generated ?? false
       });
-    
-    return res.status(200).json({
-      success: true,
-      data: {
-        videoId,
+      
+      return res.status(200).json({
+        success: true,
+        data: {
+          videoId,
           transcript: scraperApiResult.transcript,
           language: scraperApiResult.language,
           isAutoGenerated: scraperApiResult.is_generated ?? false,
@@ -399,8 +435,8 @@ router.get('/transcript', async (req, res) => {
     }
   } catch (error) {
     console.error('Error fetching transcript:', error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: 'Failed to fetch transcript',
       error: error.message
     });
@@ -483,42 +519,35 @@ function extractVideoId(url) {
   }
 }
 
-// Helper function to fetch transcript using yt-dlp as backup
+// Backup method for when Python method fails - now uses direct yt-dlp integration
 async function fetchBackupTranscript(videoId, res) {
   try {
     console.log(`Using backup yt-dlp method for video ID: ${videoId}`);
     const result = await extractTranscriptWithYtDlp(videoId);
     
     if (result.success) {
-      // Save successful yt-dlp transcript to file system
-      const transcriptPath = path.join(process.cwd(), 'transcripts', `${videoId}.json`);
-      try {
-        await fs.promises.writeFile(transcriptPath, JSON.stringify(result, null, 2));
-        console.log(`Saved yt-dlp transcript to file system for video ${videoId}`);
-      } catch (saveError) {
-        console.error(`Error saving yt-dlp transcript to file system: ${saveError.message}`);
-      }
-      
-      return res.json({
-          success: true,
+      console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${result.transcript.length}`);
+      res.json({
+        success: true,
         transcript: result.transcript,
         source: 'yt-dlp',
         language: result.language || 'en',
         channelTitle: result.channelTitle || 'Unknown Channel',
         videoTitle: result.videoTitle || 'Unknown Title'
-        });
-      } else {
-      return res.status(404).json({
+      });
+    } else {
+      console.error(`Failed to fetch transcript with yt-dlp for video ${videoId}:`, result.error);
+      res.status(500).json({
         success: false,
-        message: 'Failed to fetch transcript with all available methods',
+        message: 'Failed to fetch transcript with backup method',
         error: result.error
       });
     }
   } catch (error) {
-    console.error('Error in backup transcript fetch:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Server error fetching backup transcript',
+    console.error('Error in backup transcript method:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error in backup transcript method',
       error: error.message
     });
   }

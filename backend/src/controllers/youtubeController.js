@@ -2,8 +2,6 @@ const axios = require('axios');
 const xml2js = require('xml2js');
 const User = require('../models/userModel');
 const SavedVideo = require('../models/savedVideo');
-const path = require('path');
-const fs = require('fs');
 
 /**
  * Helper function to validate YouTube channel IDs
@@ -680,41 +678,14 @@ const saveVideoTranscript = async (req, res) => {
       }).filter(Boolean);
     }
     
-    // Save to filesystem first as backup
-    try {
-      const transcriptsDir = path.join(process.cwd(), 'transcripts');
-      if (!fs.existsSync(transcriptsDir)) {
-        fs.mkdirSync(transcriptsDir, { recursive: true });
-      }
-      
-      const transcriptFile = path.join(transcriptsDir, `${actualVideoId}.json`);
-      fs.writeFileSync(transcriptFile, JSON.stringify({
-        transcript: safeTranscript,
-        formattedTranscript: safeFormattedTranscript,
-        language: actualLanguage,
-        is_generated: actualIsGenerated,
-        duration: actualDuration,
-        channelTitle: actualChannelTitle,
-        savedAt: new Date().toISOString()
-      }, null, 2));
-      
-      console.log(`Saved transcript backup to filesystem for video ${actualVideoId}`);
-    } catch (fsError) {
-      console.error('Error saving transcript backup to filesystem:', fsError);
-      // Continue with database save even if filesystem backup fails
-    }
-    
     // Find the existing saved video
     let savedVideo;
+    
     try {
-      savedVideo = await SavedVideo.findOne({ 
-        $or: [
-          { videoId: actualVideoId, userId: userId || 'anonymous' },
-          { id: actualVideoId, userId: userId || 'anonymous' }
-        ]
-      });
+      savedVideo = await SavedVideo.findOne({ videoId: actualVideoId, userId: userId || 'anonymous' });
     } catch (dbError) {
       console.error('Database error when finding video:', dbError);
+      // If there's an error with the database, we'll still allow saving to a new document
     }
     
     const transcriptData = {
@@ -732,12 +703,7 @@ const saveVideoTranscript = async (req, res) => {
     if (savedVideo) {
       // Update existing video with transcript
       result = await SavedVideo.findOneAndUpdate(
-        { 
-          $or: [
-            { videoId: actualVideoId, userId: userId || 'anonymous' },
-            { id: actualVideoId, userId: userId || 'anonymous' }
-          ]
-        },
+        { videoId: actualVideoId, userId: userId || 'anonymous' },
         { $set: transcriptData },
         { new: true }
       );
@@ -778,6 +744,8 @@ const saveVideoTranscript = async (req, res) => {
     });
   } catch (error) {
     console.error('Error saving transcript:', error);
+    // Ensure CORS headers are set even on error
+    res.header('Access-Control-Allow-Origin', '*');
     
     return res.status(500).json({
       success: false,
