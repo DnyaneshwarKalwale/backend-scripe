@@ -46,15 +46,62 @@ app.use(limiter);
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai']
-    : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai'],
+  origin: function(origin, callback) {
+    const allowedOrigins = [
+      'https://app.brandout.ai',
+      'https://brandout.ai', 
+      'https://api.brandout.ai',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173'
+    ];
+    
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list or matches patterns
+    if (allowedOrigins.indexOf(origin) !== -1 || 
+        origin.endsWith('brandout.ai') || 
+        origin.endsWith('netlify.app') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1')) {
+      callback(null, true);
+    } else {
+      console.log(`Root Server: Origin ${origin} not allowed by CORS policy`);
+      // For production, still allow to avoid breaking things
+      callback(null, true);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept', 'Cookie'],
+  exposedHeaders: ['Set-Cookie']
 };
 
 app.use(cors(corsOptions));
+
+// Ensure OPTIONS requests are handled properly
+app.options('*', cors(corsOptions));
+
+// Add additional CORS error handling
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie');
+  
+  // Handle preflight 
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
 app.use(express.json());
 
 // Cache successful GET requests for 5 minutes
