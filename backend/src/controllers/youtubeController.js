@@ -328,19 +328,36 @@ const getChannelVideos = async (req, res) => {
             try {
               const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
               
-              // Use multiple bypass strategies for aggressive bot detection
+              // Use multiple bypass strategies for aggressive bot detection with proxy support
+              const proxyList = [
+                // Free proxy services (you can add your own proxy servers here)
+                'socks5://127.0.0.1:1080', // Local SOCKS5 proxy if available
+                'http://proxy-server.com:8080', // Replace with actual proxy
+                // Add more proxies as needed
+              ];
+              
+              // Get proxy from environment variable or use default
+              const useProxy = process.env.USE_PROXY === 'true';
+              const proxyUrl = process.env.PROXY_URL || null;
+              
               const bypassStrategies = [
-                // Strategy 1: Mobile client bypass
+                // Strategy 1: Android client with proxy
+                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=android" ${proxyUrl && useProxy ? `--proxy "${proxyUrl}"` : ''} "${videoUrl}"`,
+                
+                // Strategy 2: iOS client with proxy
+                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=ios" ${proxyUrl && useProxy ? `--proxy "${proxyUrl}"` : ''} "${videoUrl}"`,
+                
+                // Strategy 3: TV client with proxy
+                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=tv_embedded" ${proxyUrl && useProxy ? `--proxy "${proxyUrl}"` : ''} "${videoUrl}"`,
+                
+                // Strategy 4: Web client with proxy and headers
+                `${ytDlpCommand} --dump-json --no-download --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --referer "https://www.youtube.com/" --extractor-args "youtube:player_client=web" ${proxyUrl && useProxy ? `--proxy "${proxyUrl}"` : ''} "${videoUrl}"`,
+                
+                // Strategy 5: Android client without proxy (fallback)
                 `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=android" "${videoUrl}"`,
                 
-                // Strategy 2: iOS client bypass  
-                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=ios" "${videoUrl}"`,
-                
-                // Strategy 3: TV client bypass
-                `${ytDlpCommand} --dump-json --no-download --extractor-args "youtube:player_client=tv_embedded" "${videoUrl}"`,
-                
-                // Strategy 4: Original web bypass
-                `${ytDlpCommand} --dump-json --no-download --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --referer "https://www.youtube.com/" --extractor-args "youtube:player_client=web" "${videoUrl}"`
+                // Strategy 6: Direct approach with minimal flags
+                `${ytDlpCommand} --print duration --print title "${videoUrl}"`
               ];
               
               let durationExtracted = false;
@@ -351,15 +368,33 @@ const getChannelVideos = async (req, res) => {
                   console.log(`Getting duration for ${video.id} using strategy ${i + 1}: ${command.split(' ').slice(-2).join(' ')}`);
                   
                   const { stdout } = await execPromise(command, { timeout: 20000 });
-                  const metadata = JSON.parse(stdout);
                   
-                  if (metadata.duration) {
-                    video.duration = formatDuration(metadata.duration);
-                    console.log(`✅ Successfully extracted duration for ${video.id}: ${video.duration}`);
+                  // Handle different output formats
+                  let duration = null;
+                  
+                  if (i === 5) { // Strategy 6: Direct approach with --print
+                    const lines = stdout.trim().split('\n');
+                    if (lines.length >= 1 && lines[0] && !isNaN(lines[0])) {
+                      duration = parseInt(lines[0], 10);
+                    }
+                  } else {
+                    // JSON output from other strategies
+                    try {
+                      const metadata = JSON.parse(stdout);
+                      duration = metadata.duration;
+                    } catch (parseError) {
+                      console.log(`⚠️ Failed to parse JSON for ${video.id} with strategy ${i + 1}`);
+                      continue;
+                    }
+                  }
+                  
+                  if (duration && duration > 0) {
+                    video.duration = formatDuration(duration);
+                    console.log(`✅ Successfully extracted duration for ${video.id}: ${video.duration} (Strategy ${i + 1})`);
                     durationExtracted = true;
                     break;
                   } else {
-                    console.log(`⚠️ No duration found in metadata for ${video.id} with strategy ${i + 1}`);
+                    console.log(`⚠️ No duration found for ${video.id} with strategy ${i + 1}`);
                   }
                 } catch (strategyError) {
                   console.log(`❌ Strategy ${i + 1} failed for ${video.id}: ${strategyError.message}`);
