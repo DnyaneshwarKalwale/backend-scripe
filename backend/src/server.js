@@ -68,19 +68,16 @@ const openai = new OpenAI({
 const app = express();
 
 // CORS configuration - MUST BE FIRST
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', 'https://app.brandout.ai');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Max-Age', '86400');
-    res.status(204).end();
-    return;
-  }
-  next();
-});
+const corsOptions = {
+  origin: ['https://app.brandout.ai'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+  credentials: true,
+  maxAge: 86400, // 24 hours
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
 
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
@@ -88,7 +85,10 @@ app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Special handling for Stripe webhooks - needs raw body
