@@ -1,9 +1,10 @@
+const dotenv = require('dotenv');
 const User = require('../models/userModel');
 const PaymentTransaction = require('../models/paymentTransactionModel');
-const stripe = require('../config/stripe');
+// Use the API key from environment variables
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Load environment variables
-const dotenv = require('dotenv');
 dotenv.config();
 
 // @desc    Create a checkout session for subscription plans
@@ -207,8 +208,8 @@ const createCheckoutSession = async (req, res) => {
           },
         ],
       mode: checkoutMode,
-      success_url: req.body.successUrl || returnUrl || `${process.env.FRONTEND_URL}/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: req.body.cancelUrl || `${process.env.FRONTEND_URL}/settings/billing?canceled=true`,
+      success_url: req.body.successUrl || returnUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: req.body.cancelUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/billing?canceled=true`,
       client_reference_id: req.user.id,
         metadata: {
         userId: req.user.id,

@@ -1,4 +1,5 @@
 const express = require('express');
+const cors = require('cors');
 const path = require('path');
 const { errorHandler } = require('./middleware/errorMiddleware');
 const userRoutes = require('./routes/userRoutes');
@@ -13,9 +14,26 @@ const app = express();
 // Connect to database susss
 connectDB();
 
-// Standard middleware
+// Middleware
+app.use(cors({
+  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+  credentials: true
+}));
+
+// Special handling for Stripe webhook route to access raw body for signature verification
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
+// Add middleware to expose the raw body for signature verification
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    req.rawBody = req.body;
+  }
+  next();
+});
+
+// Standard middleware for other routes
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: true }));
 
 // Ensure uploads directory exists
 const fs = require('fs');

@@ -8,15 +8,9 @@ dotenv.config();
 
 // Connect to database
 mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('MongoDB Connected...');
-    checkExpiringSubscriptions();
-  })
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
+  .connect(process.env.MONGO_URI || 'mongodb://localhost:27017/scripe')
+  .then(() => console.log('MongoDB connected...'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Check for subscriptions expiring in the next 7 days
 const checkExpiringSubscriptions = async () => {
