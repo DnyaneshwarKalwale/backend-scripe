@@ -1,8 +1,61 @@
 const passport = require('passport');
 const UserLimit = require('../models/userLimitModel');
+const jwt = require('jsonwebtoken');
+const User = require('../models/userModel');
 
 // Middleware to protect routes
-const protect = passport.authenticate('jwt', { session: false });
+const protect = async (req, res, next) => {
+  // Set CORS headers for all protected routes
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
+  let token;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      // Get token from header
+      token = req.headers.authorization.split(' ')[1];
+
+      // Verify token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // Get user from token
+      req.user = await User.findById(decoded.id).select('-password');
+
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          message: 'User not found'
+        });
+        return;
+      }
+
+      next();
+    } catch (error) {
+      console.error('Auth error:', error);
+      res.status(401).json({
+        success: false,
+        message: 'Not authorized'
+      });
+      return;
+    }
+  }
+
+  if (!token) {
+    res.status(401).json({
+      success: false,
+      message: 'Not authorized, no token'
+    });
+    return;
+  }
+};
 
 // Middleware to check if onboarding is completed
 const checkOnboarding = async (req, res, next) => {
@@ -31,13 +84,25 @@ const checkEmailVerified = async (req, res, next) => {
 
 // Middleware to check admin role
 const checkAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({
+  // Set CORS headers for admin routes
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
+  if (req.user && req.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({
       success: false,
-      message: 'Not authorized to access this resource',
+      message: 'Not authorized as admin'
     });
   }
-  next();
 };
 
 // Middleware to check user limits
@@ -105,6 +170,11 @@ const checkUserLimit = async (req, res, next) => {
       error: error.message
     });
   }
+};
+
+// Helper function to check if user is admin
+const isAdmin = (user) => {
+  return user && user.role === 'admin';
 };
 
 module.exports = {

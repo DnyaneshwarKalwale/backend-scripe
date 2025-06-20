@@ -54,6 +54,17 @@ exports.checkAndHandleSubscriptionExpiration = async (userId) => {
 
 // Get current user's limit
 exports.getCurrentUserLimit = async (req, res) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
   try {
     // Get User model for additional information
     const User = require('../models/userModel');
