@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { errorHandler } = require('./middleware/errorMiddleware');
+const { errorHandler, corsHandler } = require('./middleware/errorMiddleware');
 const userRoutes = require('./routes/userRoutes');
 const carouselRoutes = require('./routes/carouselRoutes');
 const stripeRoutes = require('./routes/stripeRoutes');
@@ -17,7 +17,7 @@ connectDB();
 // CORS Configuration
 const corsOptions = {
   origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true,
   maxAge: 86400 // 24 hours
@@ -29,8 +29,11 @@ app.use(cors(corsOptions));
 // Handle preflight requests
 app.options('*', cors(corsOptions));
 
+// Additional CORS error handling
+app.use(corsHandler);
+
 // Special handling for Stripe webhook route to access raw body for signature verification
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '10mb' }));
 
 // Add middleware to expose the raw body for signature verification
 app.use((req, res, next) => {
@@ -41,8 +44,8 @@ app.use((req, res, next) => {
 });
 
 // Standard middleware for other routes
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // Ensure uploads directory exists
 const fs = require('fs');

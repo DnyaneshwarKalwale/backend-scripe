@@ -67,89 +67,27 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
+// Enable CORS for all routes
+app.use(cors({
+  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  credentials: true
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
+// Body parser
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-
-// *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
-const allowedOrigins = [
-    'https://app.brandout.ai', 
-  'http://localhost:3000',
-  'http://localhost:5173',
-    'https://brandout.vercel.app',
-    'https://ea50-43-224-158-115.ngrok-free.app',
-    'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app',
-  'https://api.brandout.ai',       // API domain
-  // Add more flexible patterns
-  'https://brandout.ai',
-  'https://www.brandout.ai'
-];
-
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list or matches patterns
-    if (allowedOrigins.indexOf(origin) !== -1 || 
-        origin.endsWith('netlify.app') || 
-        origin.endsWith('brandout.ai') ||
-        origin.includes('localhost')) {
-      callback(null, true);
-    } else {
-      console.log(`Origin ${origin} not allowed by CORS policy`);
-      // For production, still allow to avoid breaking things
-      callback(null, true);
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
-  exposedHeaders: ['Set-Cookie']
-}));
-
-// Ensure OPTIONS requests are handled properly
-app.options('*', cors());
-
-// Add robust CORS error handling
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle preflight 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
-
-// Regular middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
-
-// Special handling for Stripe webhooks - needs raw body
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '10mb' }));
-
-// Create a middleware to make raw body available for webhook verification
-app.use((req, res, next) => {
-  if (req.originalUrl === '/api/stripe/webhook' && Buffer.isBuffer(req.body)) {
-    req.rawBody = req.body;
-    next();
-  } else {
-    next();
-  }
-});
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
