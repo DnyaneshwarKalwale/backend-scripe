@@ -74,34 +74,13 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // Only allow app.brandout.ai
-    if (origin === 'https://app.brandout.ai') {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+app.use(cors({
+  origin: 'https://app.brandout.ai',
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
-  exposedHeaders: ['Set-Cookie'],
-  credentials: true,
-  maxAge: 86400, // 24 hours
-  preflightContinue: false,
-  optionsSuccessStatus: 204
-};
-
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Handle preflight requests
-app.options('*', cors(corsOptions));
+  exposedHeaders: ['Set-Cookie']
+}));
 
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
@@ -1092,14 +1071,9 @@ app.get('/', (req, res) => {
   });
 });
 
-// API health check endpoint
+// Health check endpoint - KEEP ONLY THIS ONE
 app.get('/health', (req, res) => {
-  res.json({
-    success: true,
-    status: 'healthy',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+  res.status(200).json({ status: 'ok' });
 });
 
 // Routes
@@ -1593,18 +1567,6 @@ function formatDuration(seconds) {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 }
-
-// Health check route
-app.get('/health', async (req, res) => {
-  const dbConnected = await checkMongoConnection();
-  
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Lovable API is running',
-    database: dbConnected ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
-  });
-});
 
 // Error handler middleware
 app.use(errorHandler);
