@@ -460,14 +460,14 @@ const getTwitterProfile = asyncHandler(async (req, res) => {
 });
 
 /**
- * Enhanced user tweets fetching with complete threads
+ * Enhanced user tweets fetching with timeout protection and immediate response
  * @route GET /api/twitter/user/:username
- * @access Private  
+ * @access Public (changed from Private for CORS compatibility)
  */
 const getUserTweets = asyncHandler(async (req, res) => {
   try {
     const { username } = req.params;
-    const { initialFetch = 50, maxTweets = 200 } = req.query;
+    const { initialFetch = 50, maxTweets = 200, quickResponse = false } = req.query;
     
     if (!username) {
       return res.status(400).json({ 
@@ -486,138 +486,206 @@ const getUserTweets = asyncHandler(async (req, res) => {
       return res.status(200).json({
         success: true,
         count: cachedTweets.length,
-        data: cachedTweets
+        data: cachedTweets,
+        cached: true
       });
     }
 
-    // Get user ID first
-    const userData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/details?username=${username}`);
-    const userId = userData.user_id;
-    if (!userId) {
-      return res.status(404).json({ 
-        success: false, 
-        message: `Could not find user ID for @${username}` 
-      });
-    }
-
-    // Initial fetch
-    const initialData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/tweets?username=${username}&limit=${initialFetch}&user_id=${userId}&include_replies=false&include_pinned=false&includeFulltext=true`);
+    // Set a response timeout to prevent hanging
+    const RESPONSE_TIMEOUT = 90000; // 90 seconds
+    let hasResponded = false;
     
-    // Process and filter tweets by author
-    let allTweets = (initialData.results || [])
-      .map(processTweet)
-      .filter(tweet => {
-        const isAuthor = tweet.author.username.toLowerCase() === username.toLowerCase();
-        if (!isAuthor) return false;
-        
-        const tweetText = tweet.full_text || tweet.text || '';
-        if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
-          console.log(`Skipping tweet ${tweet.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
-          return false;
+    const timeoutHandler = setTimeout(() => {
+      if (!hasResponded) {
+        hasResponded = true;
+        console.log(`Response timeout for user ${username}, returning partial data`);
+        res.status(200).json({
+          success: false,
+          message: 'Request timeout - please try again in a few minutes',
+          error: 'TIMEOUT',
+          data: [],
+          count: 0
+        });
+      }
+    }, RESPONSE_TIMEOUT);
+
+    try {
+      // Get user ID first
+      const userData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/details?username=${username}`);
+      const userId = userData.user_id;
+      if (!userId) {
+        clearTimeout(timeoutHandler);
+        if (!hasResponded) {
+          hasResponded = true;
+          return res.status(404).json({ 
+            success: false, 
+            message: `Could not find user ID for @${username}` 
+          });
         }
-        
-        return true;
-      });
+        return;
+      }
 
-    console.log(`Found ${allTweets.length} tweets in initial fetch for ${username}`);
-
-    const uniqueTweetIds = new Set();
-    allTweets.forEach(tweet => uniqueTweetIds.add(tweet.id));
-
-    // Process threads with highest reply counts first
-    const threadsToProcess = [...allTweets]
-      .filter(tweet => tweet.public_metrics.reply_count && tweet.public_metrics.reply_count > 0) 
-      .sort((a, b) => (b.public_metrics.reply_count || 0) - (a.public_metrics.reply_count || 0))
-      .slice(0, TwitterConfig.threadsToProcess);
-
-    console.log(`Selected ${threadsToProcess.length} threads to fetch replies for`);
-    
-    // Process threads first to build complete conversations
-    for (const tweet of threadsToProcess) {
-      try {
-        console.log(`Fetching replies for tweet ${tweet.id} (has ${tweet.public_metrics.reply_count} replies)`);
-        const replies = await fetchAllReplies(tweet.id, username);
-        
-        const newReplies = replies.filter(reply => {
-          if (uniqueTweetIds.has(reply.id)) return false;
-          uniqueTweetIds.add(reply.id);
+      // Initial fetch
+      const initialData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/tweets?username=${username}&limit=${initialFetch}&user_id=${userId}&include_replies=false&include_pinned=false&includeFulltext=true`);
+      
+      // Process and filter tweets by author
+      let allTweets = (initialData.results || [])
+        .map(processTweet)
+        .filter(tweet => {
+          const isAuthor = tweet.author.username.toLowerCase() === username.toLowerCase();
+          if (!isAuthor) return false;
+          
+          const tweetText = tweet.full_text || tweet.text || '';
+          if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
+            console.log(`Skipping tweet ${tweet.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
+            return false;
+          }
+          
           return true;
         });
-        
-        if (newReplies.length > 0) {
-          console.log(`Added ${newReplies.length} new replies for tweet ${tweet.id}`);
-          allTweets.push(...newReplies);
+
+      console.log(`Found ${allTweets.length} tweets in initial fetch for ${username}`);
+
+      // If quickResponse is requested or we already have a good amount of tweets, respond immediately
+      if (quickResponse === 'true' || allTweets.length >= 30) {
+        clearTimeout(timeoutHandler);
+        if (!hasResponded) {
+          hasResponded = true;
+          
+          // Cache the initial results
+          API_CACHE.userTweets.set(cacheKey, allTweets);
+          
+          return res.status(200).json({
+            success: true,
+            count: allTweets.length,
+            data: allTweets,
+            partial: quickResponse === 'true',
+            message: quickResponse === 'true' ? 'Quick response - more tweets may be available' : undefined
+          });
         }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (error) {
-        console.error(`Error fetching replies for tweet ${tweet.id}:`, error);
-        await new Promise(resolve => setTimeout(resolve, 2500));
+        return;
       }
-    }
 
-    console.log(`After fetching replies, total tweet count: ${allTweets.length}`);
+      const uniqueTweetIds = new Set();
+      allTweets.forEach(tweet => uniqueTweetIds.add(tweet.id));
 
-    // Continue fetching more tweets using continuation token if needed
-    let continuationToken = initialData.continuation_token;
-    let continuationCount = 0;
-    
-    while (continuationToken && allTweets.length < maxTweets && continuationCount < TwitterConfig.maxContinuations) {
-      try {
-        console.log(`Fetching continuation ${continuationCount + 1} for ${username}`);
-        const continuationData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/tweets/continuation?username=${username}&continuation_token=${continuationToken}&user_id=${userId}`);
+      // Limit thread processing for faster response
+      const threadsToProcess = [...allTweets]
+        .filter(tweet => tweet.public_metrics.reply_count && tweet.public_metrics.reply_count > 0) 
+        .sort((a, b) => (b.public_metrics.reply_count || 0) - (a.public_metrics.reply_count || 0))
+        .slice(0, Math.min(TwitterConfig.threadsToProcess, 5)); // Limit to 5 threads for faster response
+
+      console.log(`Selected ${threadsToProcess.length} threads to fetch replies for`);
+      
+      // Process threads with timeout checks
+      for (const tweet of threadsToProcess) {
+        if (hasResponded) break; // Stop if we've already responded due to timeout
         
-        const additionalTweets = (continuationData.results || [])
-          .map(processTweet)
-          .filter(tweet => {
-            const isAuthor = tweet.author.username.toLowerCase() === username.toLowerCase();
-            const isUnique = !uniqueTweetIds.has(tweet.id);
-            
-            if (!isAuthor || !isUnique) return false;
-            
-            const tweetText = tweet.full_text || tweet.text || '';
-            if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
-              console.log(`Skipping tweet ${tweet.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
-              return false;
-            }
-            
-            uniqueTweetIds.add(tweet.id);
+        try {
+          console.log(`Fetching replies for tweet ${tweet.id} (has ${tweet.public_metrics.reply_count} replies)`);
+          const replies = await fetchAllReplies(tweet.id, username);
+          
+          const newReplies = replies.filter(reply => {
+            if (uniqueTweetIds.has(reply.id)) return false;
+            uniqueTweetIds.add(reply.id);
             return true;
           });
-        
-        console.log(`Found ${additionalTweets.length} new tweets in continuation ${continuationCount + 1}`);
-        
-        if (additionalTweets.length > 0) {
-          allTweets.push(...additionalTweets);
+          
+          if (newReplies.length > 0) {
+            console.log(`Added ${newReplies.length} new replies for tweet ${tweet.id}`);
+            allTweets.push(...newReplies);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`Error fetching replies for tweet ${tweet.id}:`, error);
+          await new Promise(resolve => setTimeout(resolve, 2500));
         }
+      }
+
+      console.log(`After fetching replies, total tweet count: ${allTweets.length}`);
+
+      // Continue fetching more tweets using continuation token if needed and time permits
+      let continuationToken = initialData.continuation_token;
+      let continuationCount = 0;
+      const maxContinuations = Math.min(TwitterConfig.maxContinuations, 2); // Limit continuations
+      
+      while (continuationToken && allTweets.length < maxTweets && continuationCount < maxContinuations && !hasResponded) {
+        try {
+          console.log(`Fetching continuation ${continuationCount + 1} for ${username}`);
+          const continuationData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/tweets/continuation?username=${username}&continuation_token=${continuationToken}&user_id=${userId}`);
+          
+          const additionalTweets = (continuationData.results || [])
+            .map(processTweet)
+            .filter(tweet => {
+              const isAuthor = tweet.author.username.toLowerCase() === username.toLowerCase();
+              const isUnique = !uniqueTweetIds.has(tweet.id);
+              
+              if (!isAuthor || !isUnique) return false;
+              
+              const tweetText = tweet.full_text || tweet.text || '';
+              if (tweetText.match(/^@[a-zA-Z0-9_]+/) && !tweetText.startsWith(`@${username}`)) {
+                console.log(`Skipping tweet ${tweet.id} because it mentions another user: "${tweetText.substring(0, 30)}..."`);
+                return false;
+              }
+              
+              uniqueTweetIds.add(tweet.id);
+              return true;
+            });
+          
+          console.log(`Found ${additionalTweets.length} new tweets in continuation ${continuationCount + 1}`);
+          
+          if (additionalTweets.length > 0) {
+            allTweets.push(...additionalTweets);
+          }
+          
+          continuationToken = continuationData.continuation_token;
+          continuationCount++;
+          
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        } catch (error) {
+          console.error(`Error fetching continuation ${continuationCount + 1}:`, error);
+          break;
+        }
+      }
+
+      console.log(`Fetched ${allTweets.length} total tweets (${uniqueTweetIds.size} unique)`);
+      
+      // Clear timeout and respond if we haven't already
+      clearTimeout(timeoutHandler);
+      if (!hasResponded) {
+        hasResponded = true;
         
-        continuationToken = continuationData.continuation_token;
-        continuationCount++;
+        // Cache and return results
+        API_CACHE.userTweets.set(cacheKey, allTweets);
         
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      } catch (error) {
-        console.error(`Error fetching continuation ${continuationCount + 1}:`, error);
-        break;
+        res.status(200).json({
+          success: true,
+          count: allTweets.length,
+          data: allTweets
+        });
+      }
+    } catch (error) {
+      clearTimeout(timeoutHandler);
+      if (!hasResponded) {
+        hasResponded = true;
+        console.error('Error fetching tweets:', error);
+        res.status(500).json({
+          success: false,
+          message: 'Failed to fetch tweets',
+          error: error.message
+        });
       }
     }
-
-    console.log(`Fetched ${allTweets.length} total tweets (${uniqueTweetIds.size} unique)`);
-    
-    // Cache and return results
-    API_CACHE.userTweets.set(cacheKey, allTweets);
-    
-    res.status(200).json({
-      success: true,
-      count: allTweets.length,
-      data: allTweets
-    });
   } catch (error) {
-    console.error('Error fetching tweets:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch tweets',
-      error: error.message
-    });
+    console.error('Error in getUserTweets:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch tweets',
+        error: error.message
+      });
+    }
   }
 });
 

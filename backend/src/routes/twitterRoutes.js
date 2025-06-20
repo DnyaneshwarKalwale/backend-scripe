@@ -15,6 +15,11 @@ const {
 
 // Public routes (no authentication required) - for reading Twitter data
 router.get('/user/:username', getUserTweets);
+router.get('/user/:username/quick', async (req, res) => {
+  // Quick response endpoint - returns cached data immediately or basic fetch
+  req.query.quickResponse = 'true';
+  return getUserTweets(req, res);
+});
 router.get('/tweets', getUserTweets);
 
 // Protected routes (authentication required) - for user-specific operations

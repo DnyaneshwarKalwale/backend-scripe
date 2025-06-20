@@ -2,6 +2,7 @@ const axios = require('axios');
 const xml2js = require('xml2js');
 const User = require('../models/userModel');
 const SavedVideo = require('../models/savedVideo');
+const { getHttpProxyConfig, logProxyStatus } = require('../config/proxy');
 
 /**
  * Helper function to validate YouTube channel IDs
@@ -84,14 +85,23 @@ const getChannelVideos = async (req, res) => {
         const channelUrl = `https://www.youtube.com/${channelHandle}`;
         
         // Set headers to mimic a browser request
-        const response = await axios.get(channelUrl, {
+        const axiosConfig = {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept': 'text/html,application/xhtml+xml,application/xml'
           },
           timeout: 10000
-        });
+        };
+        
+        // Add proxy configuration if enabled
+        const proxyConfig = getHttpProxyConfig();
+        if (proxyConfig) {
+          axiosConfig.proxy = proxyConfig;
+          console.log('Using proxy for channel info fetching');
+        }
+        
+        const response = await axios.get(channelUrl, axiosConfig);
 
         const htmlContent = response.data;
         
@@ -177,12 +187,22 @@ const getChannelVideos = async (req, res) => {
       const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
       console.log(`Fetching RSS feed from: ${rssUrl}`);
       
-      const rssResponse = await axios.get(rssUrl, {
+      // Configure axios with proxy for RSS feed fetching
+      const rssAxiosConfig = {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         },
         timeout: 15000
-      });
+      };
+      
+      // Add proxy configuration if enabled
+      const proxyConfig = getHttpProxyConfig();
+      if (proxyConfig) {
+        rssAxiosConfig.proxy = proxyConfig;
+        console.log('Using proxy for RSS feed fetching');
+      }
+      
+      const rssResponse = await axios.get(rssUrl, rssAxiosConfig);
       
       // Parse the XML
       const parser = new xml2js.Parser({ explicitArray: false });
@@ -270,34 +290,98 @@ const getChannelVideos = async (req, res) => {
       // For videos without duration (which is most of them from RSS), try to fetch duration data
       // This can be done in batches to avoid too many requests
       try {
-        // Batch videos into groups of 10 for processing
-        const batchSize = 10;
+        // Log proxy status for duration fetching
+        logProxyStatus();
+        
+        // Batch videos into groups of 5 for processing (reduced batch size for better reliability)
+        const batchSize = 5;
         for (let i = 0; i < videos.length; i += batchSize) {
           const batch = videos.slice(i, i + batchSize);
-          const videoIds = batch.map(video => video.id).join(',');
           
-          // Try to fetch video details using scraping approach (no API key needed)
-          const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          };
-          
-          // Get duration for each video in the batch using a more resilient approach
+          // Get duration for each video in the batch using proxy-enabled scraping
           await Promise.allSettled(batch.map(async (video) => {
             try {
               const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
-              const response = await axios.get(videoUrl, { headers, timeout: 5000 });
               
-              // Extract duration using regex patterns
-              const durationMatch = response.data.match(/"lengthSeconds":"(\d+)"/);
-              if (durationMatch && durationMatch[1]) {
-                const seconds = parseInt(durationMatch[1], 10);
-                video.duration = formatDuration(seconds);
+              // Configure axios with proxy and enhanced headers
+              const axiosConfig = {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                  'Accept-Language': 'en-US,en;q=0.5',
+                  'Accept-Encoding': 'gzip, deflate, br',
+                  'Connection': 'keep-alive',
+                  'Upgrade-Insecure-Requests': '1',
+                  'Sec-Fetch-Dest': 'document',
+                  'Sec-Fetch-Mode': 'navigate',
+                  'Sec-Fetch-Site': 'none'
+                },
+                timeout: 10000,
+                maxRedirects: 5
+              };
+              
+              // Add proxy configuration if enabled
+              const proxyConfig = getHttpProxyConfig();
+              if (proxyConfig) {
+                axiosConfig.proxy = proxyConfig;
+                console.log(`Using proxy for video ${video.id} metadata fetching`);
               }
+              
+              const response = await axios.get(videoUrl, axiosConfig);
+              
+              // Extract duration using multiple regex patterns for better reliability
+              let durationSeconds = null;
+              const patterns = [
+                /"lengthSeconds":"(\d+)"/,
+                /approxDurationMs":"(\d+)"/,
+                /duration_seconds":(\d+)/,
+                /"duration":{"simpleText":"([^"]+)"/,
+                /"lengthText":{"simpleText":"([^"]+)"/,
+                /"videoDetails":{"videoId":"[^"]+","title":"[^"]+","lengthSeconds":"(\d+)"/,
+                /ytInitialPlayerResponse.*?"lengthSeconds":"(\d+)"/,
+                /ytInitialData.*?"lengthSeconds":"(\d+)"/
+              ];
+              
+              for (const pattern of patterns) {
+                const match = response.data.match(pattern);
+                if (match) {
+                  if (pattern.toString().includes('simpleText')) {
+                    // Handle duration in format like "4:32" or "1:23:45"
+                    const timeString = match[1];
+                    const timeParts = timeString.split(':').map(part => parseInt(part));
+                    if (timeParts.length === 2) {
+                      // MM:SS format
+                      durationSeconds = timeParts[0] * 60 + timeParts[1];
+                    } else if (timeParts.length === 3) {
+                      // HH:MM:SS format
+                      durationSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
+                    }
+                  } else {
+                    durationSeconds = pattern.toString().includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
+                  }
+                  
+                  if (durationSeconds && durationSeconds > 0) {
+                    video.duration = formatDuration(durationSeconds);
+                    console.log(`Duration found for ${video.id}: ${video.duration} (pattern: ${pattern.toString().substring(0, 30)}...)`);
+                    break;
+                  }
+                }
+              }
+              
+              if (!durationSeconds) {
+                console.log(`No duration found for video ${video.id} despite successful page fetch`);
+              }
+              
             } catch (error) {
               console.log(`Failed to fetch duration for video ${video.id}: ${error.message}`);
               // Keep the default N/A if fetch fails
             }
           }));
+          
+          // Add a small delay between batches to be respectful
+          if (i + batchSize < videos.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       } catch (durationError) {
         console.error('Error fetching video durations:', durationError);
