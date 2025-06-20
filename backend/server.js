@@ -47,8 +47,8 @@ app.use(limiter);
 // CORS configuration
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai', 'http://localhost:3000']
-    : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai', 'http://localhost:8080'],
+    ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai']
+    : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -56,21 +56,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
-
-// Set timeout for all requests to prevent hanging
-app.use((req, res, next) => {
-  // Set timeout to 5 minutes for all requests
-  req.setTimeout(300000, () => {
-    if (!res.headersSent) {
-      res.status(408).json({
-        success: false,
-        message: 'Request timeout',
-        error: 'TIMEOUT'
-      });
-    }
-  });
-  next();
-});
 
 // Cache successful GET requests for 5 minutes
 app.use(cache('5 minutes', (req, res) => {
