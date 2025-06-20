@@ -1367,7 +1367,7 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       try {
         console.log('Attempting to fetch metadata with yt-dlp...');
         console.log('yt-dlp command:', metadataCommand);
-        const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand);
+        const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand, { timeout: 300000 });
         
         if (metadataError) {
           console.error('yt-dlp metadata stderr:', metadataError);
@@ -1558,8 +1558,8 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       // Log final metadata state before proceeding
       console.log(`Final metadata for ${videoId} - Duration: ${duration}, Title: ${title ? 'Found' : 'N/A'}, Channel: ${channelName ? 'Found' : 'N/A'}`);
       
-      // Then proceed with transcript extraction
-      const { stdout, stderr } = await execPromise(command);
+      // Then proceed with transcript extraction (timeout: 5 minutes)
+      const { stdout, stderr } = await execPromise(command, { timeout: 300000 });
       console.log('yt-dlp output:', stdout);
       
       if (stderr) {

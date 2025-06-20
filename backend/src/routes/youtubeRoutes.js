@@ -140,7 +140,7 @@ router.post('/transcript', async (req, res) => {
     
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`);
+      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`, { timeout: 300000 });
       
       if (stderr) {
         console.error('Python script stderr:', stderr);
@@ -319,9 +319,9 @@ router.get('/transcript', async (req, res) => {
         process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
       
       try {
-        // Run Python script to get transcript
+        // Run Python script to get transcript (timeout: 5 minutes)
         const { stdout, stderr } = await new Promise((resolve, reject) => {
-          exec(`"${pythonExecutable}" "${scriptPath}" ${videoId}`, (error, stdout, stderr) => {
+          exec(`"${pythonExecutable}" "${scriptPath}" ${videoId}`, { timeout: 300000 }, (error, stdout, stderr) => {
             if (error) {
               reject(error);
             } else {
@@ -550,7 +550,7 @@ async function extractTranscriptWithYtDlp(videoId) {
       const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
       if (fs.existsSync(ytDlpPath)) {
         try {
-          await execPromise(`chmod +x "${ytDlpPath}"`);
+          await execPromise(`chmod +x "${ytDlpPath}"`, { timeout: 30000 });
           ytDlpCommand = `"${ytDlpPath}"`;
         } catch (chmodError) {
           console.error('Error making yt-dlp executable:', chmodError);
@@ -568,7 +568,7 @@ async function extractTranscriptWithYtDlp(videoId) {
     const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" ${proxyOptions} "${videoUrl}"`;
     
     console.log(`Running yt-dlp command: ${command}`);
-    const { stdout, stderr } = await execPromise(command);
+    const { stdout, stderr } = await execPromise(command, { timeout: 300000 });
     
     if (stderr) {
       console.error('yt-dlp stderr:', stderr);

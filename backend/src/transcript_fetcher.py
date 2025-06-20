@@ -14,9 +14,8 @@ import urllib.error
 
 # Debug mode (when run with --debug flag)
 DEBUG = False
-if len(sys.argv) > 1 and sys.argv[1] == "--debug":
+if "--debug" in sys.argv:
     DEBUG = True
-    sys.argv.pop(1)  # Remove the debug flag
 
 def debug_print(*args, **kwargs):
     if DEBUG:
@@ -187,7 +186,7 @@ def get_transcript_with_api(video_id):
             response = session.get(
                 f"https://www.youtube.com/watch?v={video_id}",
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
-                timeout=30
+                timeout=300
             )
             html = response.text
             
@@ -220,6 +219,30 @@ def get_transcript_with_api(video_id):
         return {
             'success': False,
             'error': str(e),
+            'video_id': video_id,
+            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
+        }
+    except TranscriptsDisabled:
+        debug_print("Transcripts are disabled for this video")
+        return {
+            'success': False,
+            'error': 'Transcripts are disabled for this video',
+            'video_id': video_id,
+            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
+        }
+    except NoTranscriptFound:
+        debug_print("No transcript found for this video")
+        return {
+            'success': False,
+            'error': 'No transcript found for this video',
+            'video_id': video_id,
+            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
+        }
+    except VideoUnavailable:
+        debug_print("Video is unavailable")
+        return {
+            'success': False,
+            'error': 'Video is unavailable',
             'video_id': video_id,
             'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
         }
@@ -267,7 +290,7 @@ def fetch_transcript_manually(video_id):
         request = Request(url, headers=headers)
         
         try:
-            response = opener.open(request, timeout=30)
+            response = opener.open(request, timeout=300)
             # Handle gzip-compressed responses
             raw_data = response.read()
             
@@ -390,7 +413,7 @@ def fetch_transcript_manually(video_id):
             debug_print("Fetching captions as text...")
             caption_url = base_url + '&fmt=txt'
             request = Request(caption_url, headers=headers)
-            response = opener.open(request, timeout=30)
+            response = opener.open(request, timeout=300)
             
             # Handle gzip-compressed responses
             raw_data = response.read()
@@ -402,6 +425,12 @@ def fetch_transcript_manually(video_id):
                 transcript = raw_data.decode('utf-8')
             
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters")
+            
+            # Check if transcript is empty
+            if not transcript.strip():
+                debug_print("Warning: Received empty transcript from text format, trying JSON format...")
+                raise Exception("Empty transcript received from text format")
+            
             return {
                 'success': True,
                 'transcript': transcript.strip(),
@@ -420,7 +449,7 @@ def fetch_transcript_manually(video_id):
                 debug_print("Trying to fetch captions as JSON...")
                 caption_url = base_url + '&fmt=json3'
                 request = Request(caption_url, headers=headers)
-                response = opener.open(request, timeout=30)
+                response = opener.open(request, timeout=300)
                 
                 # Handle gzip-compressed responses
                 raw_data = response.read()
@@ -445,6 +474,17 @@ def fetch_transcript_manually(video_id):
                 transcript = ' '.join(transcript_pieces).strip()
                 
                 debug_print(f"Successfully fetched JSON transcript with {len(transcript)} characters")
+                
+                # Check if transcript is empty
+                if not transcript.strip():
+                    debug_print("Error: Received empty transcript from JSON format as well")
+                    return {
+                        'success': False,
+                        'error': 'Transcript is empty - no content found in captions',
+                        'video_id': video_id,
+                        'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
+                    }
+                
                 return {
                     'success': True,
                     'transcript': transcript,
@@ -512,16 +552,19 @@ if __name__ == "__main__":
         }))
         sys.exit(0)
         
-    # Normal video ID processing
-    if len(sys.argv) != 2:
+    # Handle debug flag and extract video ID
+    args = [arg for arg in sys.argv[1:] if arg != '--debug']
+    
+    if len(args) != 1:
         print(json.dumps({
             'success': False,
-            'error': 'Missing video ID. Usage: transcript_fetcher.py VIDEO_ID'
+            'error': 'Missing video ID. Usage: transcript_fetcher.py [--debug] VIDEO_ID'
         }))
         sys.exit(1)
     
-        video_id = sys.argv[1]
+    video_id = args[0]
     result = get_transcript(video_id)
+    
     try:
         json_result = json.dumps(result)
         print(json_result)
@@ -529,7 +572,7 @@ if __name__ == "__main__":
         if 'transcript' in result and result['success']:
             result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
             print(json.dumps(result))
-    else:
+        else:
             print(json.dumps({
                 'success': False,
                 'error': f"Encoding error: {str(e)}",

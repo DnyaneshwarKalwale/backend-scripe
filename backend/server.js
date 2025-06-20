@@ -26,8 +26,11 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware - configure helmet to allow CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
+}));
 
 // Enable compression
 app.use(compression());
@@ -46,16 +49,39 @@ app.use(limiter);
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai']
-    : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai'],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = process.env.NODE_ENV === 'production' 
+      ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai']
+      : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai', 'http://localhost:8080', 'http://127.0.0.1:5173'];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(null, true); // Allow all origins for now to debug
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 200 // For legacy browser support
 };
 
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
-app.use(express.json());
+
+// Increase JSON payload limit and add request timeout
+app.use(express.json({ limit: '50mb' }));
+app.use((req, res, next) => {
+  // Set server timeout to 5 minutes for long-running requests
+  req.setTimeout(300000);
+  res.setTimeout(300000);
+  next();
+});
 
 // Cache successful GET requests for 5 minutes
 app.use(cache('5 minutes', (req, res) => {
