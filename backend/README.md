@@ -46,12 +46,12 @@ EMAIL_FROM=your_email@gmail.com
 # Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/google/callback
+GOOGLE_CALLBACK_URL=https://api.brandout.ai/api/auth/google/callback
 
 # Twitter OAuth
 TWITTER_CONSUMER_KEY=your_twitter_consumer_key
 TWITTER_CONSUMER_SECRET=your_twitter_consumer_secret
-TWITTER_CALLBACK_URL=http://localhost:5000/api/auth/twitter/callback
+TWITTER_CALLBACK_URL=https://api.brandout.ai/api/auth/twitter/callback
 
 # Frontend URL (for redirects)
 FRONTEND_URL=https://deluxe-cassata-51d628.netlify.app
@@ -75,7 +75,7 @@ npm install
 npm run dev
 ```
 
-The server will run on `http://localhost:5000` by default.
+The server will run on `https://api.brandout.ai` by default.
 
 ## API Endpoints
 
