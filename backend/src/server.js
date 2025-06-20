@@ -67,25 +67,23 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
-// Enable CORS for production frontend only
-app.use(cors({
-  origin: 'https://app.brandout.ai',  // Only allow the production frontend
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true
-}));
+// Single global CORS configuration
+const corsOptions = {
+  origin: 'https://app.brandout.ai',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+};
+
+// Apply CORS before any other middleware
+app.use(cors(corsOptions));
 
 // Handle preflight requests
-app.options('*', cors({
-  origin: 'https://app.brandout.ai',  // Same origin for preflight
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true
-}));
+app.options('*', cors(corsOptions));
 
 // Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 app.use(cookieParser());
 
 // Create uploads directory if it doesn't exist
