@@ -1,16 +1,24 @@
 // Error handling middleware
 const errorHandler = (err, req, res, next) => {
-  // Add CORS headers to all error responses
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://app.brandout.ai');
+  // Always send CORS headers
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Allow-Origin');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
 
   // Log the error for debugging
   console.error('Error:', {
     message: err.message,
     stack: err.stack,
-    status: err.status
+    status: err.status,
+    origin: req.headers.origin,
+    method: req.method,
+    path: req.path
   });
 
   // Handle specific error types
@@ -25,6 +33,14 @@ const errorHandler = (err, req, res, next) => {
     return res.status(401).json({
       success: false,
       message: 'Invalid token'
+    });
+  }
+
+  if (err.name === 'CORSError') {
+    return res.status(403).json({
+      success: false,
+      message: 'CORS policy violation',
+      error: err.message
     });
   }
 

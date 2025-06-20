@@ -75,28 +75,24 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const corsOptions = {
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin matches allowed patterns
-    if (origin === 'https://app.brandout.ai' ||
-        origin === 'https://api.brandout.ai' ||
-        origin.endsWith('netlify.app') ||
-        origin.endsWith('brandout.ai') ||
-        origin.includes('localhost') ||
-        origin.includes('ngrok-free.app')) {
-      callback(null, true);
-    } else {
-      console.log(`Origin ${origin} not allowed by CORS`);
-      callback(new Error('CORS policy violation'), false);
-    }
-  },
+  origin: true, // Allow all origins temporarily for debugging
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
-  exposedHeaders: ['Set-Cookie'],
-  maxAge: 86400 // 24 hours
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With', 
+    'Accept', 
+    'Origin', 
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Allow-Methods',
+    'Access-Control-Allow-Credentials'
+  ],
+  exposedHeaders: ['set-cookie', 'Set-Cookie'],
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
 // Apply CORS middleware before any other middleware
