@@ -74,28 +74,34 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
-const allowedOrigins = ['https://app.brandout.ai'];
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
 
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
+    // Only allow app.brandout.ai
+    if (origin === 'https://app.brandout.ai') {
       callback(null, true);
     } else {
-      console.log(`Origin ${origin} not allowed by CORS policy`);
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
-  exposedHeaders: ['Set-Cookie']
-}));
+  exposedHeaders: ['Set-Cookie'],
+  credentials: true,
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
 
-// Ensure OPTIONS requests are handled properly
-app.options('*', cors());
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
@@ -1607,7 +1613,7 @@ app.use(errorHandler);
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
   
-  // Send error response
+  // Send error response without setting CORS headers (handled by cors middleware)
   res.status(500).json({
     success: false,
     message: 'Server error',
