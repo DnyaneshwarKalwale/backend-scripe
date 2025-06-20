@@ -67,17 +67,8 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
-// CORS configuration - MUST BE FIRST
-const corsOptions = {
-  origin: ['https://app.brandout.ai'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
-  credentials: true,
-  maxAge: 86400, // 24 hours
-  optionsSuccessStatus: 204
-};
-
-app.use(cors(corsOptions));
+// Basic CORS setup - Nginx will handle the details
+app.use(cors());
 
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
