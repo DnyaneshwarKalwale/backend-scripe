@@ -59,30 +59,30 @@ const transcriptCache = {
 // Helper function to get the correct Python executable path
 async function getPythonExecutablePath() {
   try {
-    // For Windows, check the specific Python location first
+    // For production (server), always use the virtual environment
+    if (process.env.NODE_ENV === 'production') {
+      return path.join(process.cwd(), 'venv', 
+        process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
+    }
+    
+    // For local development, try both system Python and virtual environment
     if (process.platform === 'win32') {
-      // In development, use system Python
-      if (process.env.NODE_ENV !== 'production') {
-        return 'python';
-      }
-      
-      // In production on Windows (unlikely), try virtual environment first
-      const venvPath = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
+      // Try system Python first
       try {
-        await fs.promises.access(venvPath);
-        return venvPath;
+        const { stdout } = await execPromise('python -c "import youtube_transcript_api"');
+        return 'python';  // System Python has the package
       } catch {
-        return 'python';  // Fallback to system Python
+        // Fall back to virtual environment
+        return path.join(process.cwd(), 'venv', 'Scripts\\python.exe');
       }
     } else {
-      // For Linux/Mac (likely production environment)
-      const venvPath = path.join(process.cwd(), 'venv', 'bin', 'python');
+      // For Linux/Mac, try python3 first
       try {
-        await fs.promises.access(venvPath);
-        return venvPath;
+        const { stdout } = await execPromise('python3 -c "import youtube_transcript_api"');
+        return 'python3';  // System Python has the package
       } catch {
-        // Fallback to system Python3 on Linux/Mac
-        return 'python3';
+        // Fall back to virtual environment
+        return path.join(process.cwd(), 'venv', 'bin/python');
       }
     }
   } catch (error) {
@@ -114,13 +114,13 @@ router.post('/transcript', async (req, res) => {
         message: 'YouTube video ID is required' 
       });
     }
-
+    
     console.log(`Fetching transcript for video ID: ${videoId}`);
     
     // Call the Python script which now uses YouTube Transcript API with proxy (primary method)
     const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
     
-    // Get the appropriate Python executable
+    // Get the correct Python executable path
     const pythonExecutable = await getPythonExecutablePath();
     console.log(`Using Python executable: ${pythonExecutable}`);
     
@@ -290,7 +290,7 @@ router.get('/transcript', async (req, res) => {
       // Call the Python script which now uses YouTube Transcript API with proxy (primary method)
       const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
       
-      // Get the appropriate Python executable
+      // Get the correct Python executable path
       const pythonExecutable = await getPythonExecutablePath();
       console.log(`Using Python executable: ${pythonExecutable}`);
       
@@ -466,14 +466,14 @@ async function fetchBackupTranscript(videoId, res) {
     if (result.success) {
       console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${result.transcript.length}`);
       res.json({
-        success: true,
+          success: true,
         transcript: result.transcript,
         source: 'yt-dlp',
         language: result.language || 'en',
         channelTitle: result.channelTitle || 'Unknown Channel',
         videoTitle: result.videoTitle || 'Unknown Title'
-      });
-    } else {
+        });
+      } else {
       console.error(`Failed to fetch transcript with yt-dlp for video ${videoId}:`, result.error);
       res.status(500).json({
         success: false,
@@ -484,7 +484,7 @@ async function fetchBackupTranscript(videoId, res) {
   } catch (error) {
     console.error('Error in backup transcript method:', error);
     res.status(500).json({
-      success: false,
+      success: false, 
       message: 'Error in backup transcript method',
       error: error.message
     });

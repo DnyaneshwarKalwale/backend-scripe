@@ -154,11 +154,7 @@ app.use((req, res, next) => {
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-// Initialize passport and its configuration BEFORE routes
-app.use(passport.initialize());
-require('./config/passport')(passport);
-
-// Initialize session after passport but before routes
+// Configure session middleware (required for Twitter OAuth)
 app.use(session({
   secret: process.env.JWT_SECRET,
   resave: true,
@@ -170,7 +166,8 @@ app.use(session({
   }
 }));
 
-// Initialize passport session AFTER session middleware
+// Initialize passport
+app.use(passport.initialize());
 app.use(passport.session());
 
 // Passport session setup
@@ -188,31 +185,13 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/onboarding', onboardingRoutes);
-app.use('/api/teams', teamRoutes);
-app.use('/api/linkedin', linkedinRoutes);
-app.use('/api/twitter', twitterRoutes);
-app.use('/api/youtube', youtubeRoutes);
-app.use('/api/posts', postRoutes);
-app.use('/api/carousels', carouselRoutes);
-app.use('/api/fonts', fontRoutes);
-app.use('/api/stripe', stripeRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/cron', cronRoutes);
-app.use('/api/user-limits', userLimitRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/admin-notifications', adminNotificationRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/saved-posts', savedPostsRoutes);
+require('./config/passport')(passport);
 
 // OpenAI content generation routes
 app.post('/api/generate-content', async (req, res) => {
   try {
     // Accept either direct prompt or messages array
-    const { prompt, contentType, tone = 'professional', messagesList, model = "gpt-4o-mini", type, transcript, writingStyleSamples } = req.body;
+    const { prompt, contentType, tone = 'professional', messages, model = "gpt-4o-mini", type, transcript, writingStyleSamples } = req.body;
     
     // Define secure prompts for YouTube content generation
     const SECURE_PROMPTS = {
@@ -977,13 +956,13 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
     }
     
     // Check if we have direct messages to use (from frontend with OpenAI format)
-    if (messagesList && Array.isArray(messagesList)) {
+    if (messages && Array.isArray(messages)) {
       try {
         console.log(`Generating content with model: ${model}, using messages array`);
         
         const completion = await openai.chat.completions.create({
           model: model,
-          messages: messagesList,
+          messages: messages,
           max_tokens: 2000
         });
         
@@ -1153,6 +1132,32 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/teams', teamRoutes);
+app.use('/api/linkedin', linkedinRoutes);
+app.use('/api/twitter', twitterRoutes);
+app.use('/api/youtube', youtubeRoutes);
+app.use('/api/posts', postRoutes);
+app.use('/api/carousels', carouselRoutes);
+app.use('/api/fonts', fontRoutes);
+app.use('/api/stripe', stripeRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/user-limits', userLimitRoutes);
+app.use('/api/admin/notifications', adminNotificationRoutes);
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/cron', cronRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/saved-posts', savedPostsRoutes);
+app.use('/api/admin', adminRoutes);
+// Admin routes
+app.use('/api/admin', require('./routes/adminRoutes'));
+// Admin notification routes
+
+app.use('/api/admin/notifications', require('./routes/adminNotificationRoutes'));
 
 // Add carousel route handler for YouTube videos
 app.post('/api/youtube-carousels', async (req, res) => {
