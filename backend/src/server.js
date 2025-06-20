@@ -2,7 +2,6 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
-const os = require('os');
 const connectDB = require('./config/db');
 const passport = require('passport');
 const session = require('express-session');
@@ -120,10 +119,12 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin) {
     res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
   }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   // Handle preflight 
   if (req.method === 'OPTIONS') {
@@ -686,7 +687,7 @@ Quality Control (Voice Consistency):
 
 Writing Style Samples Analysis: "${writingStyleSamples}"
 
-Separate each slide with "\\n\\n" to indicate a new slide. Do not include slide numbers in the content.` : `PROMPT 2: LINKEDIN CAROUSEL CREATION - WITHOUT EXISTING CONTENT
+Separate each slide with "\\n\\n" to indicate a new slide.` : `PROMPT 2: LINKEDIN CAROUSEL CREATION - WITHOUT EXISTING CONTENT
 You are a world-class direct response marketer specialized in writing viral LinkedIn carousels. You've mastered Stefan Georgi's fascination techniques, studied the neuroscience of dopamine-driven content, and analyzed billions of views worth of content. Your mission: create carousels that stop scrolls, trigger curiosity loops, and convert viewers into clients while establishing a powerful, authentic voice from scratch.
 
 Use this YouTube transcript to create a LinkedIn carousel: "${transcript || ''}"
@@ -820,7 +821,7 @@ Progressive Authority Building:
 - Progress to more sophisticated insights
 - Build to proprietary methodologies
 
-Separate each slide with "\\n\\n" to indicate a new slide. Do not include slide numbers in the content.`}`
+Separate each slide with "\\n\\n" to indicate a new slide.`}`
     };
     
     // Check if this is a YouTube transcript content generation request
@@ -1294,8 +1295,6 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
     const isCloud = process.env.RENDER || process.env.NODE_ENV === 'production';
     const isWindows = os.platform() === 'win32';
     
-    console.log(`Environment detection - isCloud: ${isCloud}, isWindows: ${isWindows}, platform: ${os.platform()}, NODE_ENV: ${process.env.NODE_ENV}`);
-    
     // Try first with local binary, then fallback to global command
     if (isWindows) {
       // Windows setup with .exe
@@ -1366,15 +1365,10 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
       
       try {
         console.log('Attempting to fetch metadata with yt-dlp...');
-        console.log('yt-dlp command:', metadataCommand);
-        const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand, { timeout: 300000 });
+        const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand);
         
         if (metadataError) {
           console.error('yt-dlp metadata stderr:', metadataError);
-        }
-        
-        if (!metadataOutput || metadataOutput.trim() === '') {
-          throw new Error('Empty metadata output from yt-dlp');
         }
         
         const metadata = JSON.parse(metadataOutput);
@@ -1390,7 +1384,6 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         console.log(`Video metadata fetched successfully with yt-dlp for ${videoId}, duration: ${duration}`);
       } catch (ytdlpError) {
         console.error('Error fetching metadata with yt-dlp:', ytdlpError);
-        console.error('yt-dlp command that failed:', metadataCommand);
         
         // Fallback 1: Try using direct YouTube page scraping with cookies
         try {
@@ -1433,37 +1426,16 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
           const patterns = [
             /"lengthSeconds":"(\d+)"/,
             /approxDurationMs":"(\d+)"/,
-            /duration_seconds":(\d+)/,
-            /"duration":{"simpleText":"([^"]+)"/,
-            /"lengthText":{"simpleText":"([^"]+)"/,
-            /"videoDetails":{"videoId":"[^"]+","title":"[^"]+","lengthSeconds":"(\d+)"/,
-            /ytInitialPlayerResponse.*?"lengthSeconds":"(\d+)"/,
-            /ytInitialData.*?"lengthSeconds":"(\d+)"/
+            /duration_seconds":(\d+)/
           ];
           
           for (const pattern of patterns) {
             const match = html.match(pattern);
             if (match) {
-              if (pattern.toString().includes('simpleText')) {
-                // Handle duration in format like "4:32" or "1:23:45"
-                const timeString = match[1];
-                const timeParts = timeString.split(':').map(part => parseInt(part));
-                if (timeParts.length === 2) {
-                  // MM:SS format
-                  durationSeconds = timeParts[0] * 60 + timeParts[1];
-                } else if (timeParts.length === 3) {
-                  // HH:MM:SS format
-                  durationSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
-                }
-              } else {
-                durationSeconds = pattern.toString().includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
-              }
-              
-              if (durationSeconds) {
+              durationSeconds = pattern.includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
               duration = formatDuration(durationSeconds);
-                console.log(`Duration found via pattern ${pattern.toString()}: ${duration}`);
+              console.log(`Duration found via pattern ${pattern}: ${duration}`);
               break;
-              }
             }
           }
           
@@ -1484,69 +1456,10 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         } catch (scrapingError) {
           console.error('Error fetching metadata via scraping:', scrapingError);
           
-          // Fallback 2: Try using YouTube oEmbed API
-          try {
-            console.log('Attempting to fetch metadata via YouTube oEmbed API...');
-            const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`;
-            const oembedResponse = await axios.get(oembedUrl, { timeout: 5000 });
-            
-            if (oembedResponse.data) {
-              title = oembedResponse.data.title || "";
-              channelName = oembedResponse.data.author_name || "";
-              thumbnail = oembedResponse.data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
-              console.log(`Basic metadata fetched via oEmbed for ${videoId}`);
-            }
-          } catch (oembedError) {
-            console.error('Error fetching metadata via oEmbed:', oembedError);
-          }
-          
-          // Fallback 3: Try using YouTube API v3 if API key is available
-          if (process.env.YOUTUBE_API_KEY && duration === "N/A") {
-            try {
-              console.log('Attempting to fetch duration via YouTube API v3...');
-              const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=contentDetails,snippet&key=${process.env.YOUTUBE_API_KEY}`;
-              const apiResponse = await axios.get(apiUrl, { timeout: 5000 });
-              
-              if (apiResponse.data.items && apiResponse.data.items.length > 0) {
-                const video = apiResponse.data.items[0];
-                
-                // Parse ISO 8601 duration format (PT4M13S -> 4:13)
-                if (video.contentDetails && video.contentDetails.duration) {
-                  const isoDuration = video.contentDetails.duration;
-                  const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-                  if (match) {
-                    const hours = parseInt(match[1] || 0);
-                    const minutes = parseInt(match[2] || 0);
-                    const seconds = parseInt(match[3] || 0);
-                    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-                    duration = formatDuration(totalSeconds);
-                    console.log(`Duration found via YouTube API: ${duration}`);
-                  }
-                }
-                
-                // Also get other metadata if not already available
-                if (video.snippet) {
-                  if (!title) title = video.snippet.title || "";
-                  if (!channelName) channelName = video.snippet.channelTitle || "";
-                  if (!thumbnail && video.snippet.thumbnails) {
-                    thumbnail = video.snippet.thumbnails.maxres?.url || 
-                               video.snippet.thumbnails.high?.url || 
-                               video.snippet.thumbnails.medium?.url || 
-                               `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
-                  }
-                }
-              }
-            } catch (apiError) {
-              console.error('Error fetching metadata via YouTube API:', apiError);
-            }
-          }
-          
-          // Fallback 4: Try using a simple thumbnail-based approach
+          // Fallback 2: Try using a simple thumbnail-based approach
           try {
             console.log('Using basic metadata approach...');
-            if (!thumbnail) {
             thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
-            }
             // Keep other values as default/N/A
             console.log('Basic metadata approach completed');
           } catch (basicError) {
@@ -1555,11 +1468,8 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
         }
       }
       
-      // Log final metadata state before proceeding
-      console.log(`Final metadata for ${videoId} - Duration: ${duration}, Title: ${title ? 'Found' : 'N/A'}, Channel: ${channelName ? 'Found' : 'N/A'}`);
-      
-      // Then proceed with transcript extraction (timeout: 5 minutes)
-      const { stdout, stderr } = await execPromise(command, { timeout: 300000 });
+      // Then proceed with transcript extraction
+      const { stdout, stderr } = await execPromise(command);
       console.log('yt-dlp output:', stdout);
       
       if (stderr) {
@@ -1734,11 +1644,12 @@ app.use(errorHandler);
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
   
-  // Set CORS headers even in error responses (only if origin exists)
+  // Set CORS headers even in error responses
   const origin = req.headers.origin;
   if (origin) {
     res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
   }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');

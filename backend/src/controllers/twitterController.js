@@ -131,7 +131,7 @@ const makeApiRequest = async (url, retryCount = 0) => {
           'x-rapidapi-key': RAPID_API_KEY,
           'x-rapidapi-host': RAPID_API_HOST,
         },
-        timeout: 120000 // Increased to 2 minutes
+        timeout: 30000
       };
       
       axios.get(url, options)
@@ -490,17 +490,6 @@ const getUserTweets = asyncHandler(async (req, res) => {
       });
     }
 
-    // Set response timeout to 4 minutes
-    req.setTimeout(360000);
-    res.setTimeout(360000);
-    
-    // Keep connection alive during long processing
-    const keepAlive = setInterval(() => {
-      if (!res.headersSent) {
-        res.write(' '); // Send whitespace to keep connection alive
-      }
-    }, 30000);
-
     // Get user ID first
     const userData = await makeApiRequest(`https://twitter154.p.rapidapi.com/user/details?username=${username}`);
     const userId = userData.user_id;
@@ -614,36 +603,8 @@ const getUserTweets = asyncHandler(async (req, res) => {
 
     console.log(`Fetched ${allTweets.length} total tweets (${uniqueTweetIds.size} unique)`);
     
-    // Clear keep-alive interval
-    clearInterval(keepAlive);
-    
     // Cache and return results
     API_CACHE.userTweets.set(cacheKey, allTweets);
-    
-    // Save tweets for authenticated users
-    if (req.user) {
-      try {
-        console.log(`Saving ${allTweets.length} tweets for authenticated user ${req.user._id} (Twitter: ${username})`);
-        
-        // Delete existing tweets for this user
-        await Tweet.deleteMany({ 
-          userId: req.user._id, 
-          'author.username': { $regex: new RegExp(`^${username}$`, 'i') }
-        });
-        
-        // Save new tweets
-        const tweetsToSave = allTweets.map(tweet => ({
-          ...tweet,
-          userId: req.user._id,
-          createdAt: new Date()
-        }));
-        
-        await Tweet.insertMany(tweetsToSave);
-      } catch (saveError) {
-        console.error('Error saving tweets:', saveError);
-        // Don't fail the request if saving fails
-      }
-    }
     
     res.status(200).json({
       success: true,
@@ -652,12 +613,6 @@ const getUserTweets = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching tweets:', error);
-    
-    // Clear keep-alive interval on error
-    if (typeof keepAlive !== 'undefined') {
-      clearInterval(keepAlive);
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Failed to fetch tweets',

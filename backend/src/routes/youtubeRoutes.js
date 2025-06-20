@@ -61,34 +61,34 @@ async function getPythonExecutablePath() {
   try {
     // For Windows, check the specific Python location first
     if (process.platform === 'win32') {
-      const specificPaths = [
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
-        'C:\\Python39\\python.exe',
-        'C:\\Python310\\python.exe',
-        'C:\\Python311\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python39\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python310\\python.exe',
-        'C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe'
-      ];
-      
-      for (const path of specificPaths) {
-        try {
-          await fs.promises.access(path);
-          return path;
-        } catch {
-          // Path not found, continue to next one
-        }
+      // In development, use system Python
+      if (process.env.NODE_ENV !== 'production') {
+        return 'python';
       }
       
-      // If specific paths fail, try the general command
-      return 'python';
+      // In production on Windows (unlikely), try virtual environment first
+      const venvPath = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
+      try {
+        await fs.promises.access(venvPath);
+        return venvPath;
+      } catch {
+        return 'python';  // Fallback to system Python
+      }
     } else {
-      // For Linux/Mac, use python3 in production, python in development
-      return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+      // For Linux/Mac (likely production environment)
+      const venvPath = path.join(process.cwd(), 'venv', 'bin', 'python');
+      try {
+        await fs.promises.access(venvPath);
+        return venvPath;
+      } catch {
+        // Fallback to system Python3 on Linux/Mac
+        return 'python3';
+      }
     }
   } catch (error) {
     console.error('Error determining Python path:', error);
-    return process.env.NODE_ENV === 'production' ? 'python3' : 'python';
+    // Default fallback
+    return process.platform === 'win32' ? 'python' : 'python3';
   }
 }
 
@@ -114,33 +114,24 @@ router.post('/transcript', async (req, res) => {
         message: 'YouTube video ID is required' 
       });
     }
-    
-    // Check if transcript is in cache
-    const cachedTranscript = transcriptCache.get(videoId);
-    if (cachedTranscript) {
-      return res.status(200).json({
-        success: true,
-        transcript: cachedTranscript.transcript,
-        language: cachedTranscript.language,
-        language_code: cachedTranscript.language_code,
-        is_generated: cachedTranscript.is_generated,
-        is_cached: true,
-        source: cachedTranscript.source || 'cache'
-      });
-    }
-    
+
     console.log(`Fetching transcript for video ID: ${videoId}`);
     
-    // Call the Python script directly which now uses youtube-transcript-api first
-    const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
+    // Call the Python script which now uses YouTube Transcript API with proxy (primary method)
+    const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
     
-    // Determine the Python executable to use
-    const pythonExecutable = path.join(process.cwd(), 'venv', 
-      process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
+    // Get the appropriate Python executable
+    const pythonExecutable = await getPythonExecutablePath();
+    console.log(`Using Python executable: ${pythonExecutable}`);
     
     try {
       console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
-      const { stdout, stderr } = await execPromise(`"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`, { timeout: 300000 });
+      
+      // Run the Python script from the project root to ensure all paths work correctly
+      const command = `"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`;
+      console.log(`Executing command: ${command}`);
+      
+      const { stdout, stderr } = await execPromise(command);
       
       if (stderr) {
         console.error('Python script stderr:', stderr);
@@ -150,52 +141,41 @@ router.post('/transcript', async (req, res) => {
       let result;
       try {
         // If using debug mode, the JSON will be on the last line
-        const outputLines = stdout.trim().split('\n');
-        const jsonLine = outputLines[outputLines.length - 1];
+        const lines = stdout.trim().split('\n');
+        const jsonLine = lines[lines.length - 1];
         result = JSON.parse(jsonLine);
       } catch (parseError) {
-        // Fallback to parsing the entire stdout
-        console.log('Failed to parse last line as JSON, trying full output:', parseError);
-        result = JSON.parse(stdout);
+        console.error('Error parsing JSON from Python script:', parseError);
+        console.error('Raw stdout:', stdout);
+        throw new Error(`Invalid JSON response from Python script: ${parseError.message}`);
       }
       
-      if (result.success && result.transcript && result.transcript.trim().length > 0) {
-        console.log(`Successfully fetched transcript with Python script (${result.source || 'unknown'}) for video ${videoId}, length: ${result.transcript.length}`);
-        
-        // Store in cache
-        transcriptCache.set(videoId, {
-          transcript: result.transcript,
-          language: result.language || 'Unknown',
-          language_code: result.language_code || 'en',
-          is_generated: result.is_generated ?? false,
-          source: result.source || 'python_script'
-        });
-        
-        return res.status(200).json({
+      if (result.success) {
+        console.log(`Successfully fetched transcript for video ${videoId} using ${result.source || 'YouTube Transcript API'}`);
+        res.json({
           success: true,
           transcript: result.transcript,
-          language: result.language || 'Unknown',
-          language_code: result.language_code || 'en',
-          is_generated: result.is_generated ?? false,
-          source: result.source || 'python_script'
+          source: result.source || 'YouTube Transcript API',
+          language: result.language || 'en',
+          channelTitle: result.channelTitle || 'Unknown Channel',
+          videoTitle: result.videoTitle || 'Unknown Title'
         });
       } else {
-        console.log(`Python script returned error or empty transcript for video ${videoId}:`, result.error || 'Empty transcript');
+        console.log(`Failed to fetch transcript for video ${videoId}:`, result.error || 'Unknown error');
+        // Fall back to backup method
         fetchBackupTranscript(videoId, res);
-        return;
       }
-    } catch (pythonError) {
-      console.error('Error with Python script method:', pythonError);
+    } catch (error) {
+      console.error('Error running Python script:', error);
       // Fall back to backup method
       fetchBackupTranscript(videoId, res);
-      return;
     }
   } catch (error) {
-    console.error('Error in transcript endpoint:', error);
-    return res.status(500).json({ 
+    console.error('Error in transcript route:', error);
+    res.status(500).json({ 
       success: false, 
-      message: error.message || 'Failed to fetch transcript',
-      error: error.toString()
+      message: 'Server error fetching transcript',
+      error: error.message
     });
   }
 });
@@ -250,28 +230,25 @@ router.get('/saved/:userId', getUserSavedVideos);
 router.delete('/saved/:userId/:videoId', deleteSavedVideo);
 
 /**
- * @route   GET /api/youtube/transcript?url=:youtubeUrl
+ * @route   GET /api/youtube/transcript?videoId=:videoId
  * @desc    Fetch YouTube transcript without API key
  * @access  Public
  */
 router.get('/transcript', async (req, res) => {
   try {
-    const { url } = req.query;
-    
-    if (!url) {
-      return res.status(400).json({ success: false, message: 'YouTube URL is required' });
-    }
-    
-    // Extract video ID from URL
-    const videoId = extractVideoId(url);
+    const { videoId } = req.query;
     
     if (!videoId) {
-      return res.status(400).json({ success: false, message: 'Invalid YouTube URL' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Video ID is required' 
+      });
     }
     
-    // Check if transcript is in cache
+    // Check cache first
     const cachedTranscript = transcriptCache.get(videoId);
     if (cachedTranscript) {
+      console.log(`Found cached transcript for video ${videoId}`);
       return res.status(200).json({
         success: true,
         data: {
@@ -279,62 +256,69 @@ router.get('/transcript', async (req, res) => {
           transcript: cachedTranscript.transcript,
           language: cachedTranscript.language,
           isAutoGenerated: cachedTranscript.is_generated ?? false,
-          is_cached: true
+          via: 'cache'
         }
       });
     }
     
-    // Fetch the transcript using ScraperAPI
+    // Try ScraperAPI first
     try {
-      console.log(`Fetching transcript for URL: ${url} with ScraperAPI`);
-    const transcriptData = await fetchYouTubeTranscript(videoId);
+      const scraperApiResult = await getTranscriptWithScraperApi(videoId);
       
       // Store in cache
       transcriptCache.set(videoId, {
-        transcript: transcriptData.transcript,
-        language: transcriptData.language || 'Unknown',
-        language_code: transcriptData.language || 'en',
-        is_generated: transcriptData.is_generated ?? false
+        transcript: scraperApiResult.transcript,
+        language: scraperApiResult.language,
+        language_code: scraperApiResult.language_code,
+        is_generated: scraperApiResult.is_generated ?? false
       });
-    
-    return res.status(200).json({
-      success: true,
-      data: {
-        videoId,
-        transcript: transcriptData.transcript,
-          language: transcriptData.language || 'Unknown',
-          isAutoGenerated: transcriptData.is_generated ?? false,
-          via: 'scraperapi'
+      
+      return res.status(200).json({
+        success: true,
+        data: {
+          videoId,
+          transcript: scraperApiResult.transcript,
+          language: scraperApiResult.language,
+          isAutoGenerated: scraperApiResult.is_generated ?? false,
+          via: 'scraper_api'
         }
       });
     } catch (error) {
-      // If ScraperAPI fails, try using Python script method via a manual POST request
+      // If ScraperAPI fails, try using Python script method
       console.log('ScraperAPI method failed, trying Python script method:', error.message);
       
-      // Path to the Python script
-      const scriptPath = path.join(__dirname, '../transcript_fetcher.py');
+      // Call the Python script which now uses YouTube Transcript API with proxy (primary method)
+      const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
       
-      // Determine the Python executable to use
-      const pythonExecutable = path.join(process.cwd(), 'venv', 
-        process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python');
+      // Get the appropriate Python executable
+      const pythonExecutable = await getPythonExecutablePath();
+      console.log(`Using Python executable: ${pythonExecutable}`);
       
       try {
-        // Run Python script to get transcript (timeout: 5 minutes)
-        const { stdout, stderr } = await new Promise((resolve, reject) => {
-          exec(`"${pythonExecutable}" "${scriptPath}" ${videoId}`, { timeout: 300000 }, (error, stdout, stderr) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve({ stdout, stderr });
-            }
-          });
-        });
+        console.log(`Running Python script with ${pythonExecutable} for video ID: ${videoId}`);
+        
+        // Run the Python script from the project root to ensure all paths work correctly
+        const command = `"${pythonExecutable}" "${scriptPath}" --debug ${videoId}`;
+        console.log(`Executing command: ${command}`);
+        
+        const { stdout, stderr } = await execPromise(command);
         
         if (stderr) {
-          console.error('Python script error:', stderr);
+          console.error('Python script stderr:', stderr);
         }
         
-        const result = JSON.parse(stdout);
+        // Parse JSON from stdout, handling debug output
+        let result;
+        try {
+          // If using debug mode, the JSON will be on the last line
+          const lines = stdout.trim().split('\n');
+          const jsonLine = lines[lines.length - 1];
+          result = JSON.parse(jsonLine);
+        } catch (parseError) {
+          console.error('Error parsing JSON from Python script:', parseError);
+          console.error('Raw stdout:', stdout);
+          throw new Error(`Invalid JSON response from Python script: ${parseError.message}`);
+        }
         
         if (result.success) {
           // Store in cache
@@ -360,20 +344,39 @@ router.get('/transcript', async (req, res) => {
         }
       } catch (pythonError) {
         console.error('Error with Python script method:', pythonError);
-        // Return an error response
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to fetch transcript with all available methods',
-          error: pythonError.toString()
-        });
+        // Fall back to yt-dlp method
+        const ytdlpResult = await extractTranscriptWithYtDlp(videoId);
+        
+        if (ytdlpResult.success) {
+          // Store in cache
+          transcriptCache.set(videoId, {
+            transcript: ytdlpResult.transcript,
+            language: ytdlpResult.language,
+            language_code: ytdlpResult.language_code,
+            is_generated: ytdlpResult.is_generated ?? false
+          });
+          
+          return res.status(200).json({
+            success: true,
+            data: {
+              videoId,
+              transcript: ytdlpResult.transcript,
+              language: ytdlpResult.language,
+              isAutoGenerated: ytdlpResult.is_generated ?? false,
+              via: 'yt-dlp'
+            }
+          });
+        } else {
+          throw new Error('All transcript extraction methods failed');
+        }
       }
     }
   } catch (error) {
-    console.error('Error fetching YouTube transcript:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to fetch transcript',
-      error: error.response?.data || error.toString()
+    console.error('Error fetching transcript:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch transcript',
+      error: error.message
     });
   }
 });
@@ -457,44 +460,33 @@ function extractVideoId(url) {
 // Backup method for when Python method fails - now uses direct yt-dlp integration
 async function fetchBackupTranscript(videoId, res) {
   try {
-    console.log('Using backup yt-dlp method for video ID:', videoId);
+    console.log(`Using backup yt-dlp method for video ID: ${videoId}`);
+    const result = await extractTranscriptWithYtDlp(videoId);
     
-    // Try the direct yt-dlp method
-    const ytdlpResult = await extractTranscriptWithYtDlp(videoId);
-    
-    if (ytdlpResult.success && ytdlpResult.transcript && ytdlpResult.transcript.trim().length > 0) {
-      console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${ytdlpResult.transcript.length}`);
-        
-        // Store in cache
-        transcriptCache.set(videoId, {
-        transcript: ytdlpResult.transcript,
-        language: ytdlpResult.language || 'en',
-        language_code: ytdlpResult.language_code || 'en',
-        is_generated: ytdlpResult.is_generated ?? false,
-        source: ytdlpResult.source || 'yt-dlp'
-        });
-        
-        return res.status(200).json({
-          success: true,
-        transcript: ytdlpResult.transcript,
-        language: ytdlpResult.language || 'en',
-        language_code: ytdlpResult.language_code || 'en',
-        is_generated: ytdlpResult.is_generated ?? false,
-        source: ytdlpResult.source || 'yt-dlp'
-        });
-      } else {
-      console.log(`yt-dlp method failed for video ${videoId}:`, ytdlpResult.error || 'Unknown error');
-      throw new Error(ytdlpResult.error || 'Failed to fetch transcript with yt-dlp - empty or invalid result');
+    if (result.success) {
+      console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${result.transcript.length}`);
+      res.json({
+        success: true,
+        transcript: result.transcript,
+        source: 'yt-dlp',
+        language: result.language || 'en',
+        channelTitle: result.channelTitle || 'Unknown Channel',
+        videoTitle: result.videoTitle || 'Unknown Title'
+      });
+    } else {
+      console.error(`Failed to fetch transcript with yt-dlp for video ${videoId}:`, result.error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch transcript with backup method',
+        error: result.error
+      });
     }
   } catch (error) {
-    console.error('Error in backup yt-dlp method:', error);
-    
-    // Return error to frontend - all methods have failed
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch transcript with all available methods (YouTube Transcript API + yt-dlp)',
-      error: error.toString(),
-      methods_tried: ['youtube_transcript_api', 'yt-dlp']
+    console.error('Error in backup transcript method:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error in backup transcript method',
+      error: error.message
     });
   }
 }
@@ -550,7 +542,7 @@ async function extractTranscriptWithYtDlp(videoId) {
       const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
       if (fs.existsSync(ytDlpPath)) {
         try {
-          await execPromise(`chmod +x "${ytDlpPath}"`, { timeout: 30000 });
+          await execPromise(`chmod +x "${ytDlpPath}"`);
           ytDlpCommand = `"${ytDlpPath}"`;
         } catch (chmodError) {
           console.error('Error making yt-dlp executable:', chmodError);
@@ -568,7 +560,7 @@ async function extractTranscriptWithYtDlp(videoId) {
     const command = `${ytDlpCommand} --write-auto-sub --sub-lang en --skip-download --write-subs --sub-format json3 --cookies "${path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt')}" --paths "transcripts" ${proxyOptions} "${videoUrl}"`;
     
     console.log(`Running yt-dlp command: ${command}`);
-    const { stdout, stderr } = await execPromise(command, { timeout: 300000 });
+    const { stdout, stderr } = await execPromise(command);
     
     if (stderr) {
       console.error('yt-dlp stderr:', stderr);
@@ -674,6 +666,9 @@ router.use((req, res, next) => {
       console.log(`YouTube Routes: Origin ${origin} accessing API`);
       res.header('Access-Control-Allow-Origin', origin);
     }
+  } else {
+    // No origin header (direct API call)
+    res.header('Access-Control-Allow-Origin', '*');
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -703,6 +698,8 @@ router.use((err, req, res, next) => {
       console.log(`Error handler: Origin ${origin} accessing API`);
       res.header('Access-Control-Allow-Origin', origin);
     }
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
