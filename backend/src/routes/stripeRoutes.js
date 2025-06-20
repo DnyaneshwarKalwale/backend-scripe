@@ -9,6 +9,20 @@ const {
   verifySession
 } = require('../controllers/stripeController');
 
+// CORS handling middleware
+router.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+  next();
+});
+
 // Routes that require authentication
 router.post('/create-checkout-session', protect, createCheckoutSession);
 router.get('/subscription', protect, getSubscription);

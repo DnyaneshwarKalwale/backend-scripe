@@ -20,6 +20,7 @@ const corsOptions = {
     // Allow requests from these origins
     const allowedOrigins = [
       'https://app.brandout.ai',
+      'https://api.brandout.ai',
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:5174'

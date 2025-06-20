@@ -12,6 +12,7 @@ const xml2js = require('xml2js');
 const { getChannelVideos, createCarousels, saveYoutubeVideo, getUserSavedVideos, deleteSavedVideo, saveVideoTranscript, saveMultipleVideos } = require('../controllers/youtubeController');
 const SavedVideo = require('../models/savedVideo');
 const os = require('os');
+const { protect } = require('../middleware/authMiddleware');
 
 // Load environment variables
 dotenv.config();
@@ -232,28 +233,28 @@ router.post('/save-videos', saveMultipleVideos);
  * @desc    Save a transcript for a YouTube video
  * @access  Private
  */
-router.post('/save-transcript', saveVideoTranscript);
+router.post('/save-transcript', protect, saveVideoTranscript);
 
 /**
  * @route   POST /api/youtube/save-video-transcript
  * @desc    Save a video with its transcript all at once
  * @access  Public
  */
-router.post('/save-video-transcript', saveVideoTranscript);
+router.post('/save-video-transcript', protect, saveVideoTranscript);
 
 /**
  * @route   GET /api/youtube/saved/:userId
  * @desc    Get all saved YouTube videos for a user
  * @access  Private
  */
-router.get('/saved/:userId', getUserSavedVideos);
+router.get('/saved/:userId', protect, getUserSavedVideos);
 
 /**
  * @route   DELETE /api/youtube/saved/:userId/:videoId
  * @desc    Delete a saved YouTube video
  * @access  Private
  */
-router.delete('/saved/:userId/:videoId', deleteSavedVideo);
+router.delete('/saved/:userId/:videoId', protect, deleteSavedVideo);
 
 /**
  * @route   GET /api/youtube/transcript?videoId=:videoId
@@ -682,36 +683,17 @@ async function extractTranscriptWithYtDlp(videoId) {
   }
 }
 
-// Setup CORS handlers specifically for YouTube routes
+// CORS handling middleware
 router.use((req, res, next) => {
-  // Get the origin
-  const origin = req.headers.origin;
-  
-  // Dynamically set Access-Control-Allow-Origin
-  if (origin) {
-    // Allow Netlify origins explicitly
-    if (origin.endsWith('netlify.app') || 
-        origin === 'https://deluxe-cassata-51d628.netlify.app' ||
-        origin.includes('localhost')) {
-      res.header('Access-Control-Allow-Origin', origin);
-    } else {
-      // For other origins, still allow them but log
-      console.log(`YouTube Routes: Origin ${origin} accessing API`);
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-  } else {
-    // No origin header (direct API call)
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
   res.header('Access-Control-Allow-Credentials', 'true');
-  
+
+  // Handle preflight requests
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).send();
   }
-  
   next();
 });
 
