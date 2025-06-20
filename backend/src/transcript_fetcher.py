@@ -289,7 +289,7 @@ def fetch_transcript_manually(video_id):
         # Set up opener with cookies and proxy
         handlers = [HTTPCookieProcessor(cookie_jar)]
         
-        # Add proxy handler if configured hhhh
+        # Add proxy handler if configured
         proxy_handler = get_urllib_proxy_handler()
         if proxy_handler:
             handlers.append(proxy_handler)
