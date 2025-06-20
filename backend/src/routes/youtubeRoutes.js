@@ -711,62 +711,9 @@ async function extractTranscriptWithYtDlp(videoId) {
   }
 }
 
-// Setup CORS handlers specifically for YouTube routes
-router.use((req, res, next) => {
-  // Get the origin
-  const origin = req.headers.origin;
-  
-  // Dynamically set Access-Control-Allow-Origin
-  if (origin) {
-    // Allow Netlify origins explicitly
-    if (origin.endsWith('netlify.app') || 
-        origin === 'https://deluxe-cassata-51d628.netlify.app' ||
-        origin.includes('localhost')) {
-      res.header('Access-Control-Allow-Origin', origin);
-    } else {
-      // For other origins, still allow them but log
-      console.log(`YouTube Routes: Origin ${origin} accessing API`);
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-  } else {
-    // No origin header (direct API call)
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
-
-// Error handling middleware specific to YouTube routes
+// Keep only the specific error handling logic
 router.use((err, req, res, next) => {
   console.error('YouTube API error:', err);
-  
-  // Set CORS headers even when errors occur
-  const origin = req.headers.origin;
-  if (origin) {
-    // For Netlify domains and localhost, use the specific origin
-    if (origin.endsWith('netlify.app') || 
-        origin === 'https://deluxe-cassata-51d628.netlify.app' || 
-        origin.includes('localhost')) {
-      res.header('Access-Control-Allow-Origin', origin);
-    } else {
-      console.log(`Error handler: Origin ${origin} accessing API`);
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
   
   // Handle payload too large errors specifically
   if (err.type === 'entity.too.large') {

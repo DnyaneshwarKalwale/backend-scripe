@@ -67,34 +67,25 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
-// Single CORS configuration
-const corsOptions = {
-  origin: (origin, callback) => {
-    const allowedOrigins = ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'];
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log(`Origin ${origin} not allowed by CORS`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+// Enable CORS for production frontend only
+app.use(cors({
+  origin: 'https://app.brandout.ai',  // Only allow the production frontend
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true
-};
-
-// Apply CORS configuration
-app.use(cors(corsOptions));
+}));
 
 // Handle preflight requests
-app.options('*', cors(corsOptions));
+app.options('*', cors({
+  origin: 'https://app.brandout.ai',  // Same origin for preflight
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  credentials: true
+}));
 
-// Body parser middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// Body parser
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
 // Create uploads directory if it doesn't exist
