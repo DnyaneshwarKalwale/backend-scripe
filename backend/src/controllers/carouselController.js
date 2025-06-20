@@ -455,6 +455,40 @@ const deleteCarouselRequest = asyncHandler(async (req, res) => {
   }
 });
 
+// Get carousel contents
+const getCarouselContents = async (req, res) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://app.brandout.ai');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // ... rest of the existing code ...
+  } catch (error) {
+    console.error('Error fetching carousel contents:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to fetch carousel contents',
+      error: error.toString()
+    });
+  }
+};
+
 // Export controller functions
 module.exports = {
   getCarousels,
@@ -468,5 +502,6 @@ module.exports = {
   getCarouselRequestById,
   updateCarouselRequestStatus,
   deleteCarouselRequest,
-  completeCarouselRequest
+  completeCarouselRequest,
+  getCarouselContents
 }; 

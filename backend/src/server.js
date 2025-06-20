@@ -1931,4 +1931,23 @@ app.listen(PORT, async () => {
 
   // Start cron jobs
   accountDeletionJob.start();
+});
+
+// Handle CORS errors
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  if (err.code === 'CORS_ERROR') {
+    console.error('CORS Error:', {
+      origin: err.origin,
+      method: err.method,
+      headers: err.headers
+    });
+  }
+  // Don't exit the process, just log the error
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  // Don't exit the process, just log the error
 }); 

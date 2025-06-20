@@ -1,32 +1,37 @@
 // Error handling middleware
 const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
+  // Add CORS headers to all error responses
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://app.brandout.ai');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
 
-  // Log error for development
-  console.error(err);
+  // Log the error for debugging
+  console.error('Error:', {
+    message: err.message,
+    stack: err.stack,
+    status: err.status
+  });
 
-  // Mongoose bad ObjectId
-  if (err.name === 'CastError') {
-    const message = 'Resource not found';
-    error = { message, statusCode: 404 };
-  }
-
-  // Mongoose duplicate key
-  if (err.code === 11000) {
-    const message = 'Duplicate field value entered';
-    error = { message, statusCode: 400 };
-  }
-
-  // Mongoose validation error
+  // Handle specific error types
   if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message);
-    error = { message, statusCode: 400 };
+    return res.status(400).json({
+      success: false,
+      message: err.message
+    });
   }
 
-  res.status(error.statusCode || 500).json({
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid token'
+    });
+  }
+
+  // Default error response
+  res.status(err.status || 500).json({
     success: false,
-    error: error.message || 'Server Error',
+    message: err.message || 'Internal server error'
   });
 };
 

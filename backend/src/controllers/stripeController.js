@@ -534,6 +534,17 @@ const handleSuccessfulCheckout = async (session) => {
 
 // Get subscription
 const getSubscription = async (req, res) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://app.brandout.ai');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send();
+  }
+
   try {
     if (!req.user || !req.user.id) {
       return res.status(401).json({
