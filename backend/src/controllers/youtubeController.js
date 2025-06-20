@@ -2,13 +2,6 @@ const axios = require('axios');
 const xml2js = require('xml2js');
 const User = require('../models/userModel');
 const SavedVideo = require('../models/savedVideo');
-const VideoTranscript = require('../models/videoTranscriptModel');
-const { getHttpProxyConfig, getYtDlpProxyOptions } = require('../config/proxy');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
-const fs = require('fs');
-const path = require('path');
 
 /**
  * Helper function to validate YouTube channel IDs
@@ -274,61 +267,38 @@ const getChannelVideos = async (req, res) => {
 
       console.log(`Found ${videos.length} videos from channel ${exactChannelName || channelId}`);
 
-      // For videos without duration (which is most of them from RSS), try to fetch duration data using yt-dlp with proxy
+      // For videos without duration (which is most of them from RSS), try to fetch duration data
       // This can be done in batches to avoid too many requests
       try {
-        console.log(`Fetching metadata for ${videos.length} videos using yt-dlp with proxy support`);
-        
-        // Batch videos into groups of 5 for processing (smaller batches for yt-dlp)
-        const batchSize = 5;
+        // Batch videos into groups of 10 for processing
+        const batchSize = 10;
         for (let i = 0; i < videos.length; i += batchSize) {
           const batch = videos.slice(i, i + batchSize);
+          const videoIds = batch.map(video => video.id).join(',');
           
-          // Get metadata for each video in the batch using yt-dlp first, then fallback to scraping
+          // Try to fetch video details using scraping approach (no API key needed)
+          const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          };
+          
+          // Get duration for each video in the batch using a more resilient approach
           await Promise.allSettled(batch.map(async (video) => {
             try {
-              // First try yt-dlp with proxy
-              const ytdlpResult = await fetchVideoMetadataWithYtDlp(video.id);
+              const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+              const response = await axios.get(videoUrl, { headers, timeout: 5000 });
               
-              if (ytdlpResult.success && ytdlpResult.duration !== "N/A") {
-                video.duration = ytdlpResult.duration;
-                // Also update other metadata if available and better than RSS data
-                if (ytdlpResult.title && ytdlpResult.title.length > video.title.length) {
-                  video.title = ytdlpResult.title;
-                }
-                if (ytdlpResult.thumbnail && ytdlpResult.thumbnail !== `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg`) {
-                  video.thumbnail = ytdlpResult.thumbnail;
-                }
-                if (ytdlpResult.viewCount > video.view_count) {
-                  video.view_count = ytdlpResult.viewCount;
-                }
-                console.log(`✅ yt-dlp: Successfully fetched metadata for ${video.id}, duration: ${video.duration}`);
-              } else {
-                // Fallback to scraping with proxy
-                console.log(`⚠️ yt-dlp failed for ${video.id}, trying scraping with proxy...`);
-                const scrapingResult = await fetchVideoMetadataWithScraping(video.id);
-                
-                if (scrapingResult.success && scrapingResult.duration !== "N/A") {
-                  video.duration = scrapingResult.duration;
-                  console.log(`✅ Scraping: Successfully fetched duration for ${video.id}: ${video.duration}`);
-                } else {
-                  console.log(`❌ Both yt-dlp and scraping failed for ${video.id}, keeping default duration: N/A`);
-                }
+              // Extract duration using regex patterns
+              const durationMatch = response.data.match(/"lengthSeconds":"(\d+)"/);
+              if (durationMatch && durationMatch[1]) {
+                const seconds = parseInt(durationMatch[1], 10);
+                video.duration = formatDuration(seconds);
               }
             } catch (error) {
-              console.log(`❌ Failed to fetch metadata for video ${video.id}: ${error.message}`);
-              // Keep the default N/A if all methods fail
+              console.log(`Failed to fetch duration for video ${video.id}: ${error.message}`);
+              // Keep the default N/A if fetch fails
             }
           }));
-          
-          // Add a small delay between batches to avoid overwhelming the server
-          if (i + batchSize < videos.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
         }
-        
-        const videosWithDuration = videos.filter(v => v.duration !== "N/A").length;
-        console.log(`📊 Successfully fetched duration for ${videosWithDuration}/${videos.length} videos`);
       } catch (durationError) {
         console.error('Error fetching video durations:', durationError);
         // Continue with the videos we have, even without durations
@@ -373,184 +343,6 @@ const formatDuration = (seconds) => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   } else {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  }
-};
-
-// Helper function to fetch video metadata using yt-dlp with proxy support
-const fetchVideoMetadataWithYtDlp = async (videoId) => {
-  try {
-    // Determine the correct yt-dlp binary based on platform
-    let ytDlpCommand = 'yt-dlp';
-    
-    if (process.platform === 'win32') {
-      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp.exe');
-      ytDlpCommand = fs.existsSync(ytDlpPath) ? `"${ytDlpPath}"` : 'yt-dlp';
-    } else {
-      const ytDlpPath = path.join(process.cwd(), 'src', 'yt-dlp');
-      if (fs.existsSync(ytDlpPath)) {
-        // Make sure it's executable
-        try {
-          await execPromise(`chmod +x "${ytDlpPath}"`);
-          ytDlpCommand = `"${ytDlpPath}"`;
-        } catch (chmodError) {
-          console.error('Error making yt-dlp executable:', chmodError);
-          ytDlpCommand = 'yt-dlp';
-        }
-      } else {
-        ytDlpCommand = 'yt-dlp';
-      }
-    }
-
-    // Get cookies path
-    const cookiesPath = path.join(process.cwd(), 'src', 'cookies', 'www.youtube.com_cookies.txt');
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-    // Build proxy options for yt-dlp
-    const proxyOptions = getYtDlpProxyOptions();
-    
-    // Command to fetch video metadata including duration
-    const metadataCommand = `${ytDlpCommand} -J --cookies "${cookiesPath}" --user-agent "${userAgent}" ${proxyOptions} "${videoUrl}"`;
-    
-    console.log(`Fetching metadata for video ${videoId} with yt-dlp using proxy`);
-    const { stdout: metadataOutput, stderr: metadataError } = await execPromise(metadataCommand);
-    
-    if (metadataError) {
-      console.error(`yt-dlp metadata stderr for ${videoId}:`, metadataError);
-    }
-    
-    if (!metadataOutput || metadataOutput.trim() === '') {
-      throw new Error('Empty metadata output from yt-dlp');
-    }
-    
-    const metadata = JSON.parse(metadataOutput);
-    
-    // Extract relevant metadata
-    const duration = metadata.duration ? formatDuration(metadata.duration) : "N/A";
-    const thumbnail = metadata.thumbnail || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
-    const title = metadata.title || "";
-    const channelName = metadata.channel || metadata.uploader || "";
-    const viewCount = metadata.view_count || 0;
-    const uploadDate = metadata.upload_date || "";
-    
-    console.log(`Video metadata fetched successfully with yt-dlp for ${videoId}, duration: ${duration}`);
-    
-    return {
-      success: true,
-      duration,
-      thumbnail,
-      title,
-      channelName,
-      viewCount,
-      uploadDate
-    };
-  } catch (error) {
-    console.error(`Error fetching metadata with yt-dlp for video ${videoId}:`, error.message);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-};
-
-// Helper function to fetch video metadata using page scraping with proxy
-const fetchVideoMetadataWithScraping = async (videoId) => {
-  try {
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    
-    // Configure axios with proxy if enabled
-    const axiosConfig = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      },
-      timeout: 10000,
-      maxRedirects: 5
-    };
-    
-    const proxyConfig = getHttpProxyConfig();
-    if (proxyConfig) {
-      axiosConfig.proxy = proxyConfig;
-      console.log(`Using proxy for scraping metadata for video ${videoId}`);
-    }
-    
-    const response = await axios.get(videoUrl, axiosConfig);
-    const html = response.data;
-    
-    // Extract duration using multiple patterns
-    let duration = "N/A";
-    let durationSeconds;
-    const patterns = [
-      /"lengthSeconds":"(\d+)"/,
-      /approxDurationMs":"(\d+)"/,
-      /duration_seconds":(\d+)/,
-      /"duration":{"simpleText":"([^"]+)"/,
-      /"lengthText":{"simpleText":"([^"]+)"/,
-      /"videoDetails":{"videoId":"[^"]+","title":"[^"]+","lengthSeconds":"(\d+)"/,
-      /ytInitialPlayerResponse.*?"lengthSeconds":"(\d+)"/,
-      /ytInitialData.*?"lengthSeconds":"(\d+)"/
-    ];
-    
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match) {
-        if (pattern.toString().includes('simpleText')) {
-          // Handle duration in format like "4:32" or "1:23:45"
-          const timeString = match[1];
-          const timeParts = timeString.split(':').map(part => parseInt(part));
-          if (timeParts.length === 2) {
-            // MM:SS format
-            durationSeconds = timeParts[0] * 60 + timeParts[1];
-          } else if (timeParts.length === 3) {
-            // HH:MM:SS format
-            durationSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2];
-          }
-        } else {
-          durationSeconds = pattern.toString().includes('Ms') ? Math.floor(parseInt(match[1]) / 1000) : parseInt(match[1]);
-        }
-        
-        if (durationSeconds) {
-          duration = formatDuration(durationSeconds);
-          console.log(`Duration found via pattern for ${videoId}: ${duration}`);
-          break;
-        }
-      }
-    }
-    
-    // Extract other metadata
-    let title = "";
-    let channelName = "";
-    let viewCount = 0;
-    let thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
-    
-    const titleMatch = html.match(/"title":"([^"]+)"/);
-    if (titleMatch) title = titleMatch[1];
-    
-    const channelMatch = html.match(/"channelName":"([^"]+)"/);
-    if (channelMatch) channelName = channelMatch[1];
-    
-    const viewMatch = html.match(/"viewCount":"(\d+)"/);
-    if (viewMatch) viewCount = parseInt(viewMatch[1]);
-    
-    const thumbnailMatch = html.match(/"thumbnails":\[{"url":"([^"]+)"/);
-    if (thumbnailMatch) thumbnail = thumbnailMatch[1];
-    
-    console.log(`Metadata fetched via scraping with proxy for ${videoId}, duration: ${duration}`);
-    
-    return {
-      success: true,
-      duration,
-      thumbnail,
-      title,
-      channelName,
-      viewCount,
-      uploadDate: ""
-    };
-  } catch (error) {
-    console.error(`Error fetching metadata with scraping for video ${videoId}:`, error.message);
-    return {
-      success: false,
-      error: error.message
-    };
   }
 };
 
