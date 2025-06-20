@@ -4,22 +4,13 @@ const errorHandler = (err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
 
-  // Always ensure CORS headers are set
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-
   // Log error for debugging
   console.error('Error:', {
     status: statusCode,
     message: message,
-    origin: origin,
     path: req.path,
     method: req.method,
+    origin: req.headers.origin,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 

@@ -67,20 +67,34 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
-// Enable CORS for all routes
-app.use(cors({
-  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+// Single CORS configuration
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'];
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log(`Origin ${origin} not allowed by CORS`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true
-}));
+};
+
+// Apply CORS configuration
+app.use(cors(corsOptions));
 
 // Handle preflight requests
-app.options('*', cors());
+app.options('*', cors(corsOptions));
 
-// Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Body parser middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 app.use(cookieParser());
 
 // Create uploads directory if it doesn't exist
