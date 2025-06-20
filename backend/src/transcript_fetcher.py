@@ -14,8 +14,9 @@ import urllib.error
 
 # Debug mode (when run with --debug flag)
 DEBUG = False
-if "--debug" in sys.argv:
+if len(sys.argv) > 1 and sys.argv[1] == "--debug":
     DEBUG = True
+    sys.argv.pop(1)  # Remove the debug flag
 
 def debug_print(*args, **kwargs):
     if DEBUG:
@@ -222,30 +223,6 @@ def get_transcript_with_api(video_id):
             'video_id': video_id,
             'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
         }
-    except TranscriptsDisabled:
-        debug_print("Transcripts are disabled for this video")
-        return {
-            'success': False,
-            'error': 'Transcripts are disabled for this video',
-            'video_id': video_id,
-            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
-        }
-    except NoTranscriptFound:
-        debug_print("No transcript found for this video")
-        return {
-            'success': False,
-            'error': 'No transcript found for this video',
-            'video_id': video_id,
-            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
-        }
-    except VideoUnavailable:
-        debug_print("Video is unavailable")
-        return {
-            'success': False,
-            'error': 'Video is unavailable',
-            'video_id': video_id,
-            'source': 'youtube_transcript_api_with_proxy' if get_proxy_config() else 'youtube_transcript_api'
-        }
     except Exception as e:
         debug_print(f"Error in get_transcript_with_api: {e}")
         debug_print(traceback.format_exc())
@@ -425,12 +402,6 @@ def fetch_transcript_manually(video_id):
                 transcript = raw_data.decode('utf-8')
             
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters")
-            
-            # Check if transcript is empty
-            if not transcript.strip():
-                debug_print("Warning: Received empty transcript from text format, trying JSON format...")
-                raise Exception("Empty transcript received from text format")
-            
             return {
                 'success': True,
                 'transcript': transcript.strip(),
@@ -474,17 +445,6 @@ def fetch_transcript_manually(video_id):
                 transcript = ' '.join(transcript_pieces).strip()
                 
                 debug_print(f"Successfully fetched JSON transcript with {len(transcript)} characters")
-                
-                # Check if transcript is empty
-                if not transcript.strip():
-                    debug_print("Error: Received empty transcript from JSON format as well")
-                    return {
-                        'success': False,
-                        'error': 'Transcript is empty - no content found in captions',
-                        'video_id': video_id,
-                        'source': 'manual_scraping_with_proxy' if proxy_handler else 'manual_scraping'
-                    }
-                
                 return {
                     'success': True,
                     'transcript': transcript,
@@ -552,19 +512,32 @@ if __name__ == "__main__":
         }))
         sys.exit(0)
         
-    # Handle debug flag and extract video ID
-    args = [arg for arg in sys.argv[1:] if arg != '--debug']
-    
-    if len(args) != 1:
+    # Normal video ID processing
+    if len(sys.argv) < 2:
         print(json.dumps({
             'success': False,
-            'error': 'Missing video ID. Usage: transcript_fetcher.py [--debug] VIDEO_ID'
+            'error': 'Missing video ID. Usage: transcript_fetcher.py VIDEO_ID'
         }))
         sys.exit(1)
     
-    video_id = args[0]
-    result = get_transcript(video_id)
+    # Extract video ID from command line arguments
+    # Handle both cases: script.py VIDEO_ID and script.py --debug VIDEO_ID
+    video_id = None
+    if "--debug" in sys.argv:
+        debug_index = sys.argv.index("--debug")
+        if debug_index + 1 < len(sys.argv):
+            video_id = sys.argv[debug_index + 1]
+    else:
+        video_id = sys.argv[1]
     
+    if not video_id:
+        print(json.dumps({
+            'success': False,
+            'error': 'Video ID not found in arguments'
+        }))
+        sys.exit(1)
+    
+    result = get_transcript(video_id)
     try:
         json_result = json.dumps(result)
         print(json_result)
