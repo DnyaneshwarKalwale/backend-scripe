@@ -76,32 +76,35 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'https://app.brandout.ai', 
+  'https://app.brandout.ai', 
+  'https://brandout.ai',
+  'https://www.brandout.ai',
+  'https://api.brandout.ai',
   'http://localhost:3000',
   'http://localhost:5173',
-    'https://brandout.vercel.app',
-    'https://ea50-43-224-158-115.ngrok-free.app',
-    'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app',
-  'https://api.brandout.ai',       // API domain
-  // Add more flexible patterns
-  'https://brandout.ai',
-  'https://www.brandout.ai'
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'https://brandout.vercel.app',
+  'https://ea50-43-224-158-115.ngrok-free.app',
+  'https://18cd-43-224-158-115.ngrok-free.app',
+  'https://deluxe-cassata-51d628.netlify.app'
 ];
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
+    // Allow requests with no origin (like mobile apps, curl requests, Postman)
     if (!origin) return callback(null, true);
     
     // Check if origin is in allowed list or matches patterns
     if (allowedOrigins.indexOf(origin) !== -1 || 
         origin.endsWith('netlify.app') || 
         origin.endsWith('brandout.ai') ||
-        origin.includes('localhost')) {
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1')) {
+      console.log(`✅ CORS: Allowing origin ${origin}`);
       callback(null, true);
     } else {
-      console.log(`Origin ${origin} not allowed by CORS policy`);
+      console.log(`⚠️ CORS: Origin ${origin} not in allowed list, but allowing anyway for production`);
       // For production, still allow to avoid breaking things
       callback(null, true);
     }
@@ -1122,13 +1125,39 @@ app.get('/', (req, res) => {
   });
 });
 
-// API health check endpoint
+// API health check endpoint with explicit CORS
+app.options('/health', (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(200).end();
+});
+
 app.get('/health', (req, res) => {
+  // Set CORS headers explicitly for health check
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   res.json({
     success: true,
     status: 'healthy',
     uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    cors: 'enabled',
+    origin: origin || 'none'
   });
 });
 
@@ -1715,17 +1744,7 @@ function formatDuration(seconds) {
   }
 }
 
-// Health check route
-app.get('/health', async (req, res) => {
-  const dbConnected = await checkMongoConnection();
-  
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Lovable API is running',
-    database: dbConnected ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
-  });
-});
+// Remove duplicate health endpoint - keeping the one with proper CORS above
 
 // Error handler middleware
 app.use(errorHandler);
