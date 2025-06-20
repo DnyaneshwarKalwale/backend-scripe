@@ -1,12 +1,9 @@
-const dotenv = require('dotenv');
 const User = require('../models/userModel');
 const PaymentTransaction = require('../models/paymentTransactionModel');
 const stripe = require('../config/stripe');
-const asyncHandler = require('express-async-handler');
-// Use the API key from environment variables
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Load environment variables
+const dotenv = require('dotenv');
 dotenv.config();
 
 // @desc    Create a checkout session for subscription plans
