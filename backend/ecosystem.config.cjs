@@ -5,7 +5,7 @@ module.exports = {
       script: 'src/server.js',
       env: {
         NODE_ENV: 'production',
-        PORT: 5000,
+        PORT: 3000,
         FRONTEND_URL: 'https://app.brandout.ai'
       },
       instances: 1,
