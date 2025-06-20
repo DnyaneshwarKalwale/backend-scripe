@@ -14,11 +14,23 @@ const app = express();
 // Connect to database susss
 connectDB();
 
-// Middleware
-app.use(cors({
-  origin: ['https://app.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
-  credentials: true
-}));
+// CORS Configuration
+const corsOptions = {
+  origin: ['https://app.brandout.ai', 'https://api.brandout.ai', 'http://localhost:3000', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  credentials: true,
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+// Apply CORS before any routes
+app.use(cors(corsOptions));
+
+// Handle OPTIONS preflight requests
+app.options('*', cors(corsOptions));
 
 // Special handling for Stripe webhook route to access raw body for signature verification
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));

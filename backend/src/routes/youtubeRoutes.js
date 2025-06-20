@@ -117,6 +117,24 @@ router.post('/transcript', async (req, res) => {
 
     console.log(`Fetching transcript for video ID: ${videoId}`);
     
+    // Check if transcript already exists in cache/storage
+    const transcriptPath = path.join(process.cwd(), 'transcripts', `${videoId}.json`);
+    try {
+      const existingTranscript = await fs.promises.readFile(transcriptPath, 'utf8');
+      const parsedTranscript = JSON.parse(existingTranscript);
+      console.log(`Found cached transcript for video ${videoId}`);
+      return res.json({
+        success: true,
+        transcript: parsedTranscript.transcript,
+        source: 'cache',
+        language: parsedTranscript.language || 'en',
+        channelTitle: parsedTranscript.channelTitle || 'Unknown Channel',
+        videoTitle: parsedTranscript.videoTitle || 'Unknown Title'
+      });
+    } catch (err) {
+      console.log(`No cached transcript found for ${videoId}, fetching fresh...`);
+    }
+    
     // Call the Python script which now uses YouTube Transcript API with proxy (primary method)
     const scriptPath = path.join(process.cwd(), 'src', 'transcript_fetcher.py');
     
@@ -151,8 +169,16 @@ router.post('/transcript', async (req, res) => {
       }
       
       if (result.success) {
+        // Save transcript to file system for future use
+        try {
+          await fs.promises.writeFile(transcriptPath, JSON.stringify(result, null, 2));
+          console.log(`Saved transcript to file system for video ${videoId}`);
+        } catch (saveError) {
+          console.error(`Error saving transcript to file system: ${saveError.message}`);
+        }
+        
         console.log(`Successfully fetched transcript for video ${videoId} using ${result.source || 'YouTube Transcript API'}`);
-        res.json({
+        return res.json({
           success: true,
           transcript: result.transcript,
           source: result.source || 'YouTube Transcript API',
@@ -163,16 +189,16 @@ router.post('/transcript', async (req, res) => {
       } else {
         console.log(`Failed to fetch transcript for video ${videoId}:`, result.error || 'Unknown error');
         // Fall back to backup method
-        fetchBackupTranscript(videoId, res);
+        return await fetchBackupTranscript(videoId, res);
       }
     } catch (error) {
       console.error('Error running Python script:', error);
       // Fall back to backup method
-      fetchBackupTranscript(videoId, res);
+      return await fetchBackupTranscript(videoId, res);
     }
   } catch (error) {
     console.error('Error in transcript route:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       success: false, 
       message: 'Server error fetching transcript',
       error: error.message
@@ -457,15 +483,23 @@ function extractVideoId(url) {
   }
 }
 
-// Backup method for when Python method fails - now uses direct yt-dlp integration
+// Helper function to fetch transcript using yt-dlp as backup
 async function fetchBackupTranscript(videoId, res) {
   try {
     console.log(`Using backup yt-dlp method for video ID: ${videoId}`);
     const result = await extractTranscriptWithYtDlp(videoId);
     
     if (result.success) {
-      console.log(`Successfully fetched transcript with yt-dlp for video ${videoId}, length: ${result.transcript.length}`);
-      res.json({
+      // Save successful yt-dlp transcript to file system
+      const transcriptPath = path.join(process.cwd(), 'transcripts', `${videoId}.json`);
+      try {
+        await fs.promises.writeFile(transcriptPath, JSON.stringify(result, null, 2));
+        console.log(`Saved yt-dlp transcript to file system for video ${videoId}`);
+      } catch (saveError) {
+        console.error(`Error saving yt-dlp transcript to file system: ${saveError.message}`);
+      }
+      
+      return res.json({
         success: true,
         transcript: result.transcript,
         source: 'yt-dlp',
@@ -474,18 +508,17 @@ async function fetchBackupTranscript(videoId, res) {
         videoTitle: result.videoTitle || 'Unknown Title'
       });
     } else {
-      console.error(`Failed to fetch transcript with yt-dlp for video ${videoId}:`, result.error);
-      res.status(500).json({
+      return res.status(404).json({
         success: false,
-        message: 'Failed to fetch transcript with backup method',
+        message: 'Failed to fetch transcript with all available methods',
         error: result.error
       });
     }
   } catch (error) {
-    console.error('Error in backup transcript method:', error);
-    res.status(500).json({
+    console.error('Error in backup transcript fetch:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Error in backup transcript method',
+      message: 'Server error fetching backup transcript',
       error: error.message
     });
   }
