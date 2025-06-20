@@ -208,8 +208,8 @@ const createCheckoutSession = async (req, res) => {
           },
         ],
       mode: checkoutMode,
-      success_url: req.body.successUrl || returnUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: req.body.cancelUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/billing?canceled=true`,
+      success_url: req.body.successUrl || returnUrl || `${process.env.FRONTEND_URL}/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: req.body.cancelUrl || `${process.env.FRONTEND_URL}/settings/billing?canceled=true`,
       client_reference_id: req.user.id,
         metadata: {
         userId: req.user.id,

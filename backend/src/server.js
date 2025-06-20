@@ -74,35 +74,18 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
-const allowedOrigins = [
-    'https://app.brandout.ai', 
-  'http://localhost:3000',
-  'http://localhost:5173',
-    'https://brandout.vercel.app',
-    'https://ea50-43-224-158-115.ngrok-free.app',
-    'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app',
-  'https://api.brandout.ai',       // API domain
-  // Add more flexible patterns
-  'https://brandout.ai',
-  'https://www.brandout.ai'
-];
+const allowedOrigins = ['https://app.brandout.ai'];
 
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps, curl requests)
     if (!origin) return callback(null, true);
     
-    // Check if origin is in allowed list or matches patterns
-    if (allowedOrigins.indexOf(origin) !== -1 || 
-        origin.endsWith('netlify.app') || 
-        origin.endsWith('brandout.ai') ||
-        origin.includes('localhost')) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.log(`Origin ${origin} not allowed by CORS policy`);
-      // For production, still allow to avoid breaking things
-      callback(null, true);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -113,26 +96,6 @@ app.use(cors({
 
 // Ensure OPTIONS requests are handled properly
 app.options('*', cors());
-
-// Add robust CORS error handling
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle preflight 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
 
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
@@ -1640,19 +1603,9 @@ app.get('/health', async (req, res) => {
 // Error handler middleware
 app.use(errorHandler);
 
-// Add detailed error logging middleware with CORS headers
+// Add detailed error logging middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
-  
-  // Set CORS headers even in error responses
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
   // Send error response
   res.status(500).json({

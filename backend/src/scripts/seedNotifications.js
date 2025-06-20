@@ -8,9 +8,15 @@ dotenv.config();
 
 // Connect to database
 mongoose
-  .connect(process.env.MONGO_URI || 'mongodb://localhost:27017/scripe')
-  .then(() => console.log('MongoDB connected...'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB Connected...');
+    seedNotifications();
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+  });
 
 // Define example notifications
 const createSeedNotifications = async () => {
