@@ -50,7 +50,39 @@ const userLimitSchema = new mongoose.Schema({
   // Add auto-pay setting
   autoPay: {
     type: Boolean,
-    default: false  // Default to not auto-renew
+    default: true  // Default to auto-renew for new subscriptions
+  },
+  // Stripe subscription details for auto-billing
+  stripeSubscriptionId: {
+    type: String,
+    default: null
+  },
+  stripeCustomerId: {
+    type: String,
+    default: null
+  },
+  // Auto-billing settings
+  autoRenewal: {
+    enabled: {
+      type: Boolean,
+      default: true  // Auto-enable for new subscriptions
+    },
+    lastRenewalDate: {
+      type: Date,
+      default: null
+    },
+    nextRenewalDate: {
+      type: Date,
+      default: null
+    },
+    failedAttempts: {
+      type: Number,
+      default: 0
+    },
+    lastFailureReason: {
+      type: String,
+      default: null
+    }
   },
   // Add billing details
   billingDetails: {

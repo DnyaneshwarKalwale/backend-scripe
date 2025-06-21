@@ -702,7 +702,7 @@ const getSubscriptionMetrics = asyncHandler(async (req, res) => {
     
     // Define plan prices based on the constants in the backend
     const planPrices = {
-      trial: 20,
+      trial: 0, // Free trial
       basic: 100,
       premium: 200,
       custom: 200,

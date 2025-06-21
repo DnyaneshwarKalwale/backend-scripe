@@ -6,6 +6,9 @@ const { checkAdmin, protect } = require('../middleware/authMiddleware');
 // Get current user's limit
 router.get('/me', protect, userLimitController.getCurrentUserLimit);
 
+// Activate free trial for current user
+router.post('/activate-trial', protect, userLimitController.activateFreeTrial);
+
 // Get all user limits (Admin only)
 router.get('/all', protect, checkAdmin, userLimitController.getAllUserLimits);
 

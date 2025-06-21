@@ -197,6 +197,33 @@ const createCheckoutSession = async (req, res) => {
     
     // Determine checkout mode based on product type
     const checkoutMode = isOneTime ? 'payment' : 'subscription';
+    
+    // For subscriptions, we need to create or get a Stripe customer
+    let stripeCustomerId = null;
+    if (!isOneTime) {
+      const User = require('../models/userModel');
+      const user = await User.findById(req.user.id);
+      
+      if (user.stripeCustomerId) {
+        stripeCustomerId = user.stripeCustomerId;
+      } else {
+        // Create a new Stripe customer
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`.trim(),
+          metadata: {
+            userId: req.user.id
+          }
+        });
+        
+        stripeCustomerId = customer.id;
+        
+        // Save the customer ID to the user
+        await User.findByIdAndUpdate(req.user.id, {
+          stripeCustomerId: customer.id
+        });
+      }
+    }
 
     // Create session data object
     const sessionData = {
@@ -218,6 +245,20 @@ const createCheckoutSession = async (req, res) => {
       },
       customer_email: req.user.email
     };
+    
+    // Add customer ID for subscriptions to enable auto-billing
+    if (!isOneTime && stripeCustomerId) {
+      sessionData.customer = stripeCustomerId;
+      
+      // Configure subscription settings for auto-renewal
+      sessionData.subscription_data = {
+        metadata: {
+          userId: req.user.id,
+          planId,
+          autoRenewal: 'true'
+        }
+      };
+    }
 
     console.log('Creating session with data:', sessionData);
     
@@ -356,8 +397,9 @@ const handleSuccessfulCheckout = async (session) => {
       return;
     }
     
-    // Load the UserLimit model
+    // Load the UserLimit model and payment controller
     const UserLimit = require('../models/userLimitModel');
+    const { savePaymentMethodFromSession } = require('./paymentController');
     
     // Find existing user limit or create a new one
     let userLimit = await UserLimit.findOne({ userId });
@@ -428,6 +470,9 @@ const handleSuccessfulCheckout = async (session) => {
       console.log('Could not retrieve detailed payment method info:', paymentMethodError);
     }
     
+    // Save payment method from session
+    await savePaymentMethodFromSession(session, userId);
+    
     // Save transaction record
     await savePaymentTransaction({
       userId,
@@ -450,6 +495,15 @@ const handleSuccessfulCheckout = async (session) => {
       stripeSessionId: session.id
     });
     
+    // Check if this is a subscription (not a one-time payment)
+    const isSubscription = session.mode === 'subscription';
+    let stripeSubscriptionId = null;
+    
+    if (isSubscription && session.subscription) {
+      stripeSubscriptionId = session.subscription;
+      console.log(`Subscription created: ${stripeSubscriptionId}`);
+    }
+
     if (!userLimit) {
       // If no existing user limit, create a new one
       userLimit = new UserLimit({
@@ -458,7 +512,15 @@ const handleSuccessfulCheckout = async (session) => {
         count: 0,
         planId,
         planName,
-        expiresAt: expiryDate,
+        expiresAt: isSubscription ? null : expiryDate, // Subscriptions don't expire, one-time payments do
+        autoPay: isSubscription, // Enable auto-pay for subscriptions
+        stripeSubscriptionId: stripeSubscriptionId,
+        stripeCustomerId: customer,
+        autoRenewal: {
+          enabled: isSubscription, // Enable auto-renewal for subscriptions
+          nextRenewalDate: isSubscription ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days from now
+          failedAttempts: 0
+        },
         createdAt: new Date(),
         updatedAt: new Date()
       });
@@ -500,7 +562,19 @@ const handleSuccessfulCheckout = async (session) => {
         
         userLimit.planId = planId;
         userLimit.planName = planName;
-        userLimit.expiresAt = expiryDate;
+        userLimit.expiresAt = isSubscription ? null : expiryDate; // Subscriptions don't expire
+        
+        // Update subscription details for plan changes
+        if (isSubscription) {
+          userLimit.autoPay = true;
+          userLimit.stripeSubscriptionId = stripeSubscriptionId;
+          userLimit.stripeCustomerId = customer;
+          userLimit.autoRenewal = {
+            enabled: true,
+            nextRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+            failedAttempts: 0
+          };
+        }
       }
       
       userLimit.updatedAt = new Date();
@@ -1075,10 +1149,93 @@ const verifySession = async (req, res) => {
   }
 };
 
+// @desc    Toggle auto-billing for user subscription
+// @route   POST /api/stripe/toggle-auto-billing
+// @access  Private
+const toggleAutoBilling = async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const userId = req.user.id;
+    
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'enabled field must be a boolean'
+      });
+    }
+    
+    // Load the UserLimit model
+    const UserLimit = require('../models/userLimitModel');
+    
+    // Find user's subscription
+    const userLimit = await UserLimit.findOne({ userId });
+    
+    if (!userLimit) {
+      return res.status(404).json({
+        success: false,
+        message: 'No subscription found for user'
+      });
+    }
+    
+    // Check if user has an active subscription
+    if (!userLimit.stripeSubscriptionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active subscription found. Auto-billing is only available for subscription plans.'
+      });
+    }
+    
+    // Update auto-billing settings
+    userLimit.autoPay = enabled;
+    userLimit.autoRenewal.enabled = enabled;
+    
+    if (enabled) {
+      // Reset failed attempts when re-enabling
+      userLimit.autoRenewal.failedAttempts = 0;
+      userLimit.autoRenewal.lastFailureReason = null;
+      
+      // Calculate next renewal date if not set
+      if (!userLimit.autoRenewal.nextRenewalDate) {
+        userLimit.autoRenewal.nextRenewalDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      }
+    }
+    
+    await userLimit.save();
+    
+    // Also update the Stripe subscription if needed
+    try {
+      if (userLimit.stripeSubscriptionId) {
+        await stripe.subscriptions.update(userLimit.stripeSubscriptionId, {
+          cancel_at_period_end: !enabled // Cancel at period end if auto-billing is disabled
+        });
+      }
+    } catch (stripeError) {
+      console.error('Error updating Stripe subscription:', stripeError);
+      // Continue even if Stripe update fails - our database is updated
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: `Auto-billing ${enabled ? 'enabled' : 'disabled'} successfully`,
+      data: {
+        autoPay: userLimit.autoPay,
+        autoRenewal: userLimit.autoRenewal
+      }
+    });
+  } catch (error) {
+    console.error('Error toggling auto-billing:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update auto-billing settings'
+    });
+  }
+};
+
 module.exports = {
   createCheckoutSession,
   handleWebhook,
   getSubscription,
   cancelSubscription,
-  verifySession
+  verifySession,
+  toggleAutoBilling
 }; 

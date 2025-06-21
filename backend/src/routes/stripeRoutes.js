@@ -6,7 +6,8 @@ const {
   handleWebhook,
   getSubscription,
   cancelSubscription,
-  verifySession
+  verifySession,
+  toggleAutoBilling
 } = require('../controllers/stripeController');
 
 // Routes that require authentication
@@ -19,5 +20,8 @@ router.post('/webhook', handleWebhook);
 
 // Verify session
 router.post('/verify-session', protect, verifySession);
+
+// Toggle auto-billing
+router.post('/toggle-auto-billing', protect, toggleAutoBilling);
 
 module.exports = router;

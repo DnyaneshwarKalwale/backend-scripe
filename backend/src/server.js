@@ -806,7 +806,7 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
           // Process slides to remove "Slide X" prefix slides and clean remaining slide content
           const cleanedSlides = [];
           for (let i = 0; i < carouselSlides.length; i++) {
-            const current = carouselSlides[i].trim();
+            let current = carouselSlides[i].trim();
             
             // Skip slides that only contain "Slide X" and nothing else
             if (/^Slide\s*\d+\s*$/.test(current)) {
@@ -819,12 +819,17 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
             }
             
             // Remove "Slide X:" prefix if it exists and clean up any remaining separators
-            let cleanedSlide = current.replace(/^Slide\s*\d+[\s:.]+/i, '').trim();
-            cleanedSlide = cleanedSlide.replace(/^-{3,}$/gm, '').trim(); // Remove separator lines
-            cleanedSlide = cleanedSlide.replace(/\n\s*-{3,}\s*\n/g, '\n').trim(); // Remove separators between content
+            current = current.replace(/^Slide\s*\d+[\s:.]+/i, '').trim();
+            current = current.replace(/^-{3,}$/gm, '').trim(); // Remove separator lines
+            current = current.replace(/\n\s*-{3,}\s*\n/g, '\n').trim(); // Remove separators between content
             
-            if (cleanedSlide) { // Only add non-empty slides
-              cleanedSlides.push(cleanedSlide);
+            // Remove markdown formatting (**text**)
+            current = current.replace(/\*\*(.*?)\*\*/g, '$1');
+            // Remove any remaining asterisks used for emphasis
+            current = current.replace(/\*/g, '');
+            
+            if (current) { // Only add non-empty slides
+              cleanedSlides.push(current);
             }
           }
           
@@ -1869,7 +1874,7 @@ app.listen(PORT, async () => {
   // Initialize the scheduler service when the server starts
   try {
     await initScheduler();
-    console.log('Scheduler service initialized successfully');
+      console.log('Scheduler service initialized successfully');
   } catch (err) {
     console.error('Error initializing scheduler service:', err);
   }

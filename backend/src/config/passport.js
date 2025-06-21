@@ -79,6 +79,39 @@ module.exports = (passport) => {
             };
 
             user = await User.create(newUser);
+            
+            // Automatically activate free trial for new OAuth users
+            try {
+              const UserLimit = require('../models/userLimitModel');
+              
+              // Check if user already has a trial (prevent duplicate trials)
+              const existingLimit = await UserLimit.findOne({ userId: user._id });
+              
+              if (!existingLimit) {
+                // Set trial expiration date (7 days from now)
+                const trialExpiration = new Date();
+                trialExpiration.setDate(trialExpiration.getDate() + 7);
+                
+                // Create user limit with trial plan
+                await UserLimit.create({
+                  userId: user._id,
+                  limit: 3, // 3 credits for trial
+                  count: 0,
+                  planId: 'trial',
+                  planName: 'Free Trial',
+                  expiresAt: trialExpiration,
+                  status: 'active',
+                  subscriptionStartDate: new Date()
+                });
+                
+                console.log(`Free trial automatically activated for new Google OAuth user: ${user.email}`);
+              } else {
+                console.log(`Google OAuth user ${user.email} already has a user limit, skipping trial activation`);
+              }
+            } catch (limitError) {
+              console.error('Error creating user limit for new Google OAuth user:', limitError);
+              // Continue with OAuth even if limit creation fails
+            }
           }
 
           return done(null, user);
@@ -227,6 +260,39 @@ module.exports = (passport) => {
 
               user = await User.create(newUser);
               console.log('LinkedIn auth: New user created successfully');
+              
+              // Automatically activate free trial for new LinkedIn OAuth users
+              try {
+                const UserLimit = require('../models/userLimitModel');
+                
+                // Check if user already has a trial (prevent duplicate trials)
+                const existingLimit = await UserLimit.findOne({ userId: user._id });
+                
+                if (!existingLimit) {
+                  // Set trial expiration date (7 days from now)
+                  const trialExpiration = new Date();
+                  trialExpiration.setDate(trialExpiration.getDate() + 7);
+                  
+                  // Create user limit with trial plan
+                  await UserLimit.create({
+                    userId: user._id,
+                    limit: 3, // 3 credits for trial
+                    count: 0,
+                    planId: 'trial',
+                    planName: 'Free Trial',
+                    expiresAt: trialExpiration,
+                    status: 'active',
+                    subscriptionStartDate: new Date()
+                  });
+                  
+                  console.log(`Free trial automatically activated for new LinkedIn OAuth user: ${user.email}`);
+                } else {
+                  console.log(`LinkedIn OAuth user ${user.email} already has a user limit, skipping trial activation`);
+                }
+              } catch (limitError) {
+                console.error('Error creating user limit for new LinkedIn OAuth user:', limitError);
+                // Continue with OAuth even if limit creation fails
+              }
             } catch (createError) {
               console.error('LinkedIn auth: Error creating user:', createError.message);
               return done(createError, false);

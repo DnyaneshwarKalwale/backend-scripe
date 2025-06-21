@@ -57,6 +57,39 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   if (user) {
+    // Automatically activate free trial for new users
+    try {
+      const UserLimit = require('../models/userLimitModel');
+      
+      // Check if user already has a trial (prevent duplicate trials)
+      const existingLimit = await UserLimit.findOne({ userId: user._id });
+      
+      if (!existingLimit) {
+        // Set trial expiration date (7 days from now)
+        const trialExpiration = new Date();
+        trialExpiration.setDate(trialExpiration.getDate() + 7);
+        
+        // Create user limit with trial plan
+        await UserLimit.create({
+          userId: user._id,
+          limit: 3, // 3 credits for trial
+          count: 0,
+          planId: 'trial',
+          planName: 'Free Trial',
+          expiresAt: trialExpiration,
+          status: 'active',
+          subscriptionStartDate: new Date()
+        });
+        
+        console.log(`Free trial automatically activated for new user: ${user.email}`);
+      } else {
+        console.log(`User ${user.email} already has a user limit, skipping trial activation`);
+      }
+    } catch (limitError) {
+      console.error('Error creating user limit for new user:', limitError);
+      // Continue with registration even if limit creation fails
+    }
+
     // Generate OTP code
     const otp = user.generateEmailVerificationOTP();
     await user.save();
@@ -499,6 +532,39 @@ const linkedinAuth = asyncHandler(async (req, res) => {
         authMethod: 'linkedin',
         onboardingCompleted: false,
       });
+      
+      // Automatically activate free trial for new LinkedIn direct auth users
+      try {
+        const UserLimit = require('../models/userLimitModel');
+        
+        // Check if user already has a trial (prevent duplicate trials)
+        const existingLimit = await UserLimit.findOne({ userId: user._id });
+        
+        if (!existingLimit) {
+          // Set trial expiration date (7 days from now)
+          const trialExpiration = new Date();
+          trialExpiration.setDate(trialExpiration.getDate() + 7);
+          
+          // Create user limit with trial plan
+          await UserLimit.create({
+            userId: user._id,
+            limit: 3, // 3 credits for trial
+            count: 0,
+            planId: 'trial',
+            planName: 'Free Trial',
+            expiresAt: trialExpiration,
+            status: 'active',
+            subscriptionStartDate: new Date()
+          });
+          
+          console.log(`Free trial automatically activated for new LinkedIn direct auth user: ${user.email}`);
+        } else {
+          console.log(`LinkedIn direct auth user ${user.email} already has a user limit, skipping trial activation`);
+        }
+      } catch (limitError) {
+        console.error('Error creating user limit for new LinkedIn direct auth user:', limitError);
+        // Continue with auth even if limit creation fails
+      }
     }
 
     // Generate JWT token

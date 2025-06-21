@@ -210,7 +210,7 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
                     debug_print("Successfully got transcript list using direct API")
                 except Exception as direct_error:
                     debug_print(f"Direct API failed: {str(direct_error)}, trying with proxy...")
-                    transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
+            transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
                     debug_print("Successfully got transcript list using proxy")
             except Exception as list_error:
                 debug_print(f"Error getting transcript list: {str(list_error)}")
@@ -220,10 +220,10 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
             
             # Debug: List all available transcripts
             try:
-                available_transcripts = list(transcript_list)
+            available_transcripts = list(transcript_list)
                 debug_print(f"\nFound {len(available_transcripts)} available transcripts:")
-                for i, t in enumerate(available_transcripts):
-                    debug_print(f"  {i+1}. {t.language} ({t.language_code}) - Generated: {getattr(t, 'is_generated', 'Unknown')}")
+            for i, t in enumerate(available_transcripts):
+                debug_print(f"  {i+1}. {t.language} ({t.language_code}) - Generated: {getattr(t, 'is_generated', 'Unknown')}")
             except Exception as list_error:
                 debug_print(f"Error listing transcripts: {str(list_error)}")
                 debug_print(f"Error type: {type(list_error)}")
@@ -240,7 +240,7 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
                 debug_print(f"Error finding English transcript: {str(e)}")
                 debug_print("Trying to get first available transcript")
                 if available_transcripts:
-                    transcript = available_transcripts[0]
+                transcript = available_transcripts[0]
                     debug_print(f"Selected first available transcript: {transcript.language_code}")
                 else:
                     debug_print("No transcripts available")
@@ -255,7 +255,7 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
             # Fetch the transcript data
             debug_print("\nFetching transcript data...")
             try:
-                transcript_data = transcript.fetch()
+            transcript_data = transcript.fetch()
                 debug_print(f"Successfully fetched transcript data with {len(transcript_data)} segments")
             except Exception as fetch_error:
                 debug_print(f"Error fetching transcript data: {str(fetch_error)}")
@@ -698,8 +698,8 @@ if __name__ == "__main__":
         json_result = json.dumps(result)
         print(json_result)
     except Exception as general_error:
-        print(json.dumps({
-            'success': False,
+            print(json.dumps({
+                'success': False,
             'error': f"General error: {str(general_error)}",
-            'video_id': video_id
-        })) 
+                'video_id': video_id
+            })) 

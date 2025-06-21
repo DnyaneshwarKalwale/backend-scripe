@@ -6,7 +6,9 @@ const {
   addPaymentMethod,
   setDefaultPaymentMethod,
   getPaymentHistory,
-  downloadInvoice
+  downloadInvoice,
+  downloadBillingHistory,
+  deletePaymentMethod
 } = require('../controllers/paymentController');
 
 // @desc    Get user's payment methods
@@ -33,5 +35,15 @@ router.get('/history', protect, getPaymentHistory);
 // @route   GET /api/payments/invoices/:id/download
 // @access  Private
 router.get('/invoices/:id/download', protect, downloadInvoice);
+
+// @desc    Download billing history
+// @route   GET /api/payments/history/download
+// @access  Private
+router.get('/history/download', protect, downloadBillingHistory);
+
+// @desc    Delete a payment method
+// @route   DELETE /api/payments/methods/:id
+// @access  Private
+router.delete('/methods/:id', protect, deletePaymentMethod);
 
 module.exports = router; 

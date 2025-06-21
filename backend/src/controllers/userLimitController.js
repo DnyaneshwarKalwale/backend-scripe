@@ -2,9 +2,9 @@ const UserLimit = require('../models/userLimitModel');
 const User = require('../models/userModel');
 const { isAdmin } = require('../middleware/authMiddleware');
 
-// Define plan mappings - trial plan requires purchase
+// Define plan mappings - trial plan is now free
 const PLAN_LIMITS = {
-  trial: { limit: 3, name: 'Trial', duration: 7, price: 20 }, // 7 days, 3 credits, $20
+  trial: { limit: 3, name: 'Free Trial', duration: 7, price: 0 }, // 7 days, 3 credits, FREE
   basic: { limit: 10, name: 'Basic', duration: 30, price: 100 }, // $100/month, 30 days
   premium: { limit: 25, name: 'Premium', duration: 30, price: 200 }, // $200/month, 30 days
   custom: { limit: 0, name: 'Custom', duration: 30, price: 200 } // Custom limits are set individually
@@ -108,7 +108,10 @@ exports.getCurrentUserLimit = async (req, res) => {
       planName: userLimit.planName,
       limit: userLimit.limit,
       count: userLimit.count,
-      expiresAt: userLimit.expiresAt
+      expiresAt: userLimit.expiresAt,
+      autoPay: userLimit.autoPay || false,
+      autoRenewal: userLimit.autoRenewal || { enabled: false },
+      stripeSubscriptionId: userLimit.stripeSubscriptionId || null
     };
     
     // Log the response data for debugging
@@ -807,6 +810,23 @@ exports.setUserToTrialPlan = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to set user to trial plan',
+      error: error.message 
+    });
+  }
+};
+
+// Activate free trial for current user (deprecated - trials are now automatically given to new users)
+exports.activateFreeTrial = async (req, res) => {
+  try {
+    return res.status(400).json({
+      success: false,
+      message: 'Free trials are automatically activated when you create an account. If you need more credits, please choose a paid plan.'
+    });
+  } catch (error) {
+    console.error('Error in deprecated activateFreeTrial endpoint:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'This feature is no longer available',
       error: error.message 
     });
   }
