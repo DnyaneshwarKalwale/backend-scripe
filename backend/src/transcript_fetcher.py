@@ -616,7 +616,7 @@ if __name__ == "__main__":
         }))
         sys.exit(0)
         
-    # Normal video ID processing - handle both with and without debug flag
+    # Normal video ID processing - handle both with and without debug flag hoooo
     video_id = None
     for arg in sys.argv[1:]:
         if arg != "--debug":
