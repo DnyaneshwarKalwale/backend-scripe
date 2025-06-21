@@ -1,7 +1,6 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
-const cors = require('cors');
 const connectDB = require('./config/db');
 const passport = require('passport');
 const session = require('express-session');
@@ -73,55 +72,6 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
-const allowedOrigins = [
-  'https://app.brandout.ai',
-  'http://localhost:8080'
-];
-
-// Single CORS configuration
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Only allow the specific origins we defined
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log(`Origin ${origin} not allowed by CORS policy`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Cookie',
-    'Accept-Language',
-    'X-Requested-With',
-    'Origin',
-    'Accept',
-    'Access-Control-Allow-Headers',
-    'Access-Control-Request-Method',
-    'Access-Control-Request-Headers'
-  ],
-  exposedHeaders: ['Set-Cookie']
-}));
-
-// Handle preflight requests
-app.options('*', cors());
-
-// Remove any additional CORS middleware or headers
-app.use((req, res, next) => {
-  // Only set security headers, not CORS headers
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  next();
-});
-
 // Regular middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
@@ -148,8 +98,8 @@ app.use(session({
   resave: true,
   saveUninitialized: true,
   cookie: { 
-    secure: false, // Set to false for both HTTP and HTTPS
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    secure: false,
+    maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true
   }
 }));
@@ -1918,11 +1868,8 @@ app.listen(PORT, async () => {
   
   // Initialize the scheduler service when the server starts
   try {
-    initScheduler().then(() => {
-      console.log('Scheduler service initialized successfully');
-    }).catch(err => {
-      console.error('Failed to initialize scheduler service:', err);
-    });
+    await initScheduler();
+    console.log('Scheduler service initialized successfully');
   } catch (err) {
     console.error('Error initializing scheduler service:', err);
   }
