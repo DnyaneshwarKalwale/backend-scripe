@@ -66,6 +66,16 @@ const openai = new OpenAI({
 // Initialize express app
 const app = express();
 
+// Configure server timeout
+app.timeout = 240000; // 4 minutes
+app.use((req, res, next) => {
+  res.setTimeout(240000, () => {
+    console.log('Request has timed out.');
+    res.status(408).send('Request has timed out');
+  });
+  next();
+});
+
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -1355,7 +1365,7 @@ app.post('/api/youtube/transcript-yt-dlp', async (req, res) => {
           // Configure axios with proxy if enabled
           const axiosConfig = {
             headers,
-            timeout: 10000,
+            timeout: 240000, // 4 minute timeout
             maxRedirects: 5
           };
           
