@@ -196,8 +196,8 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
                 proxies = get_proxy_config()
                 if proxies:
                     debug_print(f"Using proxy for YouTube Transcript API: {proxies['https']}")
-            else:
-                debug_print("Using YouTube Transcript API without proxy")
+                else:
+                    debug_print("Using YouTube Transcript API without proxy")
             
             # Get transcript list with proxy support
             debug_print("Getting transcript list...")
@@ -575,7 +575,7 @@ def get_transcript(video_id):
             debug_print("YouTube Transcript API method succeeded")
             return result
         debug_print(f"YouTube Transcript API method failed: {result.get('error')}")
-    
+
     # Fallback methods if YouTube Transcript API fails
     debug_print("YouTube Transcript API failed, trying fallback methods...")
     
@@ -634,16 +634,6 @@ if __name__ == "__main__":
     try:
         json_result = json.dumps(result)
         print(json_result)
-    except UnicodeEncodeError as encoding_error:
-        if 'transcript' in result and result['success']:
-            result['transcript'] = result['transcript'].encode('utf-8', errors='ignore').decode('utf-8')
-            print(json.dumps(result))
-        else:
-            print(json.dumps({
-                'success': False,
-                'error': f"Encoding error: {str(encoding_error)}",
-                'video_id': video_id
-            }))
     except Exception as general_error:
         print(json.dumps({
             'success': False,
