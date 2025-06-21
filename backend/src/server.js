@@ -818,6 +818,11 @@ Separate each slide with "\\n\\n" to indicate a new slide.`}`
               continue;
             }
             
+            // Skip Slide 10 specifically
+            if (/^Slide\s*10[\s:.]+/i.test(current)) {
+              continue;
+            }
+            
             // Remove "Slide X:" prefix if it exists and clean up any remaining separators
             current = current.replace(/^Slide\s*\d+[\s:.]+/i, '').trim();
             current = current.replace(/^-{3,}$/gm, '').trim(); // Remove separator lines
