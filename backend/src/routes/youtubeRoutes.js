@@ -150,18 +150,61 @@ router.post('/transcript', async (req, res) => {
         throw new Error(`Invalid JSON response from Python script: ${parseError.message}`);
       }
       
-      if (result.success) {
+      // Validate transcript content
+      if (result.success && result.transcript && result.transcript.trim().length > 0) {
         console.log(`Successfully fetched transcript for video ${videoId} using ${result.source || 'YouTube Transcript API'}`);
+        console.log(`Transcript length: ${result.transcript.length} characters`);
+        
+        // Additional validation for manual scraping results
+        if (result.source && result.source.includes('manual_scraping')) {
+          // Check if the transcript seems valid (more than just metadata or empty segments)
+          const lines = result.transcript.split('\n').filter(line => line.trim().length > 0);
+          if (lines.length < 3) {
+            console.log('Manual scraping returned too few transcript lines, falling back to backup method');
+            return fetchBackupTranscript(videoId, res);
+          }
+        }
+        
+        // Format transcript into sentences
+        const formattedTranscript = result.transcript
+          .split(/[.!?]+/)
+          .map(sentence => sentence.trim())
+          .filter(sentence => sentence.length > 0);
+        
+        // Save transcript to database
+        try {
+          const savedVideo = await SavedVideo.findOneAndUpdate(
+            { videoId },
+            {
+              transcript: result.transcript,
+              formattedTranscript,
+              language: result.language || 'en',
+              is_generated: result.is_generated || false
+            },
+            { new: true }
+          );
+          
+          if (savedVideo) {
+            console.log(`Successfully updated video ${videoId} with transcript`);
+          } else {
+            console.log(`Created new video entry (${videoId}) with transcript`);
+          }
+        } catch (dbError) {
+          console.error('Error saving transcript to database:', dbError);
+          // Continue sending response even if save fails
+        }
+        
         res.json({
           success: true,
           transcript: result.transcript,
+          formattedTranscript,
           source: result.source || 'YouTube Transcript API',
           language: result.language || 'en',
           channelTitle: result.channelTitle || 'Unknown Channel',
           videoTitle: result.videoTitle || 'Unknown Title'
         });
       } else {
-        console.log(`Failed to fetch transcript for video ${videoId}:`, result.error || 'Unknown error');
+        console.log(`Failed to fetch valid transcript for video ${videoId}:`, result.error || 'Empty transcript received');
         // Fall back to backup method
         fetchBackupTranscript(videoId, res);
       }

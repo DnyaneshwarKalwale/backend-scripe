@@ -404,7 +404,20 @@ const createCarousels = async (req, res) => {
  */
 const saveYoutubeVideo = async (req, res) => {
   try {
-    const { videoId, title, thumbnailUrl, channelTitle, publishedAt, userId, duration, metadata } = req.body;
+    const { 
+      videoId, 
+      title, 
+      thumbnailUrl, 
+      channelTitle, 
+      publishedAt, 
+      userId, 
+      duration, 
+      metadata,
+      transcript,
+      formattedTranscript,
+      language,
+      is_generated 
+    } = req.body;
 
     if (!videoId || !title) {
       return res.status(400).json({
@@ -425,6 +438,18 @@ const saveYoutubeVideo = async (req, res) => {
       }
     }
 
+    // Process transcript data if provided
+    let processedTranscript = transcript;
+    let processedFormattedTranscript = formattedTranscript;
+
+    if (transcript && !formattedTranscript) {
+      // If we have a transcript but no formatted version, create one
+      processedFormattedTranscript = transcript
+        .split(/[.!?]+/)
+        .map(sentence => sentence.trim())
+        .filter(sentence => sentence.length > 0);
+    }
+
     // Create or update saved video
     const savedVideo = await SavedVideo.findOneAndUpdate(
       { userId: userId || 'anonymous', videoId },
@@ -437,6 +462,11 @@ const saveYoutubeVideo = async (req, res) => {
         publishedAt: publishedAt || new Date(),
         savedAt: new Date(),
         duration: duration || 'N/A',
+        // Include transcript data if available
+        ...(processedTranscript && { transcript: processedTranscript }),
+        ...(processedFormattedTranscript && { formattedTranscript: processedFormattedTranscript }),
+        ...(language && { language }),
+        ...(typeof is_generated !== 'undefined' && { is_generated }),
         ...(metadata && { metadata })
       },
       { new: true, upsert: true }

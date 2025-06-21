@@ -3,7 +3,7 @@ const axios = require('axios');
 async function testTranscriptEndpoint() {
     try {
         console.log('Testing transcript endpoint...');
-        const response = await axios.post('http://localhost:5000/api/youtube/transcript', {
+        const response = await axios.post('https://api.brandout.ai/api/youtube/transcript', {
             videoId: 'dQw4w9WgXcQ'
         });
         

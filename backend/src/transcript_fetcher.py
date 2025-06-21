@@ -489,10 +489,16 @@ def fetch_transcript_manually(video_id):
             else:
                 transcript = raw_data.decode('utf-8')
             
+            # Validate transcript content
+            transcript = transcript.strip()
+            if not transcript or len(transcript.split()) < 10:  # At least 10 words
+                debug_print("Transcript too short or empty")
+                raise Exception("Invalid transcript content")
+            
             debug_print(f"Successfully fetched transcript with {len(transcript)} characters")
             return {
                 'success': True,
-                'transcript': transcript.strip(),
+                'transcript': transcript,
                 'language': language,
                 'language_code': language_code,
                 'is_generated': is_generated,
@@ -528,9 +534,14 @@ def fetch_transcript_manually(video_id):
                         if 'segs' in event:
                             for seg in event['segs']:
                                 if 'utf8' in seg:
-                                    transcript_pieces.append(seg['utf8'])
+                                    transcript_pieces.append(seg['utf8'].strip())
                 
                 transcript = ' '.join(transcript_pieces).strip()
+                
+                # Validate transcript content
+                if not transcript or len(transcript.split()) < 10:  # At least 10 words
+                    debug_print("JSON transcript too short or empty")
+                    raise Exception("Invalid transcript content")
                 
                 debug_print(f"Successfully fetched JSON transcript with {len(transcript)} characters")
                 return {
