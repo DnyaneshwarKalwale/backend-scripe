@@ -158,7 +158,7 @@ except Exception as e:
 try_requests = True
 try:
     import requests
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup  # noqa
     debug_print("Requests and BeautifulSoup available for scraping")
 except ImportError as e:
     debug_print(f"Requests/BeautifulSoup not available: {e}")
