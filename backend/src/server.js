@@ -85,7 +85,7 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl requests)
     if (!origin) return callback(null, true);
     
-    // Only allow the specified origins
+    // Only allow the specific origins we defined
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
