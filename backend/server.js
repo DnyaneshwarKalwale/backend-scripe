@@ -28,8 +28,9 @@ const app = express();
 
 // Security middleware with adjusted settings for CORS
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginEmbedderPolicy: false
 }));
 
 // Enable compression
@@ -54,14 +55,14 @@ const corsOptions = {
     : 'http://localhost:8080',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   exposedHeaders: ['Content-Length', 'Content-Type']
 };
 
 // Apply CORS before any routes
 app.use(cors(corsOptions));
 
-// Add CORS preflight handler
+// Handle preflight requests
 app.options('*', cors(corsOptions));
 
 // Parse JSON bodies
