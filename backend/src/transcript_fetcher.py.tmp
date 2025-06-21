@@ -1,0 +1,46 @@
+def get_transcript(video_id):
+    """Main function that tries multiple methods to get a transcript."""
+    # First extract video ID if it's a URL
+    video_id = extract_video_id(video_id)
+    debug_print(f"Getting transcript for video ID: {video_id}")
+    
+    # Log proxy status
+    log_proxy_status()
+    
+    # First method: YouTube Transcript API with proxy (this is what works!)
+    if try_ytapi:
+        debug_print("Trying YouTube Transcript API method with proxy (primary method)...")
+        result = get_transcript_with_api(video_id, use_proxy=True)  # Always use proxy for YT API
+        if result['success']:
+            debug_print("YouTube Transcript API method succeeded")
+            return result
+        debug_print(f"YouTube Transcript API method failed: {result.get('error')}")
+
+    # Fallback methods if YouTube Transcript API fails
+    debug_print("YouTube Transcript API failed, trying fallback methods...")
+    
+    # Method 2: yt-dlp direct extraction
+    if try_ytdlp:
+        debug_print("Trying yt-dlp method...")
+        result = get_transcript_with_ytdlp(video_id)
+        if result['success']:
+            debug_print("yt-dlp method succeeded")
+            return result
+        debug_print(f"yt-dlp method failed: {result.get('error')}")
+    
+    # Method 3: requests + BeautifulSoup scraping
+    if try_requests:
+        debug_print("Trying requests/BeautifulSoup method...")
+        result = get_transcript_with_requests(video_id)
+        if result['success']:
+            debug_print("requests/BeautifulSoup method succeeded")
+            return result
+        debug_print(f"requests/BeautifulSoup method failed: {result.get('error')}")
+    
+    # If all methods fail
+    return {
+        'success': False,
+        'error': 'All transcript extraction methods failed',
+        'video_id': video_id,
+        'methods_tried': ['youtube_transcript_api', 'yt-dlp', 'requests']
+    } 
