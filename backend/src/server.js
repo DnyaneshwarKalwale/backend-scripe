@@ -95,9 +95,23 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Accept-Language', 'X-Requested-With', 'Origin', 'Accept'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Cookie',
+    'Accept-Language',
+    'X-Requested-With',
+    'Origin',
+    'Accept',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
   exposedHeaders: ['Set-Cookie']
 }));
+
+// Handle preflight requests
+app.options('*', cors());
 
 // Remove any additional CORS middleware or headers
 app.use((req, res, next) => {
@@ -1097,8 +1111,18 @@ app.get('/', (req, res) => {
   });
 });
 
-// API health check endpoint
+// Health check endpoint
 app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'healthy',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// API health check endpoint
+app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     status: 'healthy',
