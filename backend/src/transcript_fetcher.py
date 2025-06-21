@@ -204,8 +204,14 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
             # Get transcript list with proxy support
             debug_print("\nGetting transcript list...")
             try:
-                transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
-                debug_print("Successfully got transcript list")
+                # Try direct YouTubeTranscriptApi first
+                try:
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    debug_print("Successfully got transcript list using direct API")
+                except Exception as direct_error:
+                    debug_print(f"Direct API failed: {str(direct_error)}, trying with proxy...")
+                    transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
+                    debug_print("Successfully got transcript list using proxy")
             except Exception as list_error:
                 debug_print(f"Error getting transcript list: {str(list_error)}")
                 debug_print(f"Error type: {type(list_error)}")
@@ -267,11 +273,11 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
             for segment in transcript_data:
                 try:
                     if isinstance(segment, dict) and 'text' in segment:
-                        transcript_text += segment['text'] + " "
+                        transcript_text += segment['text'].strip() + " "
                     elif hasattr(segment, 'text'):
-                        transcript_text += str(segment.text) + " "
+                        transcript_text += str(segment.text).strip() + " "
                     else:
-                        transcript_text += str(segment) + " "
+                        transcript_text += str(segment).strip() + " "
                 except Exception as process_error:
                     debug_print(f"Error processing segment: {str(process_error)}")
                     debug_print(f"Segment data: {segment}")
@@ -613,6 +619,14 @@ def get_transcript(video_id):
             debug_print("YouTube Transcript API method succeeded")
             return result
         debug_print(f"YouTube Transcript API method failed: {result.get('error')}")
+        
+        # Try again without proxy
+        debug_print("Trying YouTube Transcript API method without proxy...")
+        result = get_transcript_with_api(video_id, use_proxy=False)
+        if result['success']:
+            debug_print("YouTube Transcript API method without proxy succeeded")
+            return result
+        debug_print(f"YouTube Transcript API method without proxy failed: {result.get('error')}")
 
     # Fallback methods if YouTube Transcript API fails
     debug_print("YouTube Transcript API failed, trying fallback methods...")
@@ -640,7 +654,7 @@ def get_transcript(video_id):
         'success': False,
         'error': 'All transcript extraction methods failed',
         'video_id': video_id,
-        'methods_tried': ['youtube_transcript_api', 'yt-dlp', 'requests']
+        'methods_tried': ['youtube_transcript_api', 'youtube_transcript_api_no_proxy', 'yt-dlp', 'requests']
     }
 
 if __name__ == "__main__":
