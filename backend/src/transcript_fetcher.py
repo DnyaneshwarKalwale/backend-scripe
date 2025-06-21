@@ -616,7 +616,7 @@ if __name__ == "__main__":
         }))
         sys.exit(0)
         
-    # Normal video ID processing - handle both with and without debug flag hoooo
+    # Normal video ID processing
     video_id = None
     for arg in sys.argv[1:]:
         if arg != "--debug":
@@ -635,8 +635,8 @@ if __name__ == "__main__":
         json_result = json.dumps(result)
         print(json_result)
     except Exception as general_error:
-            print(json.dumps({
-                'success': False,
+        print(json.dumps({
+            'success': False,
             'error': f"General error: {str(general_error)}",
-                'video_id': video_id
-            })) 
+            'video_id': video_id
+        })) 
