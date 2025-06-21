@@ -187,15 +187,15 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
     last_error = None
     
     for attempt in range(max_retries):
-        try:
+    try:
             debug_print(f"Using YouTube Transcript API for video ID: {video_id}, use_proxy: {use_proxy}, attempt: {attempt + 1}/{max_retries}")
-            
+        
             # Get proxy configuration only if requested
             proxies = None
             if use_proxy:
-                proxies = get_proxy_config()
-                if proxies:
-                    debug_print(f"Using proxy for YouTube Transcript API: {proxies['https']}")
+        proxies = get_proxy_config()
+        if proxies:
+            debug_print(f"Using proxy for YouTube Transcript API: {proxies['https']}")
                 else:
                     debug_print("Using YouTube Transcript API without proxy")
             
@@ -204,28 +204,28 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
             
             # Use the class method directly with proxies
             transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
-            
+        
             # Debug: List all available transcripts
             available_transcripts = list(transcript_list)
             debug_print(f"Found {len(available_transcripts)} available transcripts:")
             for i, t in enumerate(available_transcripts):
                 debug_print(f"  {i+1}. {t.language} ({t.language_code}) - Generated: {getattr(t, 'is_generated', 'Unknown')}")
-            
-            # Try to find English transcript
+        
+        # Try to find English transcript
             transcript = None
-            try:
-                transcript = transcript_list.find_transcript(['en'])
-                debug_print(f"Found English transcript: {transcript.language_code}")
+        try:
+            transcript = transcript_list.find_transcript(['en'])
+            debug_print(f"Found English transcript: {transcript.language_code}")
             except Exception as e:
                 debug_print(f"Error finding English transcript: {str(e)}")
                 debug_print("Trying to get first available transcript")
-                transcript = available_transcripts[0]
+            transcript = available_transcripts[0]
             
             debug_print(f"Selected transcript: {transcript.language} ({transcript.language_code})")
             
             # Fetch the transcript data
-            debug_print("Fetching transcript data...")
-            transcript_data = transcript.fetch()
+        debug_print("Fetching transcript data...")
+        transcript_data = transcript.fetch()
             
             # Process transcript data correctly
             transcript_text = []
@@ -236,9 +236,9 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
                     transcript_text.append(item['text'])
             
             transcript_text = ' '.join(transcript_text)
-            
-            debug_print(f"Successfully extracted transcript with {len(transcript_text)} characters")
-            
+        
+        debug_print(f"Successfully extracted transcript with {len(transcript_text)} characters")
+        
             # Debug: Show first 200 characters of transcript
             if transcript_text:
                 debug_print(f"Transcript preview: {transcript_text[:200]}...")
@@ -249,20 +249,20 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
             # Try to get video metadata
             channel_title = "Unknown Channel"
             video_title = "Unknown Title"
-            
-            return {
-                'success': True,
-                'transcript': transcript_text,
+        
+        return {
+            'success': True,
+            'transcript': transcript_text,
                 'video_id': video_id,
-                'language': transcript.language,
-                'language_code': transcript.language_code,
-                'is_generated': getattr(transcript, 'is_generated', False),
-                'channelTitle': channel_title,
+            'language': transcript.language,
+            'language_code': transcript.language_code,
+            'is_generated': getattr(transcript, 'is_generated', False),
+            'channelTitle': channel_title,
                 'videoTitle': video_title,
                 'source': 'youtube_transcript_api_with_proxy' if (use_proxy and proxies) else 'youtube_transcript_api'
-            }
+        }
             
-        except Exception as e:
+    except Exception as e:
             last_error = e
             debug_print(f"Attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
@@ -272,11 +272,11 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
     
     # If we get here, all attempts failed
     debug_print(f"All {max_retries} attempts failed to fetch transcript")
-    return {
-        'success': False,
+        return {
+            'success': False,
         'error': str(last_error),
         'video_id': video_id
-    }
+        }
 
 def fetch_transcript_manually(video_id):
     """Fetch transcript for a YouTube video using basic HTTP requests with proxy support (fallback method)."""
@@ -583,7 +583,7 @@ def get_transcript(video_id):
     if try_ytdlp:
         debug_print("Trying yt-dlp method...")
         result = get_transcript_with_ytdlp(video_id)
-        if result['success']:
+    if result['success']:
             debug_print("yt-dlp method succeeded")
             return result
         debug_print(f"yt-dlp method failed: {result.get('error')}")
@@ -594,7 +594,7 @@ def get_transcript(video_id):
         result = get_transcript_with_requests(video_id)
         if result['success']:
             debug_print("requests/BeautifulSoup method succeeded")
-            return result
+    return result
         debug_print(f"requests/BeautifulSoup method failed: {result.get('error')}")
     
     # If all methods fail
@@ -635,8 +635,8 @@ if __name__ == "__main__":
         json_result = json.dumps(result)
         print(json_result)
     except Exception as general_error:
-        print(json.dumps({
-            'success': False,
+            print(json.dumps({
+                'success': False,
             'error': f"General error: {str(general_error)}",
-            'video_id': video_id
-        })) 
+                'video_id': video_id
+            })) 

@@ -26,8 +26,11 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware with adjusted settings for CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+}));
 
 // Enable compression
 app.use(compression());
@@ -47,14 +50,21 @@ app.use(limiter);
 // CORS configuration
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://app.brandout.ai', 'https://brandout.ai', 'https://api.brandout.ai']
-    : ['https://app.brandout.ai', 'http://localhost:3000', 'https://api.brandout.ai'],
+    ? 'https://app.brandout.ai'
+    : 'http://localhost:8080',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 };
 
+// Apply CORS before any routes
 app.use(cors(corsOptions));
+
+// Add CORS preflight handler
+app.options('*', cors(corsOptions));
+
+// Parse JSON bodies
 app.use(express.json());
 
 // Cache successful GET requests for 5 minutes
@@ -63,8 +73,10 @@ app.use(cache('5 minutes', (req, res) => {
   return req.method === 'GET';
 }));
 
-// Health check endpoint
+// Health check endpoint with explicit CORS headers
 app.get('/health', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', process.env.NODE_ENV === 'production' ? 'https://app.brandout.ai' : 'http://localhost:8080');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.json({ status: 'ok' });
 });
 
@@ -79,6 +91,14 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/youtube', youtubeRoutes);
+
+// Error handler middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.setHeader('Access-Control-Allow-Origin', process.env.NODE_ENV === 'production' ? 'https://app.brandout.ai' : 'http://localhost:8080');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.status(500).json({ error: 'Something broke!' });
+});
 
 // Schedule subscription check job to run at midnight every day
 cron.schedule('0 0 * * *', () => {
