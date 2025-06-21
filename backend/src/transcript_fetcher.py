@@ -188,67 +188,103 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
     
     for attempt in range(max_retries):
         try:
-            debug_print(f"Using YouTube Transcript API for video ID: {video_id}, use_proxy: {use_proxy}, attempt: {attempt + 1}/{max_retries}")
+            debug_print(f"\n=== YouTube Transcript API Attempt {attempt + 1}/{max_retries} ===")
+            debug_print(f"Video ID: {video_id}")
+            debug_print(f"Using proxy: {use_proxy}")
             
             # Get proxy configuration only if requested
             proxies = None
             if use_proxy:
                 proxies = get_proxy_config()
                 if proxies:
-                    debug_print(f"Using proxy for YouTube Transcript API: {proxies['https']}")
+                    debug_print(f"Proxy configuration: {proxies}")
                 else:
-                    debug_print("Using YouTube Transcript API without proxy")
+                    debug_print("No proxy configuration available")
             
             # Get transcript list with proxy support
-            debug_print("Getting transcript list...")
-            
-            # Use the class method directly with proxies
-            transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
+            debug_print("\nGetting transcript list...")
+            try:
+                transcript_list = ProxyAwareYouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
+                debug_print("Successfully got transcript list")
+            except Exception as list_error:
+                debug_print(f"Error getting transcript list: {str(list_error)}")
+                debug_print(f"Error type: {type(list_error)}")
+                debug_print(f"Full error details: {traceback.format_exc()}")
+                raise
             
             # Debug: List all available transcripts
-            available_transcripts = list(transcript_list)
-            debug_print(f"Found {len(available_transcripts)} available transcripts:")
-            for i, t in enumerate(available_transcripts):
-                debug_print(f"  {i+1}. {t.language} ({t.language_code}) - Generated: {getattr(t, 'is_generated', 'Unknown')}")
+            try:
+                available_transcripts = list(transcript_list)
+                debug_print(f"\nFound {len(available_transcripts)} available transcripts:")
+                for i, t in enumerate(available_transcripts):
+                    debug_print(f"  {i+1}. {t.language} ({t.language_code}) - Generated: {getattr(t, 'is_generated', 'Unknown')}")
+            except Exception as list_error:
+                debug_print(f"Error listing transcripts: {str(list_error)}")
+                debug_print(f"Error type: {type(list_error)}")
+                debug_print(f"Full error details: {traceback.format_exc()}")
+                raise
             
             # Try to find English transcript
             transcript = None
             try:
+                debug_print("\nTrying to find English transcript...")
                 transcript = transcript_list.find_transcript(['en'])
                 debug_print(f"Found English transcript: {transcript.language_code}")
             except Exception as e:
                 debug_print(f"Error finding English transcript: {str(e)}")
                 debug_print("Trying to get first available transcript")
-                transcript = available_transcripts[0]
+                if available_transcripts:
+                    transcript = available_transcripts[0]
+                    debug_print(f"Selected first available transcript: {transcript.language_code}")
+                else:
+                    debug_print("No transcripts available")
+                    raise Exception("No transcripts available")
             
-            debug_print(f"Selected transcript: {transcript.language} ({transcript.language_code})")
+            if not transcript:
+                debug_print("Could not find any transcript")
+                raise Exception("Could not find any transcript")
+            
+            debug_print(f"\nSelected transcript: {transcript.language} ({transcript.language_code})")
             
             # Fetch the transcript data
-            debug_print("Fetching transcript data...")
-            transcript_data = transcript.fetch()
+            debug_print("\nFetching transcript data...")
+            try:
+                transcript_data = transcript.fetch()
+                debug_print(f"Successfully fetched transcript data with {len(transcript_data)} segments")
+            except Exception as fetch_error:
+                debug_print(f"Error fetching transcript data: {str(fetch_error)}")
+                debug_print(f"Error type: {type(fetch_error)}")
+                debug_print(f"Full error details: {traceback.format_exc()}")
+                raise
             
-            # Process transcript data correctly
-            transcript_text = []
-            for item in transcript_data:
-                if hasattr(item, 'text'):
-                    transcript_text.append(item.text)
-                else:
-                    transcript_text.append(item['text'])
+            if not transcript_data:
+                debug_print("WARNING: Transcript data is empty!")
+                raise Exception("Empty transcript data received")
             
-            transcript_text = ' '.join(transcript_text)
+            # Process transcript data
+            debug_print("\nProcessing transcript data...")
+            transcript_text = ""
+            for segment in transcript_data:
+                try:
+                    if isinstance(segment, dict) and 'text' in segment:
+                        transcript_text += segment['text'] + " "
+                    elif hasattr(segment, 'text'):
+                        transcript_text += str(segment.text) + " "
+                    else:
+                        transcript_text += str(segment) + " "
+                except Exception as process_error:
+                    debug_print(f"Error processing segment: {str(process_error)}")
+                    debug_print(f"Segment data: {segment}")
+                    continue
             
-            debug_print(f"Successfully extracted transcript with {len(transcript_text)} characters")
+            transcript_text = transcript_text.strip()
             
-            # Debug: Show first 200 characters of transcript
-            if transcript_text:
-                debug_print(f"Transcript preview: {transcript_text[:200]}...")
-            else:
+            if not transcript_text:
                 debug_print("WARNING: Transcript text is empty after processing!")
-                raise Exception("Empty transcript extracted")
+                raise Exception("Empty transcript after processing")
             
-            # Try to get video metadata
-            channel_title = "Unknown Channel"
-            video_title = "Unknown Title"
+            debug_print(f"\nSuccessfully extracted transcript with {len(transcript_text)} characters")
+            debug_print(f"First 200 characters: {transcript_text[:200]}...")
             
             return {
                 'success': True,
@@ -257,21 +293,23 @@ def get_transcript_with_api(video_id, use_proxy=True, max_retries=3):
                 'language': transcript.language,
                 'language_code': transcript.language_code,
                 'is_generated': getattr(transcript, 'is_generated', False),
-                'channelTitle': channel_title,
-                'videoTitle': video_title,
+                'channelTitle': "Unknown Channel",
+                'videoTitle': "Unknown Title",
                 'source': 'youtube_transcript_api_with_proxy' if (use_proxy and proxies) else 'youtube_transcript_api'
             }
             
         except Exception as e:
             last_error = e
-            debug_print(f"Attempt {attempt + 1} failed: {str(e)}")
+            debug_print(f"\nAttempt {attempt + 1} failed: {str(e)}")
+            debug_print(f"Error type: {type(e)}")
+            debug_print(f"Full error details: {traceback.format_exc()}")
             if attempt < max_retries - 1:
                 debug_print("Retrying...")
                 time.sleep(1)  # Wait a bit before retrying
             continue
     
     # If we get here, all attempts failed
-    debug_print(f"All {max_retries} attempts failed to fetch transcript")
+    debug_print(f"\nAll {max_retries} attempts failed to fetch transcript")
     return {
         'success': False,
         'error': str(last_error),

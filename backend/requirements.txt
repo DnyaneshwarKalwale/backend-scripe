@@ -1,2 +1,4 @@
-youtube-transcript-api>=0.6.0
-beautifulsoup4 
+youtube-transcript-api==0.6.1
+beautifulsoup4==4.12.2
+requests==2.31.0
+urllib3==2.0.7 
