@@ -75,34 +75,22 @@ if (!fs.existsSync(uploadsDir)) {
 
 // *** CORS CONFIGURATION - MUST BE BEFORE OTHER MIDDLEWARE ***
 const allowedOrigins = [
-    'https://app.brandout.ai', 
-  'http://localhost:3000',
-  'http://localhost:5173',
-    'https://brandout.vercel.app',
-    'https://ea50-43-224-158-115.ngrok-free.app',
-    'https://18cd-43-224-158-115.ngrok-free.app',
-    'https://deluxe-cassata-51d628.netlify.app',
-  'https://api.brandout.ai',       // API domain
-  // Add more flexible patterns
-  'https://brandout.ai',
-  'https://www.brandout.ai'
+  'https://app.brandout.ai',
+  'http://localhost:8080'
 ];
 
+// Single CORS configuration
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps, curl requests)
     if (!origin) return callback(null, true);
     
-    // Check if origin is in allowed list or matches patterns
-    if (allowedOrigins.indexOf(origin) !== -1 || 
-        origin.endsWith('netlify.app') || 
-        origin.endsWith('brandout.ai') ||
-        origin.includes('localhost')) {
+    // Only allow the specified origins
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.log(`Origin ${origin} not allowed by CORS policy`);
-      // For production, still allow to avoid breaking things
-      callback(null, true);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -111,26 +99,12 @@ app.use(cors({
   exposedHeaders: ['Set-Cookie']
 }));
 
-// Ensure OPTIONS requests are handled properly
-app.options('*', cors());
-
-// Add robust CORS error handling
+// Remove any additional CORS middleware or headers
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle preflight 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
+  // Only set security headers, not CORS headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
 });
 
