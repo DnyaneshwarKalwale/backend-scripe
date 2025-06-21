@@ -1598,19 +1598,9 @@ app.get('/health', async (req, res) => {
 // Error handler middleware
 app.use(errorHandler);
 
-// Add detailed error logging middleware with CORS headers
+// Add detailed error logging middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
-  
-  // Set CORS headers even in error responses
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
   // Send error response
   res.status(500).json({

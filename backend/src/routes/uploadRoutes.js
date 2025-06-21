@@ -5,7 +5,6 @@ const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const cors = require('cors');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -14,46 +13,17 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Configure CORS specifically for upload routes
-const uploadCorsOptions = {
-  origin: function(origin, callback) {
-    const allowedOrigins = [
-      'https://app.brandout.ai',
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'https://brandout.vercel.app',
-      'https://api.brandout.ai'
-    ];
-    
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('netlify.app')) {
-      callback(null, true);
-    } else {
-      console.log(`Upload Routes: Origin ${origin} not allowed by CORS`);
-      callback(null, true); // Still allow but log it
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-  exposedHeaders: ['Set-Cookie']
-};
-
-// Apply CORS to all upload routes
-router.use(cors(uploadCorsOptions));
-
-// Handle preflight requests
-router.options('*', cors(uploadCorsOptions));
-
-// Configure local storage for regular uploads
+// Configure local storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, os.tmpdir());
+    const uploadPath = path.join(process.cwd(), 'uploads');
+    // Ensure directory exists
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
   },
   filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
