@@ -792,51 +792,69 @@ Build to proprietary methodologies`}`
           max_tokens: 2000
         });
         
-        // Clean up the generated content to remove formatting and slide prefixes
+        // Clean up the generated content to remove ALL formatting and slide prefixes
         let generatedContent = completion.choices[0].message.content;
         
-        // Clean up all formatting regardless of content type
-        // Remove markdown formatting (**text**)
+        // AGGRESSIVE CLEANING - Remove ALL formatting patterns
+        // Remove markdown headers (###, ####, etc.)
+        generatedContent = generatedContent.replace(/^#{1,6}\s+/gm, '');
+        
+        // Remove markdown formatting (**text**, __text__)
         generatedContent = generatedContent.replace(/\*\*(.*?)\*\*/g, '$1');
-        // Remove any remaining asterisks used for emphasis
-        generatedContent = generatedContent.replace(/\*/g, '');
-        // Remove underline formatting (__text__)
         generatedContent = generatedContent.replace(/__(.*?)__/g, '$1');
-        // Remove any remaining underscores used for emphasis
+        generatedContent = generatedContent.replace(/\*(.*?)\*/g, '$1');
+        generatedContent = generatedContent.replace(/_(.*?)_/g, '$1');
+        
+        // Remove any remaining asterisks and underscores used for emphasis
+        generatedContent = generatedContent.replace(/\*/g, '');
         generatedContent = generatedContent.replace(/(?<!\w)_(?!\w)/g, '');
         
+        // Remove structural elements specific to carousels
+        generatedContent = generatedContent.replace(/^(### )?LinkedIn Carousel:.*$/gim, '');
+        generatedContent = generatedContent.replace(/^(### )?Carousel Notes:.*$/gim, '');
+        generatedContent = generatedContent.replace(/^(#### )?Call to Action:.*$/gim, '');
+        generatedContent = generatedContent.replace(/^- Visual Elements:.*$/gim, '');
+        generatedContent = generatedContent.replace(/^- Engagement:.*$/gim, '');
+        generatedContent = generatedContent.replace(/^- Tone:.*$/gim, '');
+        generatedContent = generatedContent.replace(/^- Brand Colors:.*$/gim, '');
+        
         if (type === 'carousel') {
-          // Split by double newlines to get individual slides
-          const carouselSlides = generatedContent.split('\n\n').filter(s => s.trim());
+          // Remove ALL slide number patterns before splitting
+          generatedContent = generatedContent.replace(/^(#### )?Slide\s*\d+[\s:.-]*.*$/gim, '');
+          generatedContent = generatedContent.replace(/^Slide\s*\d+[\s:.-]*/gim, '');
           
-          // Process slides to remove "Slide X" prefix slides and clean remaining slide content
+          // Split by double newlines to get individual slides
+          let carouselSlides = generatedContent.split(/\n\s*\n/).filter(s => s.trim());
+          
+          // Process slides to clean remaining content
           const cleanedSlides = [];
           for (let i = 0; i < carouselSlides.length; i++) {
             let current = carouselSlides[i].trim();
             
-            // Skip slides that only contain "Slide X" and nothing else
-            if (/^Slide\s*\d+\s*[:.]*\s*$/i.test(current)) {
+            // Skip empty content or structural elements
+            if (!current || current.length < 10) continue;
+            
+            // Skip metadata sections
+            if (/^(Visual Elements|Engagement|Tone|Brand Colors|Carousel Notes|Call to Action)/i.test(current)) {
               continue;
             }
             
-            // Skip slides that are just separators (---)
-            if (/^-{3,}$/.test(current)) {
-              continue;
-            }
+            // Remove any remaining formatting patterns
+            current = current.replace(/^#{1,6}\s+/gm, ''); // Remove remaining headers
+            current = current.replace(/^(#### |### |## |# )/gm, ''); // Remove header markers
+            current = current.replace(/^Slide\s*\d+[\s:.-]*/gim, ''); // Remove slide prefixes
+            current = current.replace(/^(\d+\.?\s*)+/gm, ''); // Remove numbering
+            current = current.replace(/^-{3,}$/gm, ''); // Remove separator lines
+            current = current.replace(/^\s*-{3,}\s*$/gm, ''); // Remove standalone separators
             
-            // Remove "Slide X:" prefix if it exists and clean up any remaining separators
-            current = current.replace(/^Slide\s*\d+[\s:.-]*\s*/i, '').trim();
-            current = current.replace(/^-{3,}$/gm, '').trim(); // Remove separator lines
-            current = current.replace(/\n\s*-{3,}\s*\n/g, '\n').trim(); // Remove separators between content
-            current = current.replace(/^\s*-{3,}\s*$/gm, '').trim(); // Remove standalone separator lines
+                         // Keep emojis - they make content engaging!
             
-            // Remove any remaining slide number references
-            current = current.replace(/^(\d+\.?\s*)+/gm, '').trim();
-            
-            // Clean up extra whitespace and empty lines
+            // Clean up extra whitespace
             current = current.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+            current = current.replace(/^\s+|\s+$/g, '').trim();
             
-            if (current && current.length > 5) { // Only add non-empty slides with meaningful content
+            // Only add slides with meaningful content
+            if (current && current.length > 15 && !current.match(/^(Slide|###|####|\*\*)/)) {
               cleanedSlides.push(current);
             }
           }
@@ -845,14 +863,18 @@ Build to proprietary methodologies`}`
           generatedContent = cleanedSlides.join('\n\n');
           console.log(`Generated carousel with ${cleanedSlides.length} cleaned slides`);
         } else {
-          // For text posts, also clean up formatting
-          // Remove any slide references or numbering
-          generatedContent = generatedContent.replace(/^Slide\s*\d+[\s:.-]*\s*/gim, '');
+          // For text posts, also clean up ALL formatting
+          generatedContent = generatedContent.replace(/^(#### |### |## |# )/gm, '');
+          generatedContent = generatedContent.replace(/^Slide\s*\d+[\s:.-]*/gim, '');
           generatedContent = generatedContent.replace(/^(\d+\.?\s*)+/gm, '');
+          generatedContent = generatedContent.replace(/^-{3,}$/gm, '');
           
           // Clean up extra whitespace and empty lines
           generatedContent = generatedContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
         }
+        
+        // Final cleanup - remove any remaining empty lines at start/end
+        generatedContent = generatedContent.replace(/^\s+|\s+$/g, '').trim();
         
         // Auto-save the generated content
         if (req.body.videoId && req.body.videoTitle) {
