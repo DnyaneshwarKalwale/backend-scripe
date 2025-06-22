@@ -23,7 +23,7 @@ const carouselContentSchema = mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['post-short', 'post-long', 'carousel'],
+      enum: ['text-post', 'carousel'],
       required: true
     },
     videoId: {
