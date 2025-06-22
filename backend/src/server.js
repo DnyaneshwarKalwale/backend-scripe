@@ -146,12 +146,6 @@ app.post('/api/generate-content', async (req, res) => {
       'text-post': `${writingStyleSamples ? `PROMPT 3: LINKEDIN WRITTEN POSTS - WITH EXISTING CONTENT
 You are an elite direct response copywriter combining Stefan Georgi's fascination mastery, Daniel Fazio's brutal directness, and Justin Welsh's transformation storytelling. You engineer LinkedIn posts that generate leads through psychological precision while maintaining perfect consistency with the client's established voice and content patterns.
 
-CRITICAL CONTENT RESTRICTIONS:
-- Maximum 600 words for the entire post
-- NO slide numbers, bullet points, or formatting markers
-- Clean, flowing text without any separators or prefixes
-- Direct, engaging content only
-
 Use this YouTube transcript to create a LinkedIn text post: "${transcript || ''}"
 
 PHASE 1: EXISTING CONTENT VOICE ANALYSIS
@@ -302,12 +296,6 @@ Pre-Publishing Voice Check:
 
 Writing Style Samples Analysis: "${writingStyleSamples}"` : `PROMPT 4: LINKEDIN WRITTEN POSTS - WITHOUT EXISTING CONTENT
 You are an elite direct response copywriter combining Stefan Georgi's fascination mastery, Daniel Fazio's brutal directness, and Justin Welsh's transformation storytelling. You engineer LinkedIn posts that generate leads through psychological precision while establishing a powerful, authentic voice and authority from ground zero.
-
-CRITICAL CONTENT RESTRICTIONS:
-- Maximum 600 words for the entire post
-- NO slide numbers, bullet points, or formatting markers
-- Clean, flowing text without any separators or prefixes
-- Direct, engaging content only
 
 Use this YouTube transcript to create a LinkedIn text post: "${transcript || ''}"
 
@@ -461,13 +449,6 @@ Share cutting-edge approaches
 Demonstrate unique perspective
 Establish expert authority
 
-FINAL CONTENT OUTPUT REQUIREMENTS:
-- Generate clean, flowing content without ANY slide numbers or prefixes
-- Maximum 600 words total
-- No "Slide 1:", "Slide 2:", or any numbering
-- Each paragraph should flow naturally into the next
-- Pure content only - no formatting markers
-
 PHASE 8: VOICE CONSISTENCY MAINTENANCE
 Daily Voice Check System:
 Before Writing Each Post:
@@ -490,13 +471,6 @@ Monthly Voice Evolution:
 [ ] Adjust complexity based on engagement
 [ ] Develop new signature elements
 [ ] Expand authority positioning
-
-FINAL TEXT POST OUTPUT REQUIREMENTS:
-- Generate clean, flowing content without ANY formatting markers
-- Maximum 600 words total
-- No bullet points, numbered lists, or slide references
-- Natural paragraph flow from start to finish
-- Pure content only - no separators or prefixes
 
 PHASE 9: ENGAGEMENT OPTIMIZATION (COLD START)
 First Impression Optimization:
@@ -524,24 +498,10 @@ Share valuable insights in others' comment sections
 Reference current industry events and news
 Collaborate with established voices when possible
 
-This cold-start approach focuses on establishing credibility, building a recognizable voice, and creating valuable content that positions the client as an emerging authority in their space while generating leads through strategic psychological engagement.
-
-FINAL TEXT POST OUTPUT REQUIREMENTS:
-- Generate clean, flowing content without ANY formatting markers
-- Maximum 600 words total
-- No bullet points, numbered lists, or slide references
-- Natural paragraph flow from start to finish
-- Pure content only - no separators or prefixes`}`,
+This cold-start approach focuses on establishing credibility, building a recognizable voice, and creating valuable content that positions the client as an emerging authority in their space while generating leads through strategic psychological engagement.`}`,
       
       'carousel': `${writingStyleSamples ? `PROMPT 1: LINKEDIN CAROUSEL CREATION - WITH EXISTING CONTENT
 You are a world-class direct response marketer specialized in writing viral LinkedIn carousels. You've mastered Stefan Georgi's fascination techniques, studied the neuroscience of dopamine-driven content, and analyzed billions of views worth of content. Your mission: create carousels that stop scrolls, trigger curiosity loops, and convert viewers into clients using the client's established voice and content patterns.
-
-CRITICAL CAROUSEL RESTRICTIONS:
-- Maximum 10 slides only
-- NO slide numbers, prefixes, or formatting markers (Do NOT write "Slide 1:", "Slide 2:", etc.)
-- Clean content for each slide without any numbering or separators
-- Each slide should be distinct and flow naturally
-- Focus on high-impact, engaging content
 
 Use this YouTube transcript to create a LinkedIn carousel: "${transcript || ''}"
 
@@ -673,22 +633,8 @@ Quality Control (Voice Consistency):
 [ ] Is the emotional tone consistent?
 [ ] Would this fit seamlessly in client's feed?
 
-FINAL CAROUSEL OUTPUT REQUIREMENTS:
-- Generate exactly 10 slides maximum
-- NO slide numbers, prefixes, or formatting markers anywhere
-- Clean content for each slide without any "Slide X:" labels
-- Each slide should be a distinct, engaging piece of content
-- Pure content only - no numbering or separators
-
 Writing Style Samples Analysis: "${writingStyleSamples}"` : `PROMPT 2: LINKEDIN CAROUSEL CREATION - WITHOUT EXISTING CONTENT
 You are a world-class direct response marketer specialized in writing viral LinkedIn carousels. You've mastered Stefan Georgi's fascination techniques, studied the neuroscience of dopamine-driven content, and analyzed billions of views worth of content. Your mission: create carousels that stop scrolls, trigger curiosity loops, and convert viewers into clients while establishing a powerful, authentic voice from scratch.
-
-CRITICAL CAROUSEL RESTRICTIONS:
-- Maximum 10 slides only
-- NO slide numbers, prefixes, or formatting markers (Do NOT write "Slide 1:", "Slide 2:", etc.)
-- Clean content for each slide without any numbering or separators
-- Each slide should be distinct and flow naturally
-- Focus on high-impact, engaging content
 
 Use this YouTube transcript to create a LinkedIn carousel: "${transcript || ''}"
 
@@ -814,14 +760,7 @@ Progressive Authority Building:
 Start with problems everyone recognizes
 Move to solutions that feel achievable
 Progress to more sophisticated insights
-Build to proprietary methodologies
-
-FINAL CAROUSEL OUTPUT REQUIREMENTS:
-- Generate exactly 10 slides maximum
-- NO slide numbers, prefixes, or formatting markers anywhere
-- Clean content for each slide without any "Slide X:" labels
-- Each slide should be a distinct, engaging piece of content
-- Pure content only - no numbering or separators`}`
+Build to proprietary methodologies`}`
     };
     
     // Check if this is a YouTube transcript content generation request
@@ -854,30 +793,22 @@ FINAL CAROUSEL OUTPUT REQUIREMENTS:
         
         // Apply comprehensive cleaning to all content types
         generatedContent = generatedContent
-          // Remove ALL variations of "Slide X:" patterns (most aggressive first)
+          // Remove "Slide X:" or "Slide X -" prefixes (for carousels)
           .replace(/^Slide\s*\d+[\s:.-]+/gmi, '')
-          .replace(/^\s*Slide\s*\d+[\s:.-]*/gmi, '')
-          .replace(/Slide\s*\d+[\s:.-]+/gi, '')
-          // Remove standalone "Slide X" lines
+          // Remove standalone "Slide X" lines (for carousels)
           .replace(/^\s*Slide\s*\d+\s*$/gmi, '')
-          // Remove any remaining slide references
-          .replace(/^\s*\d+[\s:.-]+/gm, '')
           // Remove separator lines (---, ===, ___, etc.)
           .replace(/^\s*[-=_]{3,}\s*$/gm, '')
           // Remove markdown bold formatting (**text**)
           .replace(/\*\*(.*?)\*\*/g, '$1')
           // Remove markdown underline formatting (__text__)
           .replace(/__(.*?)__/g, '$1')
-          // Remove any remaining asterisks used for emphasis
+            // Remove any remaining asterisks used for emphasis
           .replace(/\*/g, '')
           // Remove any dash separators within content
           .replace(/\s*--+\s*/g, ' ')
           // Remove bullet points at start of lines
           .replace(/^\s*[-•]\s*/gm, '')
-          // Remove numbered lists at start of lines (1., 2., etc.)
-          .replace(/^\s*\d+\.\s*/gm, '')
-          // Remove emoji numbered lists (1️⃣, 2️⃣, etc.)
-          .replace(/\d+️⃣\s*/g, '')
           // Clean up multiple spaces
           .replace(/\s{2,}/g, ' ')
           // Remove excessive newlines but keep paragraph breaks
