@@ -197,7 +197,7 @@ const createCheckoutSession = async (req, res) => {
     
     // Determine checkout mode based on product type
     const checkoutMode = isOneTime ? 'payment' : 'subscription';
-    
+
     // For subscriptions, we need to create or get a Stripe customer
     let stripeCustomerId = null;
     if (!isOneTime) {
@@ -503,7 +503,7 @@ const handleSuccessfulCheckout = async (session) => {
       stripeSubscriptionId = session.subscription;
       console.log(`Subscription created: ${stripeSubscriptionId}`);
     }
-
+    
     if (!userLimit) {
       // If no existing user limit, create a new one
       userLimit = new UserLimit({

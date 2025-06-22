@@ -224,14 +224,14 @@ const downloadInvoice = asyncHandler(async (req, res) => {
       transactionId: invoiceId,
       userId
     });
-    
+
     if (!transaction) {
       return res.status(404).json({
         success: false,
         message: 'Invoice not found'
       });
     }
-    
+
     // Try to get Stripe invoice if available
     try {
       if (transaction.invoiceId) {
