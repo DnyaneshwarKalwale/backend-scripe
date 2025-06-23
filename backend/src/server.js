@@ -21,6 +21,7 @@ const stripeRoutes = require('./routes/stripeRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const { initScheduler } = require('./services/schedulerService');
 const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const cronRoutes = require('./routes/cronRoutes');
 const CarouselContent = require('./models/carouselContentModel');
@@ -58,9 +59,14 @@ cloudinary.config({
 // Connect to database
 connectDB();
 
-// Initialize OpenAI with fallback for API key
+// Initialize OpenAI with API key from environment
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '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',
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// Initialize Claude AI with API key from environment
+const claude = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY
 });
 
 // Initialize express app
@@ -134,6 +140,25 @@ passport.deserializeUser(async (id, done) => {
 });
 
 require('./config/passport')(passport);
+
+// Helper function to handle Claude API errors
+function handleClaudeError(claudeError, res) {
+  console.error('Error from Claude API:', claudeError);
+  
+  // Check for quota exceeded error
+  if (claudeError.status === 429 || claudeError.error?.type === 'rate_limit_error') {
+    console.log('Claude API quota exceeded, falling back to OpenAI');
+    return 'fallback_to_openai';
+  }
+  
+  // For other Claude errors
+  res.status(503).json({ 
+    error: 'Claude service temporarily unavailable', 
+    message: claudeError.message || 'Failed to generate content',
+    success: false
+  });
+  return 'error';
+}
 
 // OpenAI content generation routes
 app.post('/api/generate-content', async (req, res) => {
@@ -776,7 +801,177 @@ Build to proprietary methodologies`}`
           console.log(`Writing style samples length: ${writingStyleSamples.length} characters`);
         }
         
-        // Use the secure prompts stored on the server
+        // Try Claude first
+        try {
+          const claudeResponse = await claude.messages.create({
+            model: "claude-3-sonnet-20240229",
+            max_tokens: 4000,
+            messages: [
+              { 
+                role: "system", 
+                content: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts." 
+              },
+              { 
+                role: "user", 
+                content: SECURE_PROMPTS[type]
+              }
+            ],
+            temperature: 0.7
+          });
+          
+          // Process Claude's response
+          let generatedContent = claudeResponse.content[0].text;
+          
+          // Clean up the generated content to remove ALL formatting and slide prefixes
+          generatedContent = generatedContent.replace(/^#{1,6}\s+/gm, '');
+          
+          // Remove markdown formatting (**text**, __text__)
+          generatedContent = generatedContent.replace(/\*\*(.*?)\*\*/g, '$1');
+          generatedContent = generatedContent.replace(/__(.*?)__/g, '$1');
+          generatedContent = generatedContent.replace(/\*(.*?)\*/g, '$1');
+          generatedContent = generatedContent.replace(/_(.*?)_/g, '$1');
+          
+          // Remove any remaining asterisks and underscores used for emphasis
+          generatedContent = generatedContent.replace(/\*/g, '');
+          generatedContent = generatedContent.replace(/(?<!\w)_(?!\w)/g, '');
+          
+          // Remove structural elements specific to carousels
+          generatedContent = generatedContent.replace(/^(### )?LinkedIn Carousel:.*$/gim, '');
+          generatedContent = generatedContent.replace(/^(### )?Carousel Notes:.*$/gim, '');
+          generatedContent = generatedContent.replace(/^(#### )?Call to Action:.*$/gim, '');
+          generatedContent = generatedContent.replace(/^- Visual Elements:.*$/gim, '');
+          generatedContent = generatedContent.replace(/^- Engagement:.*$/gim, '');
+          generatedContent = generatedContent.replace(/^- Tone:.*$/gim, '');
+          generatedContent = generatedContent.replace(/^- Brand Colors:.*$/gim, '');
+          
+          if (type === 'carousel') {
+            // Remove ALL slide number patterns and prefixes
+            generatedContent = generatedContent.replace(/^(#### )?Slide\s*\d+[\s:.-]*.*$/gim, '');
+            generatedContent = generatedContent.replace(/^Slide\s*\d+[\s:.-]*/gim, '');
+            generatedContent = generatedContent.replace(/^(Slide|Page)\s*\d+[:.]/gim, '');
+            generatedContent = generatedContent.replace(/^(\d+\.?\s*)+/gm, '');
+            
+            // Split by double newlines to get individual slides
+            let carouselSlides = generatedContent.split(/\n\s*\n/).filter(s => s.trim());
+            
+            // Process slides to clean remaining content
+            const cleanedSlides = [];
+            for (let i = 0; i < carouselSlides.length; i++) {
+              let current = carouselSlides[i].trim();
+              
+              // Skip empty content or structural elements
+              if (!current || current.length < 10) continue;
+              
+              // Skip metadata sections
+              if (/^(Visual Elements|Engagement|Tone|Brand Colors|Carousel Notes|Call to Action)/i.test(current)) {
+                continue;
+              }
+              
+              // Remove any remaining formatting patterns
+              current = current.replace(/^#{1,6}\s+/gm, ''); // Remove remaining headers
+              current = current.replace(/^(#### |### |## |# )/gm, ''); // Remove header markers
+              current = current.replace(/^Slide\s*\d+[\s:.-]*/gim, ''); // Remove slide prefixes
+              current = current.replace(/^(\d+\.?\s*)+/gm, ''); // Remove numbering
+              current = current.replace(/^-{3,}$/gm, ''); // Remove separator lines
+              current = current.replace(/^\s*-{3,}\s*$/gm, ''); // Remove standalone separators
+              
+              // Keep emojis - they make content engaging!
+              
+              // Clean up extra whitespace
+              current = current.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+              current = current.replace(/^\s+|\s+$/g, '').trim();
+              
+              // Only add slides with meaningful content
+              if (current && current.length > 15 && !current.match(/^(Slide|###|####|\*\*)/)) {
+                cleanedSlides.push(current);
+              }
+            }
+            
+            // Rejoin slides with clean separation
+            generatedContent = cleanedSlides.join('\n\n');
+            console.log(`Generated carousel with ${cleanedSlides.length} cleaned slides`);
+          } else {
+            // For text posts, also clean up ALL formatting
+            generatedContent = generatedContent.replace(/^(#### |### |## |# )/gm, '');
+            generatedContent = generatedContent.replace(/^Slide\s*\d+[\s:.-]*/gim, '');
+            generatedContent = generatedContent.replace(/^(\d+\.?\s*)+/gm, '');
+            generatedContent = generatedContent.replace(/^-{3,}$/gm, '');
+            
+            // Clean up extra whitespace and empty lines
+            generatedContent = generatedContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+          }
+          
+          // Final cleanup - remove any remaining empty lines at start/end
+          generatedContent = generatedContent.replace(/^\s+|\s+$/g, '').trim();
+          
+          // Auto-save the generated content
+          if (req.body.videoId && req.body.videoTitle) {
+            try {
+              const { v4: uuidv4 } = require('uuid');
+              const contentId = uuidv4();
+              const userId = req.body.userId || 'anonymous'; // Get userId from request body
+              
+              const contentData = {
+                id: contentId,
+                title: req.body.videoTitle || 'Generated Content',
+                content: generatedContent,
+                type: type,
+                videoId: req.body.videoId,
+                videoTitle: req.body.videoTitle,
+                createdAt: new Date()
+              };
+              
+              // Save to database
+              const newContent = new CarouselContent({
+                id: contentData.id,
+                userId: userId,
+                title: contentData.title,
+                content: contentData.content,
+                type: contentData.type,
+                videoId: contentData.videoId,
+                videoTitle: contentData.videoTitle,
+                createdAt: contentData.createdAt,
+                updatedAt: new Date()
+              });
+              
+              await newContent.save();
+              console.log(`Auto-saved generated content with ID: ${contentId} for user: ${userId}`);
+              
+              return res.json({ 
+                content: generatedContent,
+                model: "claude-3-sonnet",
+                success: true,
+                autoSaved: true,
+                savedContentId: contentId
+              });
+            } catch (saveError) {
+              console.error('Error auto-saving content:', saveError);
+              return res.json({ 
+                content: generatedContent,
+                model: "claude-3-sonnet",
+                success: true,
+                autoSaved: false,
+                saveError: saveError.message
+              });
+            }
+          }
+          
+          return res.json({ 
+            content: generatedContent,
+            model: "claude-3-sonnet",
+            success: true
+          });
+          
+        } catch (claudeError) {
+          const errorResult = handleClaudeError(claudeError, res);
+          if (errorResult === 'error') return;
+          if (errorResult === 'fallback_to_openai') {
+            console.log('Falling back to OpenAI for content generation');
+            // Continue to OpenAI logic below
+          }
+        }
+        
+        // Fallback to OpenAI if Claude fails
         const completion = await openai.chat.completions.create({
           model: model,
           messages: [
@@ -792,11 +987,10 @@ Build to proprietary methodologies`}`
           max_tokens: 2000
         });
         
-        // Clean up the generated content to remove ALL formatting and slide prefixes
+        // Process OpenAI's response
         let generatedContent = completion.choices[0].message.content;
         
-        // AGGRESSIVE CLEANING - Remove ALL formatting patterns
-        // Remove markdown headers (###, ####, etc.)
+        // Clean up the generated content to remove ALL formatting and slide prefixes
         generatedContent = generatedContent.replace(/^#{1,6}\s+/gm, '');
         
         // Remove markdown formatting (**text**, __text__)
@@ -819,9 +1013,11 @@ Build to proprietary methodologies`}`
         generatedContent = generatedContent.replace(/^- Brand Colors:.*$/gim, '');
         
         if (type === 'carousel') {
-          // Remove ALL slide number patterns before splitting
+          // Remove ALL slide number patterns and prefixes
           generatedContent = generatedContent.replace(/^(#### )?Slide\s*\d+[\s:.-]*.*$/gim, '');
           generatedContent = generatedContent.replace(/^Slide\s*\d+[\s:.-]*/gim, '');
+          generatedContent = generatedContent.replace(/^(Slide|Page)\s*\d+[:.]/gim, '');
+          generatedContent = generatedContent.replace(/^(\d+\.?\s*)+/gm, '');
           
           // Split by double newlines to get individual slides
           let carouselSlides = generatedContent.split(/\n\s*\n/).filter(s => s.trim());
@@ -847,7 +1043,7 @@ Build to proprietary methodologies`}`
             current = current.replace(/^-{3,}$/gm, ''); // Remove separator lines
             current = current.replace(/^\s*-{3,}\s*$/gm, ''); // Remove standalone separators
             
-                         // Keep emojis - they make content engaging!
+            // Keep emojis - they make content engaging!
             
             // Clean up extra whitespace
             current = current.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
@@ -911,21 +1107,16 @@ Build to proprietary methodologies`}`
             
             return res.json({ 
               content: generatedContent,
-              model: completion.model,
-              usage: completion.usage,
-              type: type,
+              model: "claude-3-sonnet",
               success: true,
               autoSaved: true,
               savedContentId: contentId
             });
           } catch (saveError) {
             console.error('Error auto-saving content:', saveError);
-            // Still return the content even if save fails
             return res.json({ 
               content: generatedContent,
-              model: completion.model,
-              usage: completion.usage,
-              type: type,
+              model: "claude-3-sonnet",
               success: true,
               autoSaved: false,
               saveError: saveError.message
@@ -935,15 +1126,12 @@ Build to proprietary methodologies`}`
         
         return res.json({ 
           content: generatedContent,
-          model: completion.model,
-          usage: completion.usage,
-          type: type,
+          model: "claude-3-sonnet",
           success: true
         });
-      } catch (openaiError) {
-        console.error('Error from OpenAI API (YouTube content):', openaiError);
-        handleOpenAIError(openaiError, res);
-        return;
+      } catch (error) {
+        console.error('Error generating content:', error);
+        handleOpenAIError(error, res);
       }
     }
     
@@ -982,9 +1170,49 @@ Build to proprietary methodologies`}`
       Include relevant hashtags and make it engaging for a professional audience.
       Format it as a ${contentType || 'short'} post that performs well on LinkedIn.`;
     
+    // Try Claude first for regular prompts
+    try {
+      const claudeResponse = await claude.messages.create({
+        model: "claude-3-sonnet-20240229",
+        max_tokens: 4000,
+        messages: [
+          { 
+            role: "system", 
+            content: "You are a professional LinkedIn content creator. Create engaging, professional content that would perform well on LinkedIn." 
+          },
+          { 
+            role: "user", 
+            content: enhancedPrompt 
+          }
+        ],
+        temperature: 0.7
+      });
+      
+      // Extract content and hashtags
+      const content = claudeResponse.content[0].text;
+      const hashtags = content.match(/#[a-zA-Z0-9]+/g) || [];
+      
+      res.json({ 
+        content: content,
+        suggestedHashtags: hashtags,
+        model: "claude-3-sonnet",
+        success: true
+      });
+      return;
+      
+    } catch (claudeError) {
+      const errorResult = handleClaudeError(claudeError, res);
+      if (errorResult === 'error') return;
+      if (errorResult !== 'fallback_to_openai') return;
+      
+      // Fallback to OpenAI
+      console.log('Falling back to OpenAI for regular prompt');
+    }
+    
+    // Fallback to OpenAI logic
     try {
       const completion = await openai.chat.completions.create({
-        model: model, // Use requested model or default
+        model: model,
         messages: [
           { role: "system", content: "You are a professional LinkedIn content creator. Create engaging, professional content that would perform well on LinkedIn." },
           { role: "user", content: enhancedPrompt }
