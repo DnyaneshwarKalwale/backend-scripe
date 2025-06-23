@@ -806,13 +806,10 @@ Build to proprietary methodologies`}`
           const claudeResponse = await claude.messages.create({
             model: "claude-4-sonnet-20240229",
             max_tokens: 4000,
+            system: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts.",
             messages: [
-              { 
-                role: "system", 
-                content: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts." 
-              },
-              { 
-                role: "user", 
+              {
+                role: "user",
                 content: SECURE_PROMPTS[type]
               }
             ],
