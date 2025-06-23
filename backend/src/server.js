@@ -804,7 +804,7 @@ Build to proprietary methodologies`}`
         // Try Claude first
         try {
           const claudeResponse = await claude.messages.create({
-            model: "claude-4-sonnet-20240229",
+            model: "claude-sonnet-4-20250514",
             max_tokens: 4000,
             system: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts.",
             messages: [
