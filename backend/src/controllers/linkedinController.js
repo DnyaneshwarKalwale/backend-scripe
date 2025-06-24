@@ -111,7 +111,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
     }
     
     try {
-      // Try to fetch real data from LinkedIn API
+      // Get user info
       const userInfoResponse = await axios.get(LINKEDIN_USERINFO_URL, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
@@ -119,11 +119,19 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         }
       });
       
-      const profileResponse = await axios.get(`${LINKEDIN_PROFILE_URL}?projection=(id,firstName,lastName,profilePicture,headline,vanityName)`, {
+      // Get detailed profile data
+      const profileResponse = await axios.get(`${LINKEDIN_PROFILE_URL}?projection=(id,firstName,lastName,profilePicture,headline,vanityName,numConnections,summary)`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
           'Content-Type': 'application/json'
         }
+      });
+
+      // Get posts count from our database
+      const postsCount = await SavedPost.countDocuments({ 
+        userId: user._id,
+        status: 'published',
+        publishedToLinkedIn: true
       });
       
       const username = profileResponse.data.vanityName || 
@@ -135,12 +143,15 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         name: `${userInfoResponse.data.given_name || user.firstName} ${userInfoResponse.data.family_name || user.lastName || ''}`.trim(),
         profileImage: userInfoResponse.data.picture || user.profilePicture || 'https://via.placeholder.com/150',
         bio: profileResponse.data.headline || `LinkedIn professional connected with Scripe.`,
-        location: userInfoResponse.data.address || "Global",
+        location: userInfoResponse.data.address?.country || "Global",
         url: `https://linkedin.com/in/${username}`,
         joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
-        connections: 500,
-        followers: 1000,
-        verified: true
+        connections: profileResponse.data.numConnections || 500,
+        followers: profileResponse.data.numFollowers || profileResponse.data.numConnections || 500,
+        totalPosts: postsCount,
+        impressions: user.linkedinImpressions || 0,
+        verified: true,
+        summary: profileResponse.data.summary || ''
       };
       
       return res.status(200).json({
@@ -149,25 +160,30 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         usingRealData: true
       });
     } catch (apiError) {
+      console.error('LinkedIn API Error:', apiError);
+      
       // If API call fails, return basic profile
-    const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
-    
-    const linkedinProfile = {
-      id: user.linkedinId,
-      username: username,
-      name: `${user.firstName} ${user.lastName || ''}`.trim(),
-      profileImage: user.profilePicture || 'https://via.placeholder.com/150',
+      const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
+      
+      const linkedinProfile = {
+        id: user.linkedinId,
+        username: username,
+        name: `${user.firstName} ${user.lastName || ''}`.trim(),
+        profileImage: user.profilePicture || 'https://via.placeholder.com/150',
         bio: `LinkedIn professional connected with Scripe.`,
-      location: "Global",
-      url: `https://linkedin.com/in/${username}`,
+        location: "Global",
+        url: `https://linkedin.com/in/${username}`,
         joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
         connections: 0,
         followers: 0,
-      verified: false
-    };
-    
+        totalPosts: 0,
+        impressions: 0,
+        verified: false,
+        summary: ''
+      };
+      
       return res.status(200).json({
-      success: true,
+        success: true,
         data: linkedinProfile,
         usingRealData: false,
         message: 'Using basic profile data due to API error',
