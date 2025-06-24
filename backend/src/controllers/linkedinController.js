@@ -119,7 +119,7 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         }
       });
       
-      // Get detailed profile data
+      // Get detailed profile data hh
       const profileResponse = await axios.get(`${LINKEDIN_PROFILE_URL}?projection=(id,firstName,lastName,profilePicture,headline,vanityName,numConnections,summary)`, {
         headers: {
           'Authorization': `Bearer ${user.linkedinAccessToken}`,
