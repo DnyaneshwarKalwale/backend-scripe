@@ -58,10 +58,19 @@ const userSchema = mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     googleId: String,
-    linkedinId: String,
-    linkedinAccessToken: String,
+    linkedinId: {
+      type: String,
+      default: null
+    },
+    linkedinAccessToken: {
+      type: String,
+      default: null
+    },
     linkedinRefreshToken: String,
-    linkedinTokenExpiry: Date,
+    linkedinTokenExpiry: {
+      type: Date,
+      default: null
+    },
     profilePicture: String,
     authMethod: {
       type: String,
@@ -134,6 +143,10 @@ const userSchema = mongoose.Schema(
     linkedinConnected: {
       type: Boolean,
       default: false
+    },
+    linkedinUsername: {
+      type: String,
+      default: null
     },
     createdAt: {
       type: Date,
