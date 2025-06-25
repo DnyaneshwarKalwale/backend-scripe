@@ -36,18 +36,18 @@ const getLinkedInBasicProfile = asyncHandler(async (req, res) => {
       });
     }
     
-    // Generate username from user's name if not available
-    const username = user.firstName.toLowerCase() + (user.lastName ? user.lastName.toLowerCase() : '');
+    // Use the stored LinkedIn username or ID
+    const linkedinUsername = user.linkedinUsername || user.linkedinId;
     
     // Create a basic profile object using stored user data
     const linkedinProfile = {
       id: user.linkedinId,
-      username: username,
+      username: linkedinUsername,
       name: `${user.firstName} ${user.lastName || ''}`.trim(),
       profileImage: user.profilePicture || 'https://via.placeholder.com/150',
       bio: `LinkedIn professional connected with Scripe.`,
       location: "Not available",
-      url: `https://linkedin.com/in/${username}`,
+      url: `https://linkedin.com/in/${linkedinUsername}`,
       joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
       connections: 0,
       followers: 0,
@@ -167,7 +167,8 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
       // Get the actual LinkedIn vanity name
       const linkedInVanityName = profileResponse.data.vanityName || 
                                 profileResponse.data.id ||
-                                userInfoResponse.data.sub;
+                                userInfoResponse.data.sub ||
+                                user.linkedinId;
       
       const linkedinProfile = {
         id: user.linkedinId,
