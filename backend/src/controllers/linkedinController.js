@@ -211,31 +211,31 @@ const getLinkedInProfile = asyncHandler(async (req, res) => {
         });
         
         const vanityName = basicProfileResponse.data.vanityName || user.linkedinUsername;
-        
-        const linkedinProfile = {
-          id: user.linkedinId,
+    
+    const linkedinProfile = {
+      id: user.linkedinId,
           username: vanityName,
-          name: `${user.firstName} ${user.lastName || ''}`.trim(),
-          profileImage: user.profilePicture || 'https://via.placeholder.com/150',
-          bio: `LinkedIn professional connected with Scripe.`,
-          location: "Global",
+      name: `${user.firstName} ${user.lastName || ''}`.trim(),
+      profileImage: user.profilePicture || 'https://via.placeholder.com/150',
+        bio: `LinkedIn professional connected with Scripe.`,
+      location: "Global",
           url: `https://linkedin.com/in/${vanityName}`,
-          joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
-          connections: 0,
-          followers: 0,
+        joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently joined",
+        connections: 0,
+        followers: 0,
           totalPosts: 0,
           impressions: 0,
           verified: false,
           summary: ''
-        };
-        
-        return res.status(200).json({
-          success: true,
-          data: linkedinProfile,
-          usingRealData: false,
-          message: 'Using basic profile data due to API error',
-          error: apiError.message
-        });
+    };
+    
+      return res.status(200).json({
+      success: true,
+        data: linkedinProfile,
+        usingRealData: false,
+        message: 'Using basic profile data due to API error',
+        error: apiError.message
+      });
       } catch (basicError) {
         console.error('Basic Profile Error:', basicError);
         return res.status(500).json({
