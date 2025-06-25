@@ -806,13 +806,7 @@ Build to proprietary methodologies`}`
           const claudeResponse = await claude.messages.create({
             model: "claude-sonnet-4-20250514",
             max_tokens: 4000,
-            system: `You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts.
-            
-CONTENT LIMITS:
-- For carousel posts: STRICTLY limit to exactly 10 slides maximum. Each slide should be concise and impactful.
-- For text posts: STRICTLY limit to 1000 words maximum. Focus on the most important points.
-- Do not exceed these limits under any circumstances.
-- If the content would naturally exceed these limits, focus on the most important and engaging points only.`,
+            system: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts.",
             messages: [
               {
                 role: "user",
@@ -980,13 +974,7 @@ CONTENT LIMITS:
           messages: [
             { 
               role: "system", 
-              content: `You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts.
-              
-CONTENT LIMITS:
-- For carousel posts: STRICTLY limit to exactly 10 slides maximum. Each slide should be concise and impactful.
-- For text posts: STRICTLY limit to 1000 words maximum. Focus on the most important points.
-- Do not exceed these limits under any circumstances.
-- If the content would naturally exceed these limits, focus on the most important and engaging points only.`
+              content: "You are an expert content creator for LinkedIn, generating high-quality posts from YouTube transcripts." 
             },
             { 
               role: "user", 
