@@ -17,34 +17,26 @@ const DEFAULT_PLAN = 'expired';
 exports.checkAndHandleSubscriptionExpiration = async (userId) => {
   try {
     const userLimit = await UserLimit.findOne({ userId });
-    
-    if (!userLimit) {
-      return null;
-    }
-    
-    // Check if subscription has expired
-    if (userLimit.expiresAt && new Date() > new Date(userLimit.expiresAt)) {
-      // Check if auto-pay is enabled (you would implement this flag in your userLimit model)
-      const hasAutoPay = userLimit.autoPay === true;
-      
-      if (!hasAutoPay) {
-        // If auto-pay is not enabled, mark as expired but keep the current count
-        userLimit.planId = 'expired';
-        userLimit.planName = 'No Plan';
-        userLimit.status = 'inactive';
-        // Keep count as is, but set limit to 0 to prevent further usage
-        userLimit.limit = 0;
-        await userLimit.save();
-        
-        console.log(`Subscription expired for user ${userId}. Auto-pay not enabled, setting to expired plan.`);
+    if (!userLimit) return null;
+
+    // Check if plan has expired
+    if (userLimit.hasExpired()) {
+      // For trial plans that have expired, set to expired plan
+      if (userLimit.planId === 'trial') {
+        await userLimit.updatePlan({
+          planId: 'expired',
+          planName: 'No Plan',
+          limit: 0,
+          expiresAt: null
+        });
         return userLimit;
-      } else {
-        // If auto-pay is enabled, this would be handled by Stripe webhooks
-        // Here we just log that we're waiting for Stripe to process the renewal
-        console.log(`Subscription expired for user ${userId} with auto-pay enabled. Waiting for payment processing.`);
       }
+      
+      // For other plans that have expired
+      userLimit.status = 'inactive';
+      await userLimit.save();
     }
-    
+
     return userLimit;
   } catch (error) {
     console.error('Error checking subscription expiration:', error);
@@ -80,52 +72,40 @@ exports.getCurrentUserLimit = async (req, res) => {
           ...newUserLimit.toObject(),
           remaining: 0,
           userEmail: req.user.email,
-          userName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.name || 'Unknown User',
-          status: 'inactive',
-          planId: 'expired',
-          planName: 'No Plan',
-          limit: 0,
-          count: 0,
-          expiresAt: null
+          userName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.name || 'Unknown User'
         }
       });
     }
 
     // Check for subscription expiration and handle accordingly
-    userLimit = await exports.checkAndHandleSubscriptionExpiration(req.user.id) || userLimit;
+    userLimit = await exports.checkAndHandleSubscriptionExpiration(req.user.id);
+    
+    // If plan is expired or inactive, ensure counts are 0
+    if (userLimit.hasExpired() || userLimit.status === 'inactive') {
+      userLimit.count = 0;
+      userLimit.limit = 0;
+      await userLimit.save();
+    }
     
     // Get user details
     const user = await User.findById(req.user.id);
     
-    // Create response object with all necessary data
-    const responseData = {
-      ...userLimit.toObject(),
-      remaining: Math.max(0, userLimit.limit - userLimit.count),
-      userEmail: user?.email || req.user.email,
-      userName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.name : 'Unknown User',
-      status: userLimit.status || 'inactive',
-      planId: userLimit.planId,
-      planName: userLimit.planName,
-      limit: userLimit.limit,
-      count: userLimit.count,
-      expiresAt: userLimit.expiresAt,
-      autoPay: userLimit.autoPay || false,
-      autoRenewal: userLimit.autoRenewal || { enabled: false },
-      stripeSubscriptionId: userLimit.stripeSubscriptionId || null
-    };
-    
-    // Log the response data for debugging
-    console.log('User limit response data:', JSON.stringify(responseData, null, 2));
-    
-    return res.status(200).json({
+    // Return user limit data
+    res.status(200).json({
       success: true,
-      data: responseData
+      data: {
+        ...userLimit.toObject(),
+        remaining: userLimit.getRemainingCredits(),
+        userEmail: user.email,
+        userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.name || 'Unknown User'
+      }
     });
   } catch (error) {
-    console.error('Error getting user limit:', error);
-    return res.status(500).json({
+    console.error('Error getting current user limit:', error);
+    res.status(500).json({
       success: false,
-      message: 'Failed to get user limit'
+      message: 'Failed to get user limit',
+      error: error.message
     });
   }
 };
