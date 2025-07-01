@@ -130,7 +130,6 @@ userLimitSchema.virtual('remaining').get(function() {
 // Method to check if subscription has expired
 userLimitSchema.methods.hasExpired = function() {
   if (!this.expiresAt) return true;
-  if (this.planId === 'expired') return true;
   return new Date() > new Date(this.expiresAt);
 };
 
@@ -149,35 +148,31 @@ userLimitSchema.methods.updatePlan = function(planData) {
   this.planName = planName || this.planName;
   this.limit = limit || this.limit;
   
-  // For expired plans, ensure all fields are properly reset
-  if (planId === 'expired') {
-    this.expiresAt = null;
-    this.status = 'inactive';
-    this.limit = 0;
-    this.count = 0;
-    return this.save();
+  if (expiresAt) {
+    this.expiresAt = new Date(expiresAt);
   }
   
-  // For trial plans, enforce 7-day expiration
-  if (planId === 'trial') {
-    const trialDays = 7;
+  // For expired plans or unlimited plans, ensure expiresAt is null
+  if (planId === 'expired' || planId === 'unlimited') {
+    this.expiresAt = null;
+    this.status = 'inactive';
+  }
+  
+  // For trial plans, set expiration if not provided
+  if (planId === 'trial' && !expiresAt) {
+    const trialDays = 7; // 7-day trial
     const trialExpiration = new Date();
     trialExpiration.setDate(trialExpiration.getDate() + trialDays);
     this.expiresAt = trialExpiration;
     this.status = 'active';
-    return this.save();
   }
   
-  // For paid plans
-  if (planId === 'basic' || planId === 'premium' || planId === 'custom') {
-    if (expiresAt) {
-      this.expiresAt = new Date(expiresAt);
-    } else {
-      const paidPlanDays = 30;
-      const paidExpiration = new Date();
-      paidExpiration.setDate(paidExpiration.getDate() + paidPlanDays);
-      this.expiresAt = paidExpiration;
-    }
+  // For paid plans, set 30-day expiration if not provided
+  if ((planId === 'basic' || planId === 'premium' || planId === 'custom') && !expiresAt) {
+    const paidPlanDays = 30; // 30-day subscription
+    const paidExpiration = new Date();
+    paidExpiration.setDate(paidExpiration.getDate() + paidPlanDays);
+    this.expiresAt = paidExpiration;
     this.status = 'active';
   }
   
@@ -186,32 +181,21 @@ userLimitSchema.methods.updatePlan = function(planData) {
 
 // Add method to check if user can use credits
 userLimitSchema.methods.canUseCredits = function(amount = 1) {
-  // First check if plan is expired
-  if (this.hasExpired()) {
-    return false;
-  }
-  
-  // Then check if user has enough credits
   return this.planId !== 'expired' && 
-         this.status === 'active' &&
          this.limit > 0 && 
-         (this.count + amount) <= this.limit;
+         (this.count + amount) <= this.limit &&
+         (!this.expiresAt || new Date(this.expiresAt) > new Date());
 };
 
 // Add method to get remaining credits
 userLimitSchema.methods.getRemainingCredits = function() {
-  // If plan is expired or inactive, return 0
-  if (this.hasExpired() || this.status === 'inactive' || this.planId === 'expired') {
-    return 0;
-  }
   return Math.max(0, this.limit - this.count);
 };
 
 // Add method to check if plan is active
 userLimitSchema.methods.isPlanActive = function() {
-  return !this.hasExpired() && 
-         this.planId !== 'expired' &&
-         this.status === 'active';
+  return this.planId !== 'expired' && 
+         (!this.expiresAt || new Date(this.expiresAt) > new Date());
 };
 
 const UserLimit = mongoose.model('UserLimit', userLimitSchema);

@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Install python3-venv if not already installed
-sudo apt-get update
-sudo apt-get install -y python3-venv python3-full
-
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "Creating Python virtual environment..."
@@ -11,21 +7,33 @@ if [ ! -d "venv" ]; then
 fi
 
 # Activate virtual environment
+echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Upgrade pip
-pip install --upgrade pip
-
 # Install required packages
+echo "Installing required Python packages..."
+pip install --upgrade pip
 pip install youtube-transcript-api
+pip install requests
+pip install beautifulsoup4
 
-# Make transcript fetcher executable
-chmod +x src/transcript_fetcher.py
+# Install yt-dlp
+echo "Installing yt-dlp..."
+if [ "$(uname)" == "Darwin" ]; then
+    # macOS
+    brew install yt-dlp
+elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+    # Linux
+    sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+    sudo chmod a+rx /usr/local/bin/yt-dlp
+else
+    # Windows
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o src/yt-dlp.exe
+fi
 
-# Test the setup
-python src/transcript_fetcher.py --test
+# Create necessary directories
+mkdir -p src/cookies transcripts uploads
+chmod 755 src/cookies transcripts uploads
 
-# Deactivate virtual environment
-deactivate
-
-echo "Python environment setup completed" 
+echo "Python environment setup complete!"
+echo "To activate the environment manually, run: source venv/bin/activate" 

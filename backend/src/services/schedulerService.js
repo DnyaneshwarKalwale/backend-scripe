@@ -22,82 +22,35 @@ const initScheduler = async () => {
   
   console.log('Initializing post scheduler service...');
   
-  // Function to ensure database connection
-  const ensureConnection = async () => {
-    if (mongoose.connection.readyState !== 1) {
-      console.log('Database connection lost, attempting to reconnect...');
-      try {
-        await mongoose.connect(process.env.MONGO_URI, {
-          useNewUrlParser: true,
-          useUnifiedTopology: true,
-          serverSelectionTimeoutMS: 30000,
-          socketTimeoutMS: 45000,
-          keepAlive: true
-        });
-        console.log('Database reconnected for scheduler');
-      } catch (error) {
-        console.error('Failed to reconnect to database:', error);
-        return false;
-      }
-    }
-    return true;
-  };
-
-  // Initialize database connection
-  console.log('Connecting to database for scheduler...');
-  try {
-    if (mongoose.connection.readyState !== 1) {
-      await mongoose.connect(process.env.MONGO_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 30000,
-        socketTimeoutMS: 45000,
-        keepAlive: true
-      });
-    }
-    console.log('Database connected for scheduler');
-  } catch (error) {
-    console.error('Initial database connection failed:', error);
-    // Retry initial connection after 5 seconds
-    setTimeout(initScheduler, 5000);
-    return;
-  }
-
-  // Schedule post publishing
-  cron.schedule('*/5 * * * *', async () => {
+  // Make sure DB is connected
+  if (mongoose.connection.readyState !== 1) {
     try {
-      // Ensure database connection before operations
-      const isConnected = await ensureConnection();
-      if (!isConnected) {
-        console.log('Skipping scheduled task due to database connection issues');
-        return;
-      }
-
-      // Your existing scheduler logic here
-      const scheduledPosts = await Post.find({
-        scheduledTime: { $lte: new Date() },
-        status: 'scheduled'
-      });
-
-      // Process scheduled posts
-      for (const post of scheduledPosts) {
-        try {
-          // Your post publishing logic here
-          post.status = 'published';
-          post.publishedAt = new Date();
-          await post.save();
-        } catch (postError) {
-          console.error(`Error publishing post ${post._id}:`, postError);
-        }
+      console.log('Connecting to database for scheduler...');
+      await connectDB();
+      console.log('Database connected for scheduler');
+    } catch (dbError) {
+      console.error('Failed to connect to database for scheduler:', dbError);
+      return;
+    }
+  }
+  
+  // Run every minute
+  const job = cron.schedule('* * * * *', async () => {
+    try {
+      console.log('Running scheduled post check: ' + new Date().toISOString());
+      const results = await processScheduledPosts();
+      
+      if (results.total > 0) {
+        console.log(`Processed ${results.total} posts: ${results.success} successful, ${results.failed} failed`);
       }
     } catch (error) {
-      console.error('Error in scheduler task:', error);
+      console.error('Error in scheduler job:', error);
     }
   });
-
+  
   schedulerInitialized = true;
-  console.log(`Post scheduler initialized successfully at ${new Date().toISOString()}`);
-  console.log('Scheduler service initialized successfully');
+  console.log('Post scheduler initialized successfully at ' + new Date().toISOString());
+  return job;
 };
 
 /**
