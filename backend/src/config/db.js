@@ -11,12 +11,12 @@ const connectDB = async () => {
       serverSelectionTimeoutMS: 30000, // Timeout after 30 seconds
       socketTimeoutMS: 45000, // Close sockets after 45 seconds
       connectTimeoutMS: 30000,
-      keepAlive: true,
-      keepAliveInitialDelay: 300000, // 5 minutes
       maxPoolSize: 50,
       minPoolSize: 10,
       retryWrites: true,
-      retryReads: true
+      retryReads: true,
+      w: 'majority',
+      ssl: true
     });
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
