@@ -151,6 +151,17 @@ const createCheckoutSession = async (req, res) => {
           productType: 'credit-pack'
         };
         break;
+      case 'custom':
+        priceId = process.env.STRIPE_CUSTOM_PRICE_ID;
+        productName = 'Custom Plan';
+        unitAmount = 30000; // $300.00 - can be customized
+        metadata = {
+          planId: 'custom',
+          planName: 'Custom',
+          credits: 50, // Default for custom plan
+          expiryDays: 30
+        };
+        break;
       default:
         return res.status(400).json({
           success: false,
@@ -1180,16 +1191,27 @@ const toggleAutoBilling = async (req, res) => {
       });
     }
     
-    // Check if user has an active subscription
-    if (!userLimit.stripeSubscriptionId) {
+    // Check if user has an active plan (allow auto-billing for any active plan, not just subscriptions)
+    if (!userLimit.planId || userLimit.planId === 'expired') {
       return res.status(400).json({
         success: false,
-        message: 'No active subscription found. Auto-billing is only available for subscription plans.'
+        message: 'No active plan found. Please subscribe to a plan first.'
       });
     }
     
     // Update auto-billing settings
     userLimit.autoPay = enabled;
+    
+    // Initialize autoRenewal object if it doesn't exist
+    if (!userLimit.autoRenewal) {
+      userLimit.autoRenewal = {
+        enabled: false,
+        nextRenewalDate: null,
+        failedAttempts: 0,
+        lastFailureReason: null
+      };
+    }
+    
     userLimit.autoRenewal.enabled = enabled;
     
     if (enabled) {
@@ -1205,12 +1227,15 @@ const toggleAutoBilling = async (req, res) => {
     
     await userLimit.save();
     
-    // Also update the Stripe subscription if needed
+    // Also update the Stripe subscription if it exists
     try {
       if (userLimit.stripeSubscriptionId) {
         await stripe.subscriptions.update(userLimit.stripeSubscriptionId, {
           cancel_at_period_end: !enabled // Cancel at period end if auto-billing is disabled
         });
+        console.log(`Updated Stripe subscription ${userLimit.stripeSubscriptionId} auto-billing to: ${enabled}`);
+      } else {
+        console.log('No Stripe subscription ID found - auto-billing preference saved locally only');
       }
     } catch (stripeError) {
       console.error('Error updating Stripe subscription:', stripeError);
