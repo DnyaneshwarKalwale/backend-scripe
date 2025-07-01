@@ -19,8 +19,8 @@ exports.checkAndHandleSubscriptionExpiration = async (userId) => {
     const userLimit = await UserLimit.findOne({ userId });
     if (!userLimit) return null;
 
-    // Check if plan has expired
-    if (userLimit.hasExpired()) {
+    // Check if plan has expired - only if there's an expiration date and it's in the past
+    if (userLimit.expiresAt && new Date(userLimit.expiresAt) < new Date()) {
       // For trial plans that have expired, set to expired plan
       if (userLimit.planId === 'trial') {
         await userLimit.updatePlan({
@@ -32,8 +32,14 @@ exports.checkAndHandleSubscriptionExpiration = async (userId) => {
         return userLimit;
       }
       
-      // For other plans that have expired
+      // For other expired plans
       userLimit.status = 'inactive';
+      userLimit.planId = 'expired';
+      userLimit.planName = 'No Plan';
+      await userLimit.save();
+    } else if (!userLimit.expiresAt && userLimit.planId !== 'expired') {
+      // If there's no expiration date and plan is not already expired, it's an active subscription
+      userLimit.status = 'active';
       await userLimit.save();
     }
 
@@ -80,8 +86,8 @@ exports.getCurrentUserLimit = async (req, res) => {
     // Check for subscription expiration and handle accordingly
     userLimit = await exports.checkAndHandleSubscriptionExpiration(req.user.id);
     
-    // If plan is expired or inactive, ensure counts are 0
-    if (userLimit.hasExpired() || userLimit.status === 'inactive') {
+    // Only reset credits if plan is actually expired or inactive
+    if (userLimit && (userLimit.hasExpired() || userLimit.status === 'inactive' || userLimit.planId === 'expired')) {
       userLimit.count = 0;
       userLimit.limit = 0;
       await userLimit.save();
