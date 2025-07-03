@@ -242,12 +242,12 @@ const createCheckoutSession = async (req, res) => {
         userId: req.user.id,
         ...metadata,
         productType // Include product type in metadata
-      }
+      },
+      customer_email: req.user.email
     };
     
-    // Add customer information - use either customer ID or customer email, not both
+    // Add customer ID for subscriptions to enable auto-billing
     if (!isOneTime && stripeCustomerId) {
-      // For existing customers (subscriptions), use customer ID
       sessionData.customer = stripeCustomerId;
       
       // Configure subscription settings for auto-renewal
@@ -258,9 +258,6 @@ const createCheckoutSession = async (req, res) => {
           autoRenewal: 'true'
         }
       };
-    } else {
-      // For one-time payments or new customers, use customer email
-      sessionData.customer_email = req.user.email;
     }
 
     console.log('Creating session with data:', sessionData);
