@@ -78,7 +78,35 @@ module.exports = (passport) => {
               onboardingCompleted: false,
             };
 
-            user = await User.create(newUser);
+            console.log('Creating new Google user with data:', JSON.stringify(newUser, null, 2));
+            
+            try {
+              user = await User.create(newUser);
+              console.log('Google user created successfully:', user._id);
+            } catch (createError) {
+              console.error('Error creating Google user:', createError);
+              console.error('User data that failed:', JSON.stringify(newUser, null, 2));
+              
+              // If validation failed, try to create with minimal required fields
+              if (createError.name === 'ValidationError') {
+                console.log('Attempting to create user with minimal required fields...');
+                const minimalUser = {
+                  googleId: profile.id,
+                  firstName: profile.name?.givenName || profile.displayName?.split(' ')[0] || 'User',
+                  lastName: profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '',
+                  email: generatedEmail,
+                  authMethod: 'google',
+                  isEmailVerified: true,
+                  onboardingCompleted: false
+                };
+                
+                console.log('Minimal user data:', JSON.stringify(minimalUser, null, 2));
+                user = await User.create(minimalUser);
+                console.log('Google user created with minimal data:', user._id);
+              } else {
+                throw createError;
+              }
+            }
             
             // Automatically activate free trial for new OAuth users
             try {
@@ -117,6 +145,17 @@ module.exports = (passport) => {
           return done(null, user);
         } catch (error) {
           console.error('Google OAuth Error:', error);
+          console.error('Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+          });
+          
+          // If it's a validation error, log the specific validation issues
+          if (error.name === 'ValidationError') {
+            console.error('Validation errors:', error.errors);
+          }
+          
           return done(error, false);
         }
       }
