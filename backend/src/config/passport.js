@@ -81,7 +81,7 @@ module.exports = (passport) => {
             console.log('Creating new Google user with data:', JSON.stringify(newUser, null, 2));
             
             try {
-              user = await User.create(newUser);
+            user = await User.create(newUser);
               console.log('Google user created successfully:', user._id);
             } catch (createError) {
               console.error('Error creating Google user:', createError);
